@@ -1,0 +1,1024 @@
+import { 
+  FinancialTitle, 
+  Settlement, 
+  FinancialMovement, 
+  BankAccount, 
+  Contract, 
+  AuditLogEntry, 
+  StatementEntry,
+  ChartAccount,
+  TitleSettlementState,
+  CreditCard,
+  CreditCardPurchase,
+  CreditCardInvoicePayment,
+  CashCountRecord
+} from '../types';
+import { storage } from './storageService';
+
+export const formatBRL = (amount: number): string => {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
+export const parseBRL = (str: string): number => {
+  if (!str) return 0;
+  const clean = str.replace(/[^\d,-]/g, '').replace(',', '.');
+  return parseFloat(clean) || 0;
+};
+
+export const formatDateBR = (dateStr: string): string => {
+  if (!dateStr) return '-';
+  const parts = dateStr.split('T')[0].split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+};
+
+export const getMonthName = (monthStr: string): string => {
+  const months: Record<string, string> = {
+    '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
+    '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
+    '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+  };
+  return months[monthStr] || monthStr;
+};
+
+export const formatCompetence = (comp: string): string => {
+  if (!comp) return '-';
+  const [year, month] = comp.split('-');
+  return `${getMonthName(month)}/${year}`;
+};
+
+export type TemporalStatus = 'A_VENCER' | 'VENCE_HOJE' | 'VENCIDO' | 'QUITADO';
+
+export const getTemporalStatus = (title: FinancialTitle, referenceDateStr?: string): TemporalStatus => {
+  if (title.settlementState === 'LIQUIDADO') {
+    return 'QUITADO';
+  }
+  const ref = referenceDateStr || new Date().toISOString().split('T')[0];
+  const due = title.dueDate;
+  if (due === ref) return 'VENCE_HOJE';
+  if (due < ref) return 'VENCIDO';
+  return 'A_VENCER';
+};
+
+export interface SettlementParams {
+  titleId: string;
+  settlementDate: string; // YYYY-MM-DD
+  bankAccountId: string;
+  principalSettled: number;
+  discount: number;
+  interest: number;
+  fine: number;
+  bankFee: number;
+  notes?: string;
+  voucherRef?: string;
+}
+
+export class FinancialEngine {
+  /**
+   * Check if date is in closed period
+   */
+  public static isPeriodClosed(yearMonth: string): boolean {
+    const closures = storage.getPeriodClosures();
+    return closures.some(c => c.yearMonth === yearMonth && c.isClosed);
+  }
+
+  /**
+   * Calculate effective bank balance
+   * Saldo = Saldo Inicial + Entradas Efetivas - Saídas Efetivas
+   */
+  public static getAccountBalance(bankAccountId: string, upToDate?: string): number {
+    const accounts = storage.getBankAccounts();
+    const account = accounts.find(a => a.id === bankAccountId);
+    if (!account) return 0;
+
+    const movements = storage.getMovements().filter(m => {
+      if (m.bankAccountId !== bankAccountId || m.isReversed) return false;
+      if (upToDate && m.date > upToDate) return false;
+      return true;
+    });
+
+    let balance = account.initialBalance;
+    for (const mov of movements) {
+      if (mov.direction === 'ENTRADA') {
+        balance += mov.amount;
+      } else {
+        balance -= mov.amount;
+      }
+    }
+    return Math.round(balance * 100) / 100;
+  }
+
+  /**
+   * Alias for getAccountBalance for consistent component ergonomics
+   */
+  public static calculateAccountBalance(bankAccountId: string, upToDate?: string): number {
+    return FinancialEngine.getAccountBalance(bankAccountId, upToDate);
+  }
+
+  /**
+   * Recalculates and refreshes account balance snapshots (balances are dynamic)
+   */
+  public static recalculateAllAccountBalances(): void {
+    // Balances are computed dynamically on-the-fly via getAccountBalance
+  }
+
+  /**
+   * Calculate consolidated cash balance for all included accounts
+   */
+  public static getConsolidatedCashBalance(upToDate?: string): number {
+    const accounts = storage.getBankAccounts().filter(a => a.includeInCashFlow && a.status === 'ATIVO');
+    return accounts.reduce((acc, a) => acc + this.getAccountBalance(a.id, upToDate), 0);
+  }
+
+  /**
+   * POST A SETTLEMENT (BAIXA DE TÍTULO)
+   * Implements strict formula from Prompt Item 11:
+   * Valor financeiro = principal - desconto + juros + multa (- bankFee se receber)
+   * Saldo principal = originalAmount - soma_principais_baixados
+   */
+  public static postSettlement(params: SettlementParams): { success: boolean; message: string; settlement?: Settlement } {
+    const titles = storage.getTitles();
+    const titleIndex = titles.findIndex(t => t.id === params.titleId);
+    if (titleIndex === -1) {
+      return { success: false, message: 'Título financeiro não encontrado.' };
+    }
+    const title = titles[titleIndex];
+
+    // Period closure validation
+    const competence = title.competence;
+    const settlementMonth = params.settlementDate.substring(0, 7);
+    if (this.isPeriodClosed(competence) || this.isPeriodClosed(settlementMonth)) {
+      return { success: false, message: `O período financeiro ${competence} ou ${settlementMonth} encontra-se encerrado para alterações.` };
+    }
+
+    // Date validation: no future effective dates
+    const today = new Date().toISOString().split('T')[0];
+    if (params.settlementDate > today) {
+      return { success: false, message: 'Data efetiva não pode ser futura. Para agendamento, utilize a data prevista.' };
+    }
+
+    // Number validations
+    if (params.principalSettled <= 0) {
+      return { success: false, message: 'O principal baixado deve ser superior a zero.' };
+    }
+    if (params.discount > params.principalSettled) {
+      return { success: false, message: 'O desconto não pode ser superior ao principal baixado.' };
+    }
+    if (params.principalSettled > title.balancePrincipal + 0.001) {
+      return { 
+        success: false, 
+        message: `Principal baixado (${formatBRL(params.principalSettled)}) não pode exceder o saldo restante (${formatBRL(title.balancePrincipal)}).` 
+      };
+    }
+
+    const currentUser = storage.getCurrentUser();
+    if (currentUser.role === 'CONSULTA') {
+      return { success: false, message: 'Perfil de Consulta não possui permissão para realizar baixas.' };
+    }
+
+    // Formula execution
+    // Net cash movement
+    let netFinancialAmount = 0;
+    if (title.type === 'RECEBER') {
+      netFinancialAmount = params.principalSettled - params.discount + params.interest + params.fine - params.bankFee;
+    } else {
+      netFinancialAmount = params.principalSettled - params.discount + params.interest + params.fine + params.bankFee;
+    }
+    netFinancialAmount = Math.round(netFinancialAmount * 100) / 100;
+
+    const newSettledPrincipal = Math.round((title.settledPrincipal + params.principalSettled) * 100) / 100;
+    const newBalancePrincipal = Math.round((title.originalAmount - newSettledPrincipal) * 100) / 100;
+    
+    let newSettlementState: TitleSettlementState = 'PARCIAL';
+    if (newBalancePrincipal <= 0.005) {
+      newSettlementState = 'LIQUIDADO';
+    }
+
+    const settlementId = `set-${Date.now()}`;
+    const newSettlement: Settlement = {
+      id: settlementId,
+      titleId: title.id,
+      settlementNumber: `BX-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`,
+      settlementDate: params.settlementDate,
+      bankAccountId: params.bankAccountId,
+      components: {
+        principalSettled: params.principalSettled,
+        discount: params.discount,
+        interest: params.interest,
+        fine: params.fine,
+        bankFee: params.bankFee,
+        netFinancialAmount
+      },
+      notes: params.notes,
+      voucherRef: params.voucherRef,
+      isReversed: false,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser.name
+    };
+
+    // Update title
+    const updatedTitle: FinancialTitle = {
+      ...title,
+      settledPrincipal: newSettledPrincipal,
+      balancePrincipal: Math.max(0, newBalancePrincipal),
+      settlementState: newSettlementState,
+      updatedAt: new Date().toISOString()
+    };
+    titles[titleIndex] = updatedTitle;
+    storage.saveTitles(titles);
+
+    // Add settlement
+    const settlements = storage.getSettlements();
+    storage.saveSettlements([newSettlement, ...settlements]);
+
+    // Create Bank Movements
+    const movements = storage.getMovements();
+    const newMovements: FinancialMovement[] = [];
+
+    // Main net cash movement
+    if (netFinancialAmount !== 0) {
+      newMovements.push({
+        id: `mov-${Date.now()}-1`,
+        bankAccountId: params.bankAccountId,
+        date: params.settlementDate,
+        direction: title.type === 'RECEBER' ? 'ENTRADA' : 'SAIDA',
+        amount: Math.abs(netFinancialAmount),
+        originType: 'BAIXA_TITULO',
+        originReferenceId: settlementId,
+        description: `Baixa ${title.titleNumber} - ${title.description}`,
+        counterpartyId: title.counterpartyId,
+        accountId: title.accountId,
+        cashFlowCategory: 'OPERACIONAL',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    // If there was a bankFee retained on a receivable, record bank fee movement and expense account
+    if (params.bankFee > 0 && title.type === 'RECEBER') {
+      newMovements.push({
+        id: `mov-${Date.now()}-fee`,
+        bankAccountId: params.bankAccountId,
+        date: params.settlementDate,
+        direction: 'SAIDA',
+        amount: params.bankFee,
+        originType: 'BAIXA_TITULO',
+        originReferenceId: settlementId,
+        description: `Tarifa bancária retida - Tit. ${title.titleNumber}`,
+        accountId: 'acc-4.2.04', // Tarifas Bancárias
+        cashFlowCategory: 'OPERACIONAL',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    storage.saveMovements([...newMovements, ...movements]);
+
+    // Audit log
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: newSettlementState === 'LIQUIDADO' ? 'QUITACAO_TITULO' : 'BAIXA_PARCIAL',
+      module: title.type === 'RECEBER' ? 'Contas a Receber' : 'Contas a Pagar',
+      recordId: title.id,
+      details: `Baixa de ${formatBRL(params.principalSettled)} registrada. Valor líquido movimentado: ${formatBRL(netFinancialAmount)}. Saldo restante: ${formatBRL(newBalancePrincipal)}.`,
+      previousValue: `Saldo ${formatBRL(title.balancePrincipal)} (${title.settlementState})`,
+      newValue: `Saldo ${formatBRL(newBalancePrincipal)} (${newSettlementState})`
+    });
+
+    return { success: true, message: 'Baixa processada com sucesso!', settlement: newSettlement };
+  }
+
+  /**
+   * REVERSE A SETTLEMENT (ESTORNO DE BAIXA)
+   */
+  public static reverseSettlement(settlementId: string, reason: string): { success: boolean; message: string } {
+    const currentUser = storage.getCurrentUser();
+    if (currentUser.role === 'CONSULTA' || currentUser.role === 'OPERADOR') {
+      return { success: false, message: 'Apenas Administradores e Gestores Financeiros podem estornar baixas.' };
+    }
+
+    const settlements = storage.getSettlements();
+    const setIdx = settlements.findIndex(s => s.id === settlementId);
+    if (setIdx === -1) return { success: false, message: 'Baixa não encontrada.' };
+    const settlement = settlements[setIdx];
+
+    if (settlement.isReversed) {
+      return { success: false, message: 'Esta baixa já foi estornada anteriormente.' };
+    }
+
+    const titles = storage.getTitles();
+    const titleIdx = titles.findIndex(t => t.id === settlement.titleId);
+    if (titleIdx === -1) return { success: false, message: 'Título original não encontrado.' };
+    const title = titles[titleIdx];
+
+    // Period closure check
+    const competence = title.competence;
+    if (this.isPeriodClosed(competence) || this.isPeriodClosed(settlement.settlementDate.substring(0, 7))) {
+      return { success: false, message: 'Período contábil fechado. Não é permitido estorno em períodos encerrados.' };
+    }
+
+    // Reconstitute title balance
+    const restoredSettled = Math.max(0, title.settledPrincipal - settlement.components.principalSettled);
+    const restoredBalance = Math.min(title.originalAmount, title.balancePrincipal + settlement.components.principalSettled);
+    let newSettlementState: TitleSettlementState = 'PARCIAL';
+    if (restoredBalance >= title.originalAmount - 0.005) {
+      newSettlementState = 'ABERTO';
+    }
+
+    titles[titleIdx] = {
+      ...title,
+      settledPrincipal: Math.round(restoredSettled * 100) / 100,
+      balancePrincipal: Math.round(restoredBalance * 100) / 100,
+      settlementState: newSettlementState,
+      updatedAt: new Date().toISOString()
+    };
+    storage.saveTitles(titles);
+
+    // Mark settlement as reversed
+    settlements[setIdx] = {
+      ...settlement,
+      isReversed: true,
+      reversedAt: new Date().toISOString(),
+      reversedBy: currentUser.name,
+      reversalReason: reason
+    };
+    storage.saveSettlements(settlements);
+
+    // Reverse bank movements
+    const movements = storage.getMovements();
+    const updatedMovements = movements.map(m => {
+      if (m.originReferenceId === settlementId) {
+        return { ...m, isReversed: true };
+      }
+      return m;
+    });
+    storage.saveMovements(updatedMovements);
+
+    // Unlink any reconciled statement entries
+    const stmts = storage.getStatementEntries();
+    const updatedStmts = stmts.map(s => {
+      if (s.matchedTitleId === title.id) {
+        return { ...s, reconciliationStatus: 'PENDENTE' as const, matchedMovementId: undefined, matchedTitleId: undefined };
+      }
+      return s;
+    });
+    storage.saveStatementEntries(updatedStmts);
+
+    // Audit log
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'ESTORNO_BAIXA',
+      module: title.type === 'RECEBER' ? 'Contas a Receber' : 'Contas a Pagar',
+      recordId: title.id,
+      details: `Estorno da baixa ${settlement.settlementNumber} no valor de ${formatBRL(settlement.components.principalSettled)}. Motivo: ${reason}. Saldo reconstituído para ${formatBRL(restoredBalance)}.`,
+      previousValue: `Saldo ${formatBRL(title.balancePrincipal)} (${title.settlementState})`,
+      newValue: `Saldo ${formatBRL(restoredBalance)} (${newSettlementState})`
+    });
+
+    return { success: true, message: 'Estorno realizado com sucesso!' };
+  }
+
+  /**
+   * POST AN INTER-ACCOUNT TRANSFER (TRANSFERÊNCIA BANCÁRIA)
+   * Generates atomic pair of movements (Outflow from origin, Inflow into destination)
+   */
+  public static postTransfer(params: {
+    originAccountId: string;
+    destinationAccountId: string;
+    amount: number;
+    date: string;
+    feeAmount?: number;
+    notes?: string;
+  }): { success: boolean; message: string } {
+    if (params.originAccountId === params.destinationAccountId) {
+      return { success: false, message: 'A conta de origem e destino não podem ser iguais.' };
+    }
+    if (params.amount <= 0) {
+      return { success: false, message: 'O valor da transferência deve ser positivo.' };
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (params.date > today) {
+      return { success: false, message: 'Data da transferência não pode ser futura.' };
+    }
+
+    const accounts = storage.getBankAccounts();
+    const origin = accounts.find(a => a.id === params.originAccountId);
+    const dest = accounts.find(a => a.id === params.destinationAccountId);
+    if (!origin || !dest) {
+      return { success: false, message: 'Contas bancárias não encontradas.' };
+    }
+
+    const transferId = `transf-${Date.now()}`;
+    const movements = storage.getMovements();
+    const newMovements: FinancialMovement[] = [
+      // Outflow from origin
+      {
+        id: `mov-${Date.now()}-out`,
+        bankAccountId: params.originAccountId,
+        date: params.date,
+        direction: 'SAIDA',
+        amount: params.amount,
+        originType: 'TRANSFERENCIA',
+        originReferenceId: transferId,
+        description: `Transferência enviada para ${dest.name} - ${params.notes || ''}`,
+        cashFlowCategory: 'TRANSFERENCIA_INTERNA',
+        createdAt: new Date().toISOString()
+      },
+      // Inflow to destination
+      {
+        id: `mov-${Date.now()}-in`,
+        bankAccountId: params.destinationAccountId,
+        date: params.date,
+        direction: 'ENTRADA',
+        amount: params.amount,
+        originType: 'TRANSFERENCIA',
+        originReferenceId: transferId,
+        description: `Transferência recebida de ${origin.name} - ${params.notes || ''}`,
+        cashFlowCategory: 'TRANSFERENCIA_INTERNA',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    if (params.feeAmount && params.feeAmount > 0) {
+      newMovements.push({
+        id: `mov-${Date.now()}-fee`,
+        bankAccountId: params.originAccountId,
+        date: params.date,
+        direction: 'SAIDA',
+        amount: params.feeAmount,
+        originType: 'OPERACAO_DIRETA',
+        originReferenceId: transferId,
+        description: `Tarifa de transferência DOC/TED para ${dest.name}`,
+        accountId: 'acc-4.2.04',
+        cashFlowCategory: 'OPERACIONAL',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    storage.saveMovements([...newMovements, ...movements]);
+
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'TRANSFERENCIA_BANCARIA',
+      module: 'Bancos e Contas',
+      recordId: transferId,
+      details: `Transferência de ${formatBRL(params.amount)} de ${origin.name} para ${dest.name}.`
+    });
+
+    return { success: true, message: 'Transferência concluída com sucesso!' };
+  }
+
+  /**
+   * GENERATE MONTHLY CONTRACT BILLINGS (FATURAMENTO DE CONTRATOS)
+   * Idempotent generation for a given competence (e.g. '2026-09')
+   */
+  public static generateContractBilling(competence: string): {
+    generatedCount: number;
+    alreadyExistingCount: number;
+    ignoredCount: number;
+    totalAmountGenerated: number;
+    results: Array<{ contract: Contract; title?: FinancialTitle; status: 'GERADO' | 'JA_EXISTE' | 'IGNORADO' }>;
+  } {
+    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    const titles = storage.getTitles();
+    const counterparties = storage.getCounterparties();
+
+    let generatedCount = 0;
+    let alreadyExistingCount = 0;
+    let ignoredCount = 0;
+    let totalAmountGenerated = 0;
+    const results: Array<{ contract: Contract; title?: FinancialTitle; status: 'GERADO' | 'JA_EXISTE' | 'IGNORADO' }> = [];
+    const newTitles: FinancialTitle[] = [];
+
+    const [compYearStr, compMonthStr] = competence.split('-');
+    const compYear = parseInt(compYearStr, 10);
+    const compMonth = parseInt(compMonthStr, 10);
+    const compMonthFormatted = compMonth.toString().padStart(2, '0');
+
+    for (const contract of contracts) {
+      // Check if already generated for this competence
+      const existing = titles.find(t => 
+        t.originType === 'CONTRATO' && 
+        t.originId === contract.id && 
+        t.competence === competence &&
+        t.documentState !== 'CANCELADO'
+      );
+
+      if (existing) {
+        alreadyExistingCount++;
+        results.push({ contract, title: existing, status: 'JA_EXISTE' });
+        continue;
+      }
+
+      // Check contract start and end dates
+      if (contract.startDate && contract.startDate.substring(0, 7) > competence) {
+        ignoredCount++;
+        results.push({ contract, status: 'IGNORADO' });
+        continue;
+      }
+      if (contract.endDate && contract.endDate.substring(0, 7) < competence) {
+        ignoredCount++;
+        results.push({ contract, status: 'IGNORADO' });
+        continue;
+      }
+
+      // Calculate dueDate based on dueRule
+      let dueYear = compYear;
+      let dueMonth = compMonth;
+      if (contract.dueRule === 'NEXT_MONTH') {
+        dueMonth += 1;
+        if (dueMonth > 12) {
+          dueMonth = 1;
+          dueYear += 1;
+        }
+      }
+
+      // Safe day of month (handle 29, 30, 31)
+      const lastDayOfMonth = new Date(dueYear, dueMonth, 0).getDate();
+      const actualDueDay = Math.min(contract.dueDay, lastDayOfMonth);
+      const dueDayFormatted = actualDueDay.toString().padStart(2, '0');
+      const dueMonthFormatted = dueMonth.toString().padStart(2, '0');
+      const dueDate = `${dueYear}-${dueMonthFormatted}-${dueDayFormatted}`;
+
+      const client = counterparties.find(c => c.id === contract.customerId);
+      const clientName = client ? client.name : 'Cliente';
+      const mainAccountId = contract.items[0]?.accountId || 'acc-1.1.01';
+
+      const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CT-', '')}`;
+      const newTitle: FinancialTitle = {
+        id: `tit-fat-${Date.now()}-${contract.id}`,
+        companyId: 'comp-1',
+        type: 'RECEBER',
+        titleNumber,
+        counterpartyId: contract.customerId,
+        description: `Mensalidade ${contract.description} - Comp. ${compMonthFormatted}/${compYear}`,
+        accountId: mainAccountId,
+        launchDate: new Date().toISOString().split('T')[0],
+        competence,
+        issueDate: new Date().toISOString().split('T')[0],
+        dueDate,
+        expectedCashDate: dueDate,
+        originalAmount: contract.monthlyTotal,
+        settledPrincipal: 0,
+        balancePrincipal: contract.monthlyTotal,
+        accruedInterest: 0,
+        accruedFine: 0,
+        documentState: 'CONFIRMADO',
+        settlementState: 'ABERTO',
+        originType: 'CONTRATO',
+        originId: contract.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notes: `Gerado automaticamente via Faturamento de Contratos.`
+      };
+
+      newTitles.push(newTitle);
+      generatedCount++;
+      totalAmountGenerated += contract.monthlyTotal;
+      results.push({ contract, title: newTitle, status: 'GERADO' });
+
+      // Update contract's lastGeneratedCompetence
+      contract.lastGeneratedCompetence = competence;
+    }
+
+    if (newTitles.length > 0) {
+      storage.saveTitles([...newTitles, ...titles]);
+      storage.saveContracts(contracts);
+
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'GERACAO_FATURAMENTO_CONTRATOS',
+        module: 'Comercial & Faturamento',
+        recordId: competence,
+        details: `Geração em lote para competência ${competence}: ${generatedCount} títulos gerados totalizando ${formatBRL(totalAmountGenerated)}.`
+      });
+    }
+
+    return {
+      generatedCount,
+      alreadyExistingCount,
+      ignoredCount,
+      totalAmountGenerated,
+      results
+    };
+  }
+
+  /**
+   * CALCULATE MRR (MONTHLY RECURRING REVENUE)
+   * Defined strictly in Prompt Item 16:
+   * Normalized monthly value of active recurring contracts on the reference date.
+   * Excludes one-off sales and installments. Overdue does not reduce MRR.
+   */
+  public static calculateMRR(): number {
+    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    return contracts.reduce((acc, c) => acc + (c.monthlyTotal || 0), 0);
+  }
+
+  /**
+   * CALCULATE INADIMPLÊNCIA (DELINQUENCY RATE)
+   * Formula in Prompt Item 16:
+   * "saldo vencido / saldo total em aberto na data de referência", excluding drafts and canceled.
+   */
+  public static calculateDelinquencyRate(referenceDateStr?: string): { rate: number; overdueBalance: number; openBalance: number } {
+    const ref = referenceDateStr || new Date().toISOString().split('T')[0];
+    const titles = storage.getTitles().filter(t => 
+      t.type === 'RECEBER' && 
+      t.documentState === 'CONFIRMADO' && 
+      t.balancePrincipal > 0
+    );
+
+    const openBalance = titles.reduce((acc, t) => acc + t.balancePrincipal, 0);
+    const overdueTitles = titles.filter(t => t.dueDate < ref);
+    const overdueBalance = overdueTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
+
+    const rate = openBalance > 0 ? (overdueBalance / openBalance) * 100 : 0;
+    return {
+      rate: Math.round(rate * 10) / 10,
+      overdueBalance,
+      openBalance
+    };
+  }
+
+  /**
+   * CALCULATE CLIENT METRICS & KPIS
+   * Client indicators: Active clients count, client growth, contract coverage, new additions.
+   */
+  public static calculateClientMetrics(referenceYear?: number, referenceMonthIdx?: number) {
+    const counterparties = storage.getCounterparties();
+    const clients = counterparties.filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
+    const totalClients = clients.length;
+    const activeClients = clients.filter(c => c.status === 'ATIVO').length;
+    const inactiveClients = clients.filter(c => c.status === 'INATIVO').length;
+
+    const contracts = storage.getContracts();
+    const activeContracts = contracts.filter(c => c.status === 'ATIVO');
+    const clientsWithActiveContracts = new Set(activeContracts.map(c => c.customerId)).size;
+
+    const now = new Date();
+    const targetYear = referenceYear ?? now.getFullYear();
+    const targetMonth = referenceMonthIdx !== undefined ? referenceMonthIdx + 1 : now.getMonth() + 1;
+    const targetMonthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+
+    // Previous month string
+    let prevYear = targetYear;
+    let prevMonth = targetMonth - 1;
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear -= 1;
+    }
+    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+    // Count clients created in target period vs previous period
+    const newClientsPeriod = clients.filter(c => {
+      const created = c.createdAt || '';
+      return created.startsWith(targetMonthStr);
+    }).length;
+
+    const newClientsPrevPeriod = clients.filter(c => {
+      const created = c.createdAt || '';
+      return created.startsWith(prevMonthStr);
+    }).length;
+
+    // Growth calculation: net new vs previous base
+    const baseClients = Math.max(1, activeClients - newClientsPeriod);
+    const growthRate = (newClientsPeriod / baseClients) * 100;
+    const netGrowthDiff = newClientsPeriod - newClientsPrevPeriod;
+
+    // Total MRR
+    const mrr = activeContracts.reduce((acc, c) => acc + (c.monthlyTotal || 0), 0);
+    const averageTicketPerClient = clientsWithActiveContracts > 0 ? mrr / clientsWithActiveContracts : 0;
+
+    return {
+      totalClients,
+      activeClients,
+      inactiveClients,
+      clientsWithActiveContracts,
+      newClientsPeriod,
+      newClientsPrevPeriod,
+      netGrowthDiff,
+      growthRate: Math.round(growthRate * 10) / 10,
+      averageTicketPerClient,
+      activePercentage: totalClients > 0 ? Math.round((activeClients / totalClients) * 100) : 0,
+      contractCoveragePercentage: activeClients > 0 ? Math.round((clientsWithActiveContracts / activeClients) * 100) : 0
+    };
+  }
+
+  // ==========================================
+  // CARTÃO DE CRÉDITO & FATURAS
+  // ==========================================
+  public static getCardAvailableLimit(cardId: string): { limit: number; used: number; available: number } {
+    const cards = storage.getCreditCards();
+    const card = cards.find(c => c.id === cardId);
+    if (!card) return { limit: 0, used: 0, available: 0 };
+
+    const purchases = storage.getCardPurchases().filter(p => p.cardId === cardId);
+    let used = 0;
+    for (const pur of purchases) {
+      for (const inst of pur.installments) {
+        if (!inst.settled) {
+          used += inst.amount;
+        }
+      }
+    }
+
+    const available = Math.max(0, card.creditLimit - used);
+    return { limit: card.creditLimit, used, available };
+  }
+
+  public static getCardInvoices(cardId: string): Array<{
+    invoiceMonth: string; // YYYY-MM
+    closingDate: string; // YYYY-MM-DD
+    dueDate: string; // YYYY-MM-DD
+    totalAmount: number;
+    paidAmount: number;
+    balance: number;
+    status: 'ABERTA' | 'FECHADA' | 'PAGA';
+    itemsCount: number;
+  }> {
+    const cards = storage.getCreditCards();
+    const card = cards.find(c => c.id === cardId);
+    if (!card) return [];
+
+    const purchases = storage.getCardPurchases().filter(p => p.cardId === cardId);
+    const payments = storage.getCardInvoicePayments().filter(p => p.cardId === cardId);
+
+    const monthMap = new Map<string, {
+      total: number;
+      settledCount: number;
+      totalCount: number;
+    }>();
+
+    for (const pur of purchases) {
+      for (const inst of pur.installments) {
+        const m = inst.invoiceMonth;
+        const current = monthMap.get(m) || { total: 0, settledCount: 0, totalCount: 0 };
+        current.total += inst.amount;
+        current.totalCount += 1;
+        if (inst.settled) current.settledCount += 1;
+        monthMap.set(m, current);
+      }
+    }
+
+    // Also ensure current and neighbouring months exist
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    for (let offset = -2; offset <= 3; offset++) {
+      const d = new Date(currentYear, currentMonth - 1 + offset, 1);
+      const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthMap.has(mStr)) {
+        monthMap.set(mStr, { total: 0, settledCount: 0, totalCount: 0 });
+      }
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const result = Array.from(monthMap.entries()).map(([month, data]) => {
+      const [year, m] = month.split('-');
+      const closingDay = String(card.closingDay).padStart(2, '0');
+      const dueDay = String(card.dueDay).padStart(2, '0');
+      
+      const closingDate = `${year}-${m}-${closingDay}`;
+      let dueYear = parseInt(year);
+      let dueMonthNum = parseInt(m);
+      if (card.dueDay <= card.closingDay) {
+        dueMonthNum += 1;
+        if (dueMonthNum > 12) {
+          dueMonthNum = 1;
+          dueYear += 1;
+        }
+      }
+      const dueDate = `${dueYear}-${String(dueMonthNum).padStart(2, '0')}-${dueDay}`;
+
+      const paidForMonth = payments
+        .filter(p => p.invoiceMonth === month)
+        .reduce((sum, p) => sum + p.amountPaid, 0);
+
+      const balance = Math.max(0, data.total - paidForMonth);
+      let status: 'ABERTA' | 'FECHADA' | 'PAGA' = 'ABERTA';
+
+      if (data.total > 0 && (balance <= 0.01 || data.settledCount === data.totalCount)) {
+        status = 'PAGA';
+      } else if (todayStr >= closingDate) {
+        status = 'FECHADA';
+      } else {
+        status = 'ABERTA';
+      }
+
+      return {
+        invoiceMonth: month,
+        closingDate,
+        dueDate,
+        totalAmount: data.total,
+        paidAmount: paidForMonth,
+        balance,
+        status,
+        itemsCount: data.totalCount
+      };
+    });
+
+    return result.sort((a, b) => b.invoiceMonth.localeCompare(a.invoiceMonth));
+  }
+
+  public static payCardInvoice(params: {
+    cardId: string;
+    invoiceMonth: string;
+    bankAccountId: string;
+    amountPaid: number;
+    paymentDate: string;
+    notes?: string;
+  }): { success: boolean; error?: string } {
+    const cards = storage.getCreditCards();
+    const card = cards.find(c => c.id === params.cardId);
+    if (!card) return { success: false, error: 'Cartão não encontrado.' };
+
+    const bank = storage.getBankAccounts().find(b => b.id === params.bankAccountId);
+    if (!bank) return { success: false, error: 'Conta bancária pagadora não encontrada.' };
+
+    const currentUser = storage.getCurrentUser();
+    const today = params.paymentDate || new Date().toISOString().split('T')[0];
+
+    // 1. Create FinancialMovement (SAÍDA from PJ bank account)
+    const movementId = `mov-ccpay-${Date.now()}`;
+    const newMovement: FinancialMovement = {
+      id: movementId,
+      bankAccountId: params.bankAccountId,
+      date: today,
+      direction: 'SAIDA',
+      amount: params.amountPaid,
+      originType: 'FATURA_CARTAO',
+      originReferenceId: `cc-${params.cardId}-${params.invoiceMonth}`,
+      description: `Pagamento Fatura Cartão ${card.name} (Ref: ${formatCompetence(params.invoiceMonth)})`,
+      cashFlowCategory: 'OPERACIONAL',
+      createdAt: new Date().toISOString()
+    };
+    storage.saveMovements([newMovement, ...storage.getMovements()]);
+
+    // 2. Mark installments in purchases as settled
+    const purchases = storage.getCardPurchases();
+    const updatedPurchases = purchases.map(pur => {
+      if (pur.cardId !== params.cardId) return pur;
+      const updatedInstallments = pur.installments.map(inst => {
+        if (inst.invoiceMonth === params.invoiceMonth) {
+          return {
+            ...inst,
+            settled: true,
+            settledAt: today,
+            settlementId: movementId
+          };
+        }
+        return inst;
+      });
+      return { ...pur, installments: updatedInstallments };
+    });
+    storage.saveCardPurchases(updatedPurchases);
+
+    // 3. Mark matching FinancialTitle as LIQUIDADO in Contas a Pagar
+    const titles = storage.getTitles();
+    const matchingTitles = titles.filter(t => 
+      t.creditCardId === params.cardId && 
+      t.creditCardInvoiceMonth === params.invoiceMonth &&
+      t.type === 'PAGAR'
+    );
+
+    const settlementIds: string[] = [];
+    const currentSettlements = storage.getSettlements();
+    const newSettlements: Settlement[] = [];
+
+    const updatedTitles = titles.map(t => {
+      const match = matchingTitles.find(mt => mt.id === t.id);
+      if (!match) return t;
+
+      const settId = `sett-cc-${t.id}-${Date.now()}`;
+      settlementIds.push(settId);
+
+      newSettlements.push({
+        id: settId,
+        titleId: t.id,
+        settlementNumber: `LQD-CC-${Date.now().toString().slice(-6)}`,
+        settlementDate: today,
+        bankAccountId: params.bankAccountId,
+        components: {
+          principalSettled: t.balancePrincipal,
+          discount: 0,
+          interest: 0,
+          fine: 0,
+          bankFee: 0,
+          netFinancialAmount: t.balancePrincipal
+        },
+        notes: `Liquidado via Pagamento de Fatura do Cartão ${card.name}`,
+        isReversed: false,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.name
+      });
+
+      return {
+        ...t,
+        settledPrincipal: t.originalAmount,
+        balancePrincipal: 0,
+        settlementState: 'LIQUIDADO' as TitleSettlementState,
+        expectedBankAccountId: params.bankAccountId,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    storage.saveTitles(updatedTitles);
+    if (newSettlements.length > 0) {
+      storage.saveSettlements([...newSettlements, ...currentSettlements]);
+    }
+
+    // 4. Record invoice payment
+    storage.addCardInvoicePayment({
+      id: `inv-pay-${Date.now()}`,
+      cardId: params.cardId,
+      invoiceMonth: params.invoiceMonth,
+      paymentDate: today,
+      bankAccountId: params.bankAccountId,
+      amountPaid: params.amountPaid,
+      notes: params.notes,
+      movementId,
+      settlementIds,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser.name
+    });
+
+    // 5. Audit Log
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'PAGAMENTO_FATURA_CARTAO',
+      module: 'Bancos e Contas',
+      recordId: params.cardId,
+      details: `Pagamento da fatura ${params.invoiceMonth} do cartão ${card.name} no valor de ${formatBRL(params.amountPaid)} com débito na conta ${bank.name}.`
+    });
+
+    return { success: true };
+  }
+
+  // ==========================================
+  // CAIXA FÍSICO / CONCILIAÇÃO & AJUSTE DE CONTAGEM
+  // ==========================================
+  public static applyCashCountAdjustment(params: {
+    bankAccountId: string;
+    countRecord: CashCountRecord;
+    adjustReason?: string;
+  }): { success: boolean; error?: string } {
+    const bank = storage.getBankAccounts().find(b => b.id === params.bankAccountId);
+    if (!bank) return { success: false, error: 'Conta de caixa físico não encontrada.' };
+
+    const currentUser = storage.getCurrentUser();
+    const diff = params.countRecord.difference;
+    const today = params.countRecord.date || new Date().toISOString().split('T')[0];
+
+    // If difference !== 0, create adjusting movement in cash box
+    if (Math.abs(diff) > 0.001) {
+      const isSobra = diff > 0;
+      const adjustMovement: FinancialMovement = {
+        id: `mov-cash-adj-${Date.now()}`,
+        bankAccountId: params.bankAccountId,
+        date: today,
+        direction: isSobra ? 'ENTRADA' : 'SAIDA',
+        amount: Math.abs(diff),
+        originType: 'AJUSTE_CAIXA',
+        originReferenceId: params.countRecord.id,
+        description: isSobra 
+          ? `Ajuste de Caixa Físico (Sobra de Caixa constatada em contagem física) - ${params.adjustReason || 'Conferência regular'}`
+          : `Ajuste de Caixa Físico (Falta/Quebra de Caixa constatada em contagem física) - ${params.adjustReason || 'Conferência regular'}`,
+        cashFlowCategory: 'OPERACIONAL',
+        createdAt: new Date().toISOString()
+      };
+      storage.saveMovements([adjustMovement, ...storage.getMovements()]);
+    }
+
+    // Save cash count record with adjustedInSystem = true
+    const updatedCount: CashCountRecord = {
+      ...params.countRecord,
+      adjustedInSystem: true
+    };
+    storage.addCashCount(updatedCount);
+
+    // Audit log
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'AJUSTE_CONTAGEM_CAIXA_FISICO',
+      module: 'Bancos e Contas',
+      recordId: params.bankAccountId,
+      details: `Contagem física de cédulas e moedas no ${bank.name}. Total apurado: ${formatBRL(params.countRecord.totalPhysical)} (Saldo anterior: ${formatBRL(params.countRecord.systemBalance)} | Divergência: ${formatBRL(diff)}). Ajuste efetuado no sistema.`
+    });
+
+    return { success: true };
+  }
+}

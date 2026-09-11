@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Dark Theme (Tema Leão Dourado: Fundo Preto/Chumbo Profundo + Dourado Ouro) */
+    --bg-app: #0A0D13;
+    --surface-card: #131720;
+    --surface-elevated: #1B212D;
+    --border-subtle: #273040;
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --brand-gold: #E5A93C;
+    --brand-gold-glow: rgba(229, 169, 60, 0.25);
+    --brand-gold-light: #FDE047;
+    --brand-gold-dark: #B45309;
+    --brand-cyan: #D4AF37;
+    --brand-cyan-glow: rgba(212, 175, 55, 0.25);
+    --brand-primary-text: #0B0D13;
+    --brand-secondary: #EAB308;
+    --status-success: #10B981;
+    --status-warning: #F59E0B;
+    --status-danger: #EF4444;
+  }
+
+  html.light {
+    /* Light Theme (Alto Contraste: Fundo Limpo, Textos Escuros Nítidos + Destaques Ouro Nobre) */
+    --bg-app: #F8F9FA;
+    --surface-card: #FFFFFF;
+    --surface-elevated: #F1F3F5;
+    --border-subtle: #D8DFE8;
+    --text-primary: #0F172A;
+    --text-secondary: #334155;
+    --brand-gold: #B45309;
+    --brand-gold-glow: rgba(180, 83, 9, 0.15);
+    --brand-gold-light: #D97706;
+    --brand-gold-dark: #78350F;
+    --brand-cyan: #B45309;
+    --brand-cyan-glow: rgba(180, 83, 9, 0.15);
+    --brand-primary-text: #FFFFFF;
+    --brand-secondary: #92400E;
+    --status-success: #059669;
+    --status-warning: #D97706;
+    --status-danger: #DC2626;
+  }
+
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+    font-variant-numeric: tabular-nums;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  /* Previne alteração acidental de valores numéricos via scroll do mouse */
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: inner-spin-button;
+    opacity: 0.8;
+  }
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Tabular figures for financial calculations */
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}
+

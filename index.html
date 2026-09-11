@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      (function() {
+        try {
+          var _fetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : undefined;
+          var descriptor = {
+            get: function() {
+              return _fetch;
+            },
+            set: function(fn) {
+              _fetch = fn;
+            },
+            configurable: true,
+            enumerable: true
+          };
+
+          try {
+            Object.defineProperty(window, 'fetch', descriptor);
+          } catch (e) {}
+
+          try {
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              Object.defineProperty(Window.prototype, 'fetch', descriptor);
+            }
+          } catch (e) {}
+        } catch (err) {}
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contaju Gestão Financeira</title>
+    <meta name="description" content="Sistema integrado de gestão financeira para escritórios de contabilidade com DRE gerencial, fluxo de caixa, contratos e conciliação bancária." />
+    <meta property="og:title" content="Contaju Gestão Financeira" />
+    <meta property="og:description" content="Sistema integrado de gestão financeira para escritórios de contabilidade com DRE gerencial, fluxo de caixa, contratos e conciliação bancária." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
