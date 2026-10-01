@@ -218,7 +218,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
         contractNumber: c.contractNumber,
         statusBadge: {
           label: c.status === 'ATIVO' ? 'CONTRATO ATIVO' : 'CONTRATO REGISTRADO',
-          color: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+          color: 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
         },
         details: `Serviços: ${c.items.map(i => i.description).join(', ')}`
       });
@@ -280,7 +280,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
         <div className="p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-400/30">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-400/30">
                 Ficha Financeira & Histórico Operacional
               </span>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
@@ -312,15 +312,15 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
           {/* DROPDOWN DE VINCULAÇÃO COM CONTRATOS ATIVOS (SEMPRE VISÍVEL NO TOPO) */}
           <div className="flex items-center space-x-3">
             <div className="relative min-w-[260px] sm:min-w-[320px]">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-1 flex items-center">
-                <FileText className="w-3 h-3 mr-1 text-cyan-400" />
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1 flex items-center">
+                <FileText className="w-3 h-3 mr-1 text-amber-400" />
                 Vínculo com Contrato Ativo:
               </label>
               <div className="relative">
                 <select
                   value={selectedContractFilter}
                   onChange={(e) => setSelectedContractFilter(e.target.value)}
-                  className="w-full appearance-none pl-3 pr-8 py-2 text-xs rounded-xl bg-[var(--surface-card)] text-[var(--text-primary)] border border-cyan-500/40 focus:border-cyan-400 focus:outline-none shadow-xs font-medium cursor-pointer"
+                  className="w-full appearance-none pl-3 pr-8 py-2 text-xs rounded-xl bg-[var(--surface-card)] text-[var(--text-primary)] border border-amber-500/40 focus:border-amber-400 focus:outline-none shadow-xs font-medium cursor-pointer"
                 >
                   <option value="ALL">
                     📋 Todos os Contratos ({clientContracts.length} no total)
@@ -344,7 +344,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     </optgroup>
                   )}
                 </select>
-                <ChevronDown className="w-4 h-4 text-cyan-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                <ChevronDown className="w-4 h-4 text-amber-400 absolute right-2.5 top-2.5 pointer-events-none" />
               </div>
             </div>
 
@@ -360,10 +360,10 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
 
         {/* ACTIVE CONTRACT SUMMARY BANNER (When a contract is selected) */}
         {currentSelectedContract && (
-          <div className="bg-cyan-950/30 border-b border-cyan-500/20 px-5 py-2.5 flex flex-wrap items-center justify-between text-xs gap-3">
+          <div className="bg-amber-950/30 border-b border-amber-500/20 px-5 py-2.5 flex flex-wrap items-center justify-between text-xs gap-3">
             <div className="flex items-center space-x-2">
-              <span className={`w-2 h-2 rounded-full ${currentSelectedContract.status === 'ATIVO' ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
-              <strong className="text-cyan-300 font-mono">{currentSelectedContract.contractNumber}</strong>
+              <span className={`w-2 h-2 rounded-full ${currentSelectedContract.status === 'ATIVO' ? 'bg-amber-400 animate-pulse' : 'bg-slate-400'}`} />
+              <strong className="text-amber-300 font-mono">{currentSelectedContract.contractNumber}</strong>
               <span className="text-[var(--text-secondary)]">•</span>
               <span className="text-[var(--text-primary)]">{currentSelectedContract.description}</span>
             </div>
@@ -372,14 +372,14 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                 Vencimento: <strong className="text-[var(--text-primary)]">dia {currentSelectedContract.dueDay}</strong>
               </span>
               <span className="text-[var(--text-secondary)]">
-                Mensalidade: <strong className="text-cyan-400 font-mono font-bold">{formatBRL(currentSelectedContract.monthlyTotal)}</strong>
+                Mensalidade: <strong className="text-amber-400 font-mono font-bold">{formatBRL(currentSelectedContract.monthlyTotal)}</strong>
               </span>
               <span className="text-[var(--text-secondary)]">
                 Cobrança: <strong className="text-[var(--text-primary)]">{currentSelectedContract.billingMethod}</strong>
               </span>
               <button
                 onClick={() => setSelectedContractFilter('ALL')}
-                className="text-[11px] text-cyan-400 hover:underline ml-2"
+                className="text-[11px] text-amber-400 hover:underline ml-2"
               >
                 Limpar Filtro
               </button>
@@ -393,7 +393,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
             onClick={() => setActiveTab('VISAO_GERAL')}
             className={`py-3 px-3.5 font-semibold transition-all border-b-2 flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === 'VISAO_GERAL'
-                ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5'
+                ? 'border-amber-400 text-amber-400 bg-amber-500/5'
                 : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -405,7 +405,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
             onClick={() => setActiveTab('PAGAMENTOS')}
             className={`py-3 px-3.5 font-semibold transition-all border-b-2 flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === 'PAGAMENTOS'
-                ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5'
+                ? 'border-amber-400 text-amber-400 bg-amber-500/5'
                 : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -420,14 +420,14 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
             onClick={() => setActiveTab('CONTRATOS')}
             className={`py-3 px-3.5 font-semibold transition-all border-b-2 flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === 'CONTRATOS'
-                ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5'
+                ? 'border-amber-400 text-amber-400 bg-amber-500/5'
                 : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
             <span>Contratos ({clientContracts.length})</span>
             {activeContracts.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-bold ml-1">
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold ml-1">
                 {activeContracts.length} Ativo(s)
               </span>
             )}
@@ -454,7 +454,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
             onClick={() => setActiveTab('MOVIMENTACOES')}
             className={`py-3 px-3.5 font-semibold transition-all border-b-2 flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === 'MOVIMENTACOES'
-                ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5'
+                ? 'border-amber-400 text-amber-400 bg-amber-500/5'
                 : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -478,7 +478,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                 <div className="bg-[var(--surface-elevated)] p-4 rounded-xl border border-[var(--border-subtle)] space-y-1">
                   <div className="flex justify-between items-center text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
                     <span>Total Faturado</span>
-                    <Receipt className="w-4 h-4 text-cyan-400" />
+                    <Receipt className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="text-xl font-bold font-mono text-[var(--text-primary)]">
                     {formatBRL(metrics.totalInvoiced)}
@@ -538,11 +538,11 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
               <div className="bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] p-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <h3 className="font-bold text-[var(--text-primary)] flex items-center text-sm">
-                    <FileText className="w-4 h-4 mr-1.5 text-cyan-400" />
+                    <FileText className="w-4 h-4 mr-1.5 text-amber-400" />
                     Contratos Recorrentes do Cliente
                   </h3>
                   <div className="text-xs text-[var(--text-secondary)]">
-                    Receita recorrente ativa: <strong className="text-cyan-400 font-mono">{formatBRL(metrics.recurringMonthly)}/mês</strong>
+                    Receita recorrente ativa: <strong className="text-amber-400 font-mono">{formatBRL(metrics.recurringMonthly)}/mês</strong>
                   </div>
                 </div>
 
@@ -557,13 +557,13 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                         key={ct.id} 
                         className={`p-3 rounded-lg border transition-all ${
                           ct.status === 'ATIVO' 
-                            ? 'bg-cyan-950/20 border-cyan-500/30' 
+                            ? 'bg-amber-950/20 border-amber-500/30' 
                             : 'bg-[var(--surface-card)] border-[var(--border-subtle)] opacity-75'
                         }`}
                       >
                         <div className="flex justify-between items-start">
                           <div>
-                            <span className="font-bold font-mono text-cyan-300">{ct.contractNumber}</span>
+                            <span className="font-bold font-mono text-amber-300">{ct.contractNumber}</span>
                             <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.2 rounded border ${
                               ct.status === 'ATIVO' 
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
@@ -593,7 +593,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                               setSelectedContractFilter(ct.id);
                               setActiveTab('PAGAMENTOS');
                             }}
-                            className="text-cyan-400 hover:underline font-medium inline-flex items-center"
+                            className="text-amber-400 hover:underline font-medium inline-flex items-center"
                           >
                             Ver pagamentos
                             <ArrowUpRight className="w-3 h-3 ml-0.5" />
@@ -617,7 +617,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     </h3>
                     <button
                       onClick={() => setActiveTab('PAGAMENTOS')}
-                      className="text-xs text-cyan-400 hover:underline font-medium"
+                      className="text-xs text-amber-400 hover:underline font-medium"
                     >
                       Ver todos ({clientSettlements.length})
                     </button>
@@ -662,7 +662,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     </h3>
                     <button
                       onClick={() => setActiveTab('ATRASOS')}
-                      className="text-xs text-cyan-400 hover:underline font-medium"
+                      className="text-xs text-amber-400 hover:underline font-medium"
                     >
                       Detalhar ({delayedTitles.length})
                     </button>
@@ -737,7 +737,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                   {selectedContractFilter !== 'ALL' && (
                     <button
                       onClick={() => setSelectedContractFilter('ALL')}
-                      className="text-cyan-400 underline text-xs"
+                      className="text-amber-400 underline text-xs"
                     >
                       Remover filtro de contrato
                     </button>
@@ -771,7 +771,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                             <td className="py-2.5 px-3 font-medium text-[var(--text-primary)] font-mono">
                               {formatDateBR(s.settlementDate)}
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-cyan-400 font-semibold">
+                            <td className="py-2.5 px-3 font-mono text-amber-400 font-semibold">
                               {s.settlementNumber}
                             </td>
                             <td className="py-2.5 px-3">
@@ -780,7 +780,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                             </td>
                             <td className="py-2.5 px-3">
                               {contract ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-mono text-[10px]">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono text-[10px]">
                                   {contract.contractNumber}
                                 </span>
                               ) : (
@@ -822,7 +822,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
                 <div>
                   <h3 className="font-bold text-[var(--text-primary)] text-sm flex items-center">
-                    <FileText className="w-4 h-4 mr-1.5 text-cyan-400" />
+                    <FileText className="w-4 h-4 mr-1.5 text-amber-400" />
                     Contratos do Cliente (Ativos e Encerrados)
                   </h3>
                   <p className="text-[11px] text-[var(--text-secondary)]">
@@ -836,7 +836,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     onClick={() => setContractStatusFilter('ALL')}
                     className={`px-2.5 py-1 rounded font-medium transition-all ${
                       contractStatusFilter === 'ALL'
-                        ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -889,13 +889,13 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                           key={ct.id}
                           className={`p-4 rounded-xl border transition-all ${
                             isSelectedInHeader
-                              ? 'bg-cyan-950/30 border-cyan-400 ring-1 ring-cyan-400/40'
+                              ? 'bg-amber-950/30 border-amber-400 ring-1 ring-amber-400/40'
                               : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)]'
                           }`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-3">
                             <div className="flex items-center space-x-2.5">
-                              <div className={`p-2 rounded-lg ${ct.status === 'ATIVO' ? 'bg-cyan-500/10 text-cyan-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                              <div className={`p-2 rounded-lg ${ct.status === 'ATIVO' ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-500/10 text-slate-400'}`}>
                                 <FileText className="w-5 h-5" />
                               </div>
                               <div>
@@ -904,12 +904,19 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
                                     ct.status === 'ATIVO' 
                                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                                      : ct.status === 'CANCELADO'
+                                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
                                       : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
                                   }`}>
                                     {ct.status}
                                   </span>
+                                  {ct.cancellationDate && (
+                                    <span className="text-[10px] text-rose-400 font-medium">
+                                      • Cancelado em {formatDateBR(ct.cancellationDate)} {ct.cancellationReason ? `(${ct.cancellationReason})` : ''}
+                                    </span>
+                                  )}
                                   {isSelectedInHeader && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400">
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400">
                                       ✓ Atualmente Filtrado
                                     </span>
                                   )}
@@ -921,14 +928,14 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                             <div className="flex items-center space-x-3">
                               <div className="text-right">
                                 <span className="text-[10px] text-[var(--text-secondary)] block">Valor Mensal:</span>
-                                <span className="font-bold font-mono text-cyan-400 text-base">{formatBRL(ct.monthlyTotal)}</span>
+                                <span className="font-bold font-mono text-amber-400 text-base">{formatBRL(ct.monthlyTotal)}</span>
                               </div>
                               <button
                                 onClick={() => {
                                   setSelectedContractFilter(ct.id);
                                   setActiveTab('PAGAMENTOS');
                                 }}
-                                className="px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition-colors"
+                                className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors"
                               >
                                 Filtrar Histórico
                               </button>
@@ -964,7 +971,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                               {ct.items.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-[var(--surface-card)] border border-[var(--border-subtle)]">
                                   <div className="flex items-center space-x-2">
-                                    <FileCheck className="w-3.5 h-3.5 text-cyan-400" />
+                                    <FileCheck className="w-3.5 h-3.5 text-amber-400" />
                                     <span className="font-medium text-[var(--text-primary)]">{item.description}</span>
                                     <span className="text-[10px] text-[var(--text-secondary)]">({item.quantity}x)</span>
                                   </div>
@@ -1104,7 +1111,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
                 <div>
                   <h3 className="font-bold text-[var(--text-primary)] text-sm flex items-center">
-                    <History className="w-4 h-4 mr-1.5 text-cyan-400" />
+                    <History className="w-4 h-4 mr-1.5 text-amber-400" />
                     Linha do Tempo de Movimentações do Cliente
                   </h3>
                   <p className="text-[11px] text-[var(--text-secondary)]">
@@ -1118,7 +1125,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     onClick={() => setMovementFilter('ALL')}
                     className={`px-2 py-1 rounded font-medium transition-all ${
                       movementFilter === 'ALL'
-                        ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -1148,7 +1155,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     onClick={() => setMovementFilter('CONTRATO')}
                     className={`px-2 py-1 rounded font-medium transition-all ${
                       movementFilter === 'CONTRATO'
-                        ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -1184,11 +1191,11 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                             : ev.type === 'ATRASO'
                               ? 'border-rose-400 ring-4 ring-rose-500/10'
                               : ev.type === 'CONTRATO'
-                                ? 'border-cyan-400 ring-4 ring-cyan-500/10'
+                                ? 'border-amber-400 ring-4 ring-amber-500/10'
                                 : 'border-indigo-400 ring-4 ring-indigo-500/10'
                         }`} />
 
-                        <div className="p-3.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] group-hover:border-cyan-500/30 transition-all">
+                        <div className="p-3.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] group-hover:border-amber-500/30 transition-all">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                             <div className="flex items-center space-x-2">
                               <span className="font-mono text-[10px] text-[var(--text-secondary)]">
@@ -1199,7 +1206,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                                 {ev.title}
                               </span>
                               {ev.contractNumber && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                   {ev.contractNumber}
                                 </span>
                               )}
@@ -1264,7 +1271,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
             )}
             <button
               onClick={onClose}
-              className="px-5 py-2 text-xs font-bold text-[#071321] bg-cyan-400 hover:bg-cyan-300 rounded-xl shadow-[0_0_12px_rgba(99,217,255,0.3)] transition-all"
+              className="px-5 py-2 text-xs font-bold text-[#071321] bg-amber-400 hover:bg-amber-300 rounded-xl shadow-[0_0_12px_rgba(245,158,11,0.3)] transition-all"
             >
               Fechar Ficha
             </button>

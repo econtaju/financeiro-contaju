@@ -28,23 +28,30 @@ import { CashFlowView } from './components/Management/CashFlowView';
 import { BudgetPlanningView } from './components/Management/BudgetPlanningView';
 import { CompareDRECashView } from './components/Management/CompareDRECashView';
 import { ReportsView } from './components/Management/ReportsView';
+import { SettingsHubView, ConfigSubTab } from './components/Config/SettingsHubView';
 
-import { CompanyConfigView } from './components/Config/CompanyConfigView';
-import { SuppliersView } from './components/Config/SuppliersView';
-import { ChartOfAccountsView } from './components/Config/ChartOfAccountsView';
-import { RecurrencesView } from './components/Config/RecurrencesView';
-import { UsersPermissionsView } from './components/Config/UsersPermissionsView';
-import { PeriodClosureView } from './components/Config/PeriodClosureView';
-import { IntegrationsView } from './components/Config/IntegrationsView';
-import { ImprovementsView } from './components/Config/ImprovementsView';
-import { AuditView } from './components/Config/AuditView';
+import { Menu, Minimize2 } from 'lucide-react';
+import { useToast, ToastProvider } from './hooks/useToast';
+import { ToastContainer } from './components/Common/Toast';
+import { FloatingCalculator } from './components/Common/FloatingCalculator';
 
-import { Menu } from 'lucide-react';
-
-export default function App() {
+function AppContent() {
+  const { toasts, dismissToast, showSuccess, showError, showInfo } = useToast();
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('DASHBOARD');
   const [currentUser, setCurrentUser] = useState<User>(storage.getCurrentUser());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+
+  // Sair do Modo Foco ao pressionar a tecla ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFocusMode) {
+        setIsFocusMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFocusMode]);
 
   // Initialize theme on root
   useEffect(() => {
@@ -67,6 +74,83 @@ export default function App() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
 
+  // Floating Calculator State (persistente - inicia ativa como numerozinho flutuante)
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('contaju_calc_open');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [isCalculatorMinimized, setIsCalculatorMinimized] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('contaju_calc_minimized');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('contaju_calc_open', JSON.stringify(isCalculatorOpen));
+    } catch {
+      // ignore
+    }
+  }, [isCalculatorOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('contaju_calc_minimized', JSON.stringify(isCalculatorMinimized));
+    } catch {
+      // ignore
+    }
+  }, [isCalculatorMinimized]);
+
+  // Global Keyboard Shortcut Alt+C para Calculadora
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setIsCalculatorOpen(prev => {
+          if (!prev) {
+            setIsCalculatorMinimized(false);
+            return true;
+          }
+          setIsCalculatorMinimized(min => !min);
+          return true;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const handleToggleCalculator = () => {
+    if (!isCalculatorOpen) {
+      setIsCalculatorOpen(true);
+      setIsCalculatorMinimized(false);
+    } else if (isCalculatorMinimized) {
+      setIsCalculatorMinimized(false);
+    } else {
+      setIsCalculatorMinimized(true);
+    }
+  };
+
+  // Global search navigation filter
+  const [globalSearchFilter, setGlobalSearchFilter] = useState<{
+    screen: NavigationScreen;
+    term: string;
+    timestamp: number;
+  } | null>(null);
+
+  const handleNavigateWithSearch = (screen: NavigationScreen, searchFilter: string) => {
+    setGlobalSearchFilter({ screen, term: searchFilter, timestamp: Date.now() });
+    setCurrentScreen(screen);
+  };
+
   // Refresh user state if changed in storage
   useEffect(() => {
     const user = storage.getCurrentUser();
@@ -77,6 +161,8 @@ export default function App() {
     setNewTitleType(type);
     setIsNewTitleModalOpen(true);
   };
+
+  const currentSearchTerm = globalSearchFilter?.screen === currentScreen ? globalSearchFilter.term : undefined;
 
   const renderActiveScreen = () => {
     switch (currentScreen) {
@@ -92,23 +178,43 @@ export default function App() {
       
       // Commercial
       case 'CLIENTES':
-        return <ClientsView />;
+        return <ClientsView initialSearch={currentSearchTerm} />;
       case 'SERVICOS':
-        return <ServicesView />;
+        return <ServicesView initialSearch={currentSearchTerm} />;
       case 'CONTRATOS':
-        return <ContractsView onOpenBillingModal={() => setIsBillingModalOpen(true)} />;
+        return (
+          <ContractsView 
+            onOpenBillingModal={() => setIsBillingModalOpen(true)} 
+            initialSearch={currentSearchTerm}
+          />
+        );
       case 'VENDAS_FATURAMENTO':
-        return <SalesView onOpenBillingModal={() => setIsBillingModalOpen(true)} />;
+        return (
+          <SalesView 
+            onOpenBillingModal={() => setIsBillingModalOpen(true)} 
+            initialSearch={currentSearchTerm}
+          />
+        );
 
       // Financial
       case 'CONTAS_RECEBER':
-        return <ReceivablesView onOpenNewTitleModal={handleOpenNewTitleModal} />;
+        return (
+          <ReceivablesView 
+            onOpenNewTitleModal={handleOpenNewTitleModal} 
+            initialSearch={currentSearchTerm}
+          />
+        );
       case 'CONTAS_PAGAR':
-        return <PayablesView onOpenNewTitleModal={handleOpenNewTitleModal} />;
+        return (
+          <PayablesView 
+            onOpenNewTitleModal={handleOpenNewTitleModal} 
+            initialSearch={currentSearchTerm}
+          />
+        );
       case 'CARTAO_CREDITO':
         return <CreditCardsView onNavigateToPayables={() => setCurrentScreen('CONTAS_PAGAR')} />;
       case 'MOVIMENTACOES':
-        return <MovementsView />;
+        return <MovementsView initialSearch={currentSearchTerm} />;
       case 'BANCOS_CONTAS':
         return <BankAccountsView onOpenTransferModal={() => setIsTransferModalOpen(true)} />;
       case 'CONCILIACAO':
@@ -116,9 +222,9 @@ export default function App() {
 
       // Management & Reports
       case 'DRE':
-        return <DREView />;
+        return <DREView isFocusMode={isFocusMode} onToggleFocusMode={() => setIsFocusMode(prev => !prev)} />;
       case 'FLUXO_CAIXA':
-        return <CashFlowView />;
+        return <CashFlowView isFocusMode={isFocusMode} onToggleFocusMode={() => setIsFocusMode(prev => !prev)} />;
       case 'PLANEJAMENTO_ORCAMENTARIO':
         return <BudgetPlanningView />;
       case 'COMPARE_DRE_CAIXA':
@@ -126,25 +232,26 @@ export default function App() {
       case 'RELATORIOS':
         return <ReportsView />;
 
-      // Configuration
+      // Consolidated Configuration Hub
+      case 'CONFIGURACOES':
       case 'EMPRESA':
-        return <CompanyConfigView />;
       case 'FORNECEDORES':
-        return <SuppliersView />;
       case 'PLANO_CONTAS':
-        return <ChartOfAccountsView />;
       case 'RECORRENCIAS':
-        return <RecurrencesView onOpenBillingModal={() => setIsBillingModalOpen(true)} />;
       case 'USUARIOS_PERMISSOES':
-        return <UsersPermissionsView />;
       case 'FECHAMENTO_PERIODO':
-        return <PeriodClosureView />;
       case 'MODULOS_INTEGRACOES':
-        return <IntegrationsView />;
+      case 'NOTIFICACOES':
       case 'MELHORIAS':
-        return <ImprovementsView />;
       case 'AUDITORIA':
-        return <AuditView />;
+      case 'BACKUP':
+        return (
+          <SettingsHubView
+            initialTab={currentScreen === 'CONFIGURACOES' ? 'EMPRESA' : (currentScreen as ConfigSubTab)}
+            onNavigateToScreen={(screen) => setCurrentScreen(screen)}
+            onOpenBillingModal={() => setIsBillingModalOpen(true)}
+          />
+        );
 
       default:
         return (
@@ -159,47 +266,76 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden font-sans antialiased transition-colors">
+    <div className="flex h-screen w-full bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden font-sans antialiased transition-colors relative">
       
-      {/* Sidebar for Desktop and Mobile */}
-      <Sidebar
-        currentScreen={currentScreen}
-        onNavigate={(screen) => {
-          setCurrentScreen(screen);
-          setIsMobileSidebarOpen(false);
-        }}
-        isOpenMobile={isMobileSidebarOpen}
-        onCloseMobile={() => setIsMobileSidebarOpen(false)}
-      />
+      {/* Floating Focus Mode Banner */}
+      {isFocusMode && (
+        <div className="fixed top-3 right-4 z-50 flex items-center gap-2.5 bg-slate-950/90 backdrop-blur-md border border-amber-500/50 shadow-2xl px-3.5 py-1.5 rounded-full animate-in fade-in slide-in-from-top-2 duration-200">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-xs font-semibold text-amber-300">Modo Foco Ativo</span>
+          <button
+            onClick={() => setIsFocusMode(false)}
+            className="ml-1 px-2.5 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Pressione ESC para sair do Modo Foco"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+            Sair (Esc)
+          </button>
+        </div>
+      )}
+
+      {/* Sidebar for Desktop and Mobile (hidden in Focus Mode) */}
+      {!isFocusMode && (
+        <Sidebar
+          currentScreen={currentScreen}
+          onNavigate={(screen) => {
+            setCurrentScreen(screen);
+            setIsMobileSidebarOpen(false);
+          }}
+          isOpenMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
 
       {/* Main Layout Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
         
-        {/* Mobile Header Bar with Hamburger */}
-        <div className="md:hidden bg-[var(--surface-card)] text-[var(--text-primary)] p-3 flex items-center justify-between border-b border-[var(--border-subtle)]">
-          <button
-            onClick={() => setIsMobileSidebarOpen(true)}
-            className="p-1.5 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]"
-            aria-label="Abrir menu lateral"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <span className="font-bold text-sm text-cyan-400">Contaju Gestão Financeira</span>
-          <div className="w-7 h-7 rounded-lg bg-[#101827] border border-cyan-400/40 text-cyan-400 flex items-center justify-center font-bold text-xs">
-            {currentUser.name.substring(0, 2).toUpperCase()}
+        {/* Mobile Header Bar with Hamburger (hidden in Focus Mode) */}
+        {!isFocusMode && (
+          <div className="md:hidden bg-[var(--surface-card)] text-[var(--text-primary)] p-3 flex items-center justify-between border-b border-[var(--border-subtle)]">
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="p-1.5 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]"
+              aria-label="Abrir menu lateral"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="font-bold text-sm text-amber-400">Contaju Gestão Financeira</span>
+            <div className="w-7 h-7 rounded-lg bg-[#101827] border border-amber-400/40 text-amber-400 flex items-center justify-center font-bold text-xs">
+              {currentUser.name.substring(0, 2).toUpperCase()}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Global Header */}
-        <Header
-          currentUser={currentUser}
-          onOpenNewTitleModal={handleOpenNewTitleModal}
-          onOpenTransferModal={() => setIsTransferModalOpen(true)}
-          onOpenBillingModal={() => setIsBillingModalOpen(true)}
-        />
+        {/* Global Header (hidden in Focus Mode) */}
+        {!isFocusMode && (
+          <Header
+            currentUser={currentUser}
+            onOpenNewTitleModal={handleOpenNewTitleModal}
+            onOpenTransferModal={() => setIsTransferModalOpen(true)}
+            onOpenBillingModal={() => setIsBillingModalOpen(true)}
+            onNavigate={(screen) => setCurrentScreen(screen)}
+            onNavigateWithSearch={handleNavigateWithSearch}
+            onToggleCalculator={handleToggleCalculator}
+            isCalculatorOpen={isCalculatorOpen}
+            isCalculatorMinimized={isCalculatorMinimized}
+          />
+        )}
 
         {/* Main Dynamic View Scroll Area - Full Screen Width */}
-        <main className="flex-1 overflow-y-auto p-2.5 sm:p-3.5 md:p-4 bg-[var(--bg-app)] text-[var(--text-primary)] w-full min-w-0">
+        <main className={`flex-1 overflow-y-auto bg-[var(--bg-app)] text-[var(--text-primary)] w-full min-w-0 ${
+          isFocusMode ? 'p-3 sm:p-5' : 'p-2.5 sm:p-3.5 md:p-4'
+        }`}>
           <div className="w-full min-w-0 space-y-4">
             {renderActiveScreen()}
           </div>
@@ -207,35 +343,98 @@ export default function App() {
       </div>
 
       {/* Transactional Modals */}
-      <NewTitleModal
-        isOpen={isNewTitleModalOpen}
-        defaultType={newTitleType}
-        onClose={() => setIsNewTitleModalOpen(false)}
-        onCreated={() => {
-          setIsNewTitleModalOpen(false);
-          // force re-render
-          setCurrentScreen(prev => prev);
-        }}
-      />
+      {isNewTitleModalOpen && (
+        <NewTitleModal
+          key={`new-title-${newTitleType}`}
+          isOpen={isNewTitleModalOpen}
+          defaultType={newTitleType}
+          onClose={() => setIsNewTitleModalOpen(false)}
+          onSaved={(details) => {
+            setIsNewTitleModalOpen(false);
+            const tipoLabel = (details?.type || newTitleType) === 'RECEBER' ? 'Título a receber' : 'Título a pagar';
+            const countLabel = details?.count && details.count > 1 ? ` (${details.count} lançamentos/parcelas)` : '';
+            const descLabel = details?.description ? `: "${details.description}"` : '';
+            showSuccess(
+              `${tipoLabel}${countLabel}${descLabel} salvo com sucesso no sistema!`,
+              'Lançamento Concluído'
+            );
+            // force re-render
+            setCurrentScreen(prev => prev);
+          }}
+          onCreated={() => {
+            setIsNewTitleModalOpen(false);
+            setCurrentScreen(prev => prev);
+          }}
+          onError={(err) => {
+            showError(err, 'Erro ao Salvar Título');
+          }}
+        />
+      )}
 
       <TransferModal
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
         onTransferred={() => {
           setIsTransferModalOpen(false);
+          showSuccess('Transferência entre contas bancárias registrada com sucesso!', 'Transferência Efetuada');
           setCurrentScreen(prev => prev);
+        }}
+        onCompleted={() => {
+          setIsTransferModalOpen(false);
+          showSuccess('Transferência entre contas bancárias registrada com sucesso!', 'Transferência Efetuada');
+          setCurrentScreen(prev => prev);
+        }}
+        onError={(err) => {
+          showError(err, 'Falha na Transferência');
         }}
       />
 
       <BillingGenerationModal
         isOpen={isBillingModalOpen}
         onClose={() => setIsBillingModalOpen(false)}
-        onGenerated={() => {
+        onGenerated={(res) => {
           setIsBillingModalOpen(false);
+          if (res && res.generatedCount > 0) {
+            showSuccess(
+              `${res.generatedCount} título(s) gerados para a competência selecionada!`,
+              'Faturamento Concluído'
+            );
+          } else if (res && res.alreadyExistingCount > 0) {
+            showInfo(
+              `Todos os contratos ativos já foram faturados anteriormente para este período (${res.alreadyExistingCount} títulos existentes).`,
+              'Faturamento em Dia'
+            );
+          } else {
+            showSuccess('Geração de faturamento concluída com sucesso!', 'Faturamento Concluído');
+          }
           setCurrentScreen(prev => prev);
         }}
+      />
+
+      {/* Sistema Global de Notificações (Toast) */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Calculadora Flutuante e Minimizável do Sistema */}
+      <FloatingCalculator
+        isOpen={isCalculatorOpen}
+        isMinimized={isCalculatorMinimized}
+        onOpen={() => {
+          setIsCalculatorOpen(true);
+          setIsCalculatorMinimized(false);
+        }}
+        onMinimize={() => setIsCalculatorMinimized(true)}
+        onClose={() => setIsCalculatorOpen(false)}
       />
 
     </div>
   );
 }
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+

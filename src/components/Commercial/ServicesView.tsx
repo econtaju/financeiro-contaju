@@ -3,15 +3,25 @@ import { Briefcase, Plus, Search, CheckCircle2, Edit2, Tag } from 'lucide-react'
 import { ServiceItem } from '../../types';
 import { storage } from '../../services/storageService';
 import { formatBRL } from '../../services/financialEngine';
+import { matchesSearch } from '../../utils/searchUtils';
 
-export const ServicesView: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState('');
+interface ServicesViewProps {
+  initialSearch?: string;
+}
+
+export const ServicesView: React.FC<ServicesViewProps> = ({ initialSearch = '' }) => {
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+
+  React.useEffect(() => {
+    if (initialSearch !== undefined) {
+      setSearchTerm(initialSearch);
+    }
+  }, [initialSearch]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<ServiceItem | null>(null);
 
   const services = storage.getServices().filter(s =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch([s.name, s.description], searchTerm)
   );
 
   const chartAccounts = storage.getChartAccounts().filter(a => a.isAnalytical && a.isActive);

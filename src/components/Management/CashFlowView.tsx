@@ -1,108 +1,309 @@
-import React, { useState } from 'react';
-import { 
-  LineChart, 
-  Download, 
-  FileSpreadsheet, 
-  Wallet, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  CheckCircle2, 
+import React, { useState, useMemo } from 'react';
+import {
+  LineChart,
+  Download,
+  FileSpreadsheet,
+  Wallet,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle2,
   Clock,
-  Layers
+  Layers,
+  Calendar,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Scale,
+  Maximize2,
+  Minimize2,
+  AlertTriangle,
+  AlertCircle,
+  ShieldCheck,
+  Check,
+  Printer,
+  FileText
 } from 'lucide-react';
-import { ReportingEngine, CashFlowMatrix } from '../../services/reportingEngine';
+import { ReportingEngine, CashFlowLineItem } from '../../services/reportingEngine';
 import { formatBRL } from '../../services/financialEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
+import { exportCashFlowToPDF } from '../../utils/pdfExportUtils';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { storage } from '../../services/storageService';
 
-export const CashFlowView: React.FC = () => {
+export type CashFlowTimeHorizon = 'ANO' | 'SEMESTRE' | 'TRIMESTRE';
+
+export interface CashFlowViewProps {
+  isFocusMode?: boolean;
+  onToggleFocusMode?: () => void;
+}
+
+export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggleFocusMode }) => {
   const currentYear = new Date().getFullYear();
   const { period } = useGlobalPeriod();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [mode, setMode] = useState<'REALIZADO' | 'PROJETADO' | 'COMBINADO'>('REALIZADO');
+  const [pdfToast, setPdfToast] = useState<string | null>(null);
+
+  // Filtros de prazo solicitados: Ano (12 meses), Semestre ou Trimestre
+  const [timeHorizon, setTimeHorizon] = useState<CashFlowTimeHorizon>('ANO');
+  const [selectedSemester, setSelectedSemester] = useState<1 | 2>(1);
+  const [selectedQuarter, setSelectedQuarter] = useState<1 | 2 | 3 | 4>(1);
 
   const effectiveYear = period.active ? period.year : selectedYear;
-  const cashData = ReportingEngine.generateCashFlow(effectiveYear, mode);
+  // Note: mode can be passed directly. If COMBINADO, map to CONSOLIDADO in ReportingEngine
+  const engineMode = mode === 'COMBINADO' ? 'CONSOLIDADO' : mode;
+  const cashData = ReportingEngine.generateCashFlow(effectiveYear, engineMode);
   const allTitles = storage.getTitles();
 
+  // Definição dos meses ativos de acordo com o filtro de horizonte de tempo
+  const activeMonthIndices = useMemo(() => {
+    if (timeHorizon === 'ANO') {
+      return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    }
+    if (timeHorizon === 'SEMESTRE') {
+      return selectedSemester === 1 ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11];
+    }
+    // TRIMESTRE
+    if (selectedQuarter === 1) return [0, 1, 2];
+    if (selectedQuarter === 2) return [3, 4, 5];
+    if (selectedQuarter === 3) return [6, 7, 8];
+    return [9, 10, 11];
+  }, [timeHorizon, selectedSemester, selectedQuarter]);
+
+  const horizonLabel = useMemo(() => {
+    if (timeHorizon === 'ANO') return `Ano Completo (${effectiveYear}) - 12 Meses`;
+    if (timeHorizon === 'SEMESTRE') return `${selectedSemester}º Semestre de ${effectiveYear}`;
+    return `${selectedQuarter}º Trimestre (${selectedQuarter}T) de ${effectiveYear}`;
+  }, [timeHorizon, selectedSemester, selectedQuarter, effectiveYear]);
+
+  const totalColLabel = useMemo(() => {
+    if (timeHorizon === 'ANO') return 'Total Exercício';
+    if (timeHorizon === 'SEMESTRE') return `Total ${selectedSemester}º Sem.`;
+    return `Total ${selectedQuarter}º Trim.`;
+  }, [timeHorizon, selectedSemester, selectedQuarter]);
+
+  // Cálculo do total da linha para o período filtrado
+  const getLinePeriodTotal = (line: CashFlowLineItem): number => {
+    const isInitialBalance = line.id === 'cf-initial' || line.name.includes('SALDO INICIAL');
+    const isFinalBalance = line.id === 'cf-final' || line.name.includes('SALDO FINAL');
+
+    if (isInitialBalance) {
+      // Saldo inicial do primeiro mês do período filtrado
+      const firstMonthIdx = activeMonthIndices[0];
+      return line.valuesByMonth[firstMonthIdx] || 0;
+    }
+    if (isFinalBalance) {
+      // Saldo final do último mês do período filtrado
+      const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
+      return line.valuesByMonth[lastMonthIdx] || 0;
+    }
+    // Linha de fluxo: somatório dos meses do período
+    return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
+  };
+
+  // KPIs executivos do período selecionado
+  const periodKPIs = useMemo(() => {
+    const initialLine = cashData.lines.find(l => l.id === 'cf-initial');
+    const finalLine = cashData.lines.find(l => l.id === 'cf-final');
+    const opInLine = cashData.lines.find(l => l.id === 'cf-op-in');
+    const opOutLine = cashData.lines.find(l => l.id === 'cf-op-out');
+    const invInLine = cashData.lines.find(l => l.id === 'cf-inv-in');
+    const invOutLine = cashData.lines.find(l => l.id === 'cf-inv-out');
+    const finInLine = cashData.lines.find(l => l.id === 'cf-fin-in');
+    const finOutLine = cashData.lines.find(l => l.id === 'cf-fin-out');
+    const netVarLine = cashData.lines.find(l => l.id === 'cf-net-variation');
+
+    const firstMonthIdx = activeMonthIndices[0];
+    const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
+
+    const initialBalance = initialLine ? (initialLine.valuesByMonth[firstMonthIdx] || 0) : 0;
+    const finalBalance = finalLine ? (finalLine.valuesByMonth[lastMonthIdx] || 0) : 0;
+
+    const sumMonths = (line?: CashFlowLineItem) => {
+      if (!line) return 0;
+      return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
+    };
+
+    const totalInflows = sumMonths(opInLine) + sumMonths(invInLine) + sumMonths(finInLine);
+    const totalOutflows = sumMonths(opOutLine) + sumMonths(invOutLine) + sumMonths(finOutLine);
+    const netCashGeneration = totalInflows - totalOutflows;
+
+    return {
+      initialBalance,
+      finalBalance,
+      totalInflows,
+      totalOutflows,
+      netCashGeneration
+    };
+  }, [cashData, activeMonthIndices]);
+
   const handleExportExcel = () => {
-    const headers = ['Estrutura', 'Descrição', ...cashData.months, 'Total Exercício'];
+    const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
+    const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
     const rows = cashData.lines.map(l => [
       l.code || '-',
       l.name,
-      ...l.valuesByMonth,
-      l.totalYear
+      ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+      getLinePeriodTotal(l)
     ]);
-    exportToExcel(`Fluxo-Caixa-${mode}-${selectedYear}`, `Fluxo de Caixa ${mode}`, headers, rows);
+    exportToExcel(`Fluxo-Caixa-${timeHorizon}-${mode}-${effectiveYear}`, `Fluxo Caixa ${timeHorizon}`, headers, rows);
   };
 
   const handleExportCSV = () => {
-    const headers = ['Estrutura', 'Descrição', ...cashData.months, 'Total Exercício'];
+    const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
+    const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
     const rows = cashData.lines.map(l => [
       l.code || '-',
       l.name,
-      ...l.valuesByMonth,
-      l.totalYear
+      ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+      getLinePeriodTotal(l)
     ]);
-    exportToCSV(`Fluxo-Caixa-${mode}-${selectedYear}`, headers, rows);
+    exportToCSV(`Fluxo-Caixa-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
   };
+
+  const handleExportPDF = () => {
+    try {
+      const company = storage.getCompany();
+      const companyName = company.companyName || company.tradeName || 'Contaju Gestão Financeira';
+
+      exportCashFlowToPDF(
+        {
+          months: cashData.months,
+          lines: cashData.lines,
+          finalBalances: cashData.lines.find(l => l.id === 'cf-final')?.valuesByMonth
+        },
+        effectiveYear,
+        {
+          mode,
+          companyName,
+          timeHorizonLabel: horizonLabel,
+          activeMonthIndices,
+          totalColLabel
+        }
+      );
+
+      setPdfToast(`PDF Executivo do Fluxo de Caixa (${mode} • ${effectiveYear} • ${horizonLabel}) gerado em formato A4 Paisagem com sucesso!`);
+      setTimeout(() => setPdfToast(null), 4500);
+    } catch (err: any) {
+      console.error('Erro ao gerar PDF do Fluxo de Caixa:', err);
+      alert(`Falha ao exportar PDF: ${err.message || 'Erro inesperado'}`);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Diagnóstico Inteligente de Ponto Crítico de Liquidez (Sugestão 5)
+  const liquidityDiagnostic = useMemo(() => {
+    const finalLine = cashData.lines.find(l => l.id === 'cf-final');
+    if (!finalLine) return null;
+
+    let minBalance = Infinity;
+    let minMonthIdx = activeMonthIndices[0];
+    const negativeMonths: { month: string; balance: number }[] = [];
+
+    activeMonthIndices.forEach(idx => {
+      const bal = finalLine.valuesByMonth[idx] || 0;
+      if (bal < minBalance) {
+        minBalance = bal;
+        minMonthIdx = idx;
+      }
+      if (bal < 0) {
+        negativeMonths.push({ month: cashData.months[idx], balance: bal });
+      }
+    });
+
+    const minMonthName = cashData.months[minMonthIdx];
+    const avgOutflow = (periodKPIs.totalOutflows / (activeMonthIndices.length || 1)) || 1;
+    // Buffer prudencial recomendado: 20% da média de desembolsos mensais
+    const safetyBuffer = Math.max(1000, avgOutflow * 0.2);
+
+    let status: 'CRITICO' | 'ALERTA' | 'SAUDAVEL' = 'SAUDAVEL';
+    if (minBalance < 0 || negativeMonths.length > 0) {
+      status = 'CRITICO';
+    } else if (minBalance < safetyBuffer) {
+      status = 'ALERTA';
+    }
+
+    return {
+      status,
+      minBalance: minBalance === Infinity ? 0 : minBalance,
+      minMonthName,
+      negativeMonthsCount: negativeMonths.length,
+      negativeMonths,
+      safetyBuffer,
+      burnRateMonthly: periodKPIs.netCashGeneration < 0 ? Math.abs(periodKPIs.netCashGeneration / activeMonthIndices.length) : 0
+    };
+  }, [cashData, activeMonthIndices, periodKPIs]);
 
   return (
     <div className="space-y-6">
-      
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+
+      {/* Header Principal */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-xs">
         <div>
           <div className="flex items-center space-x-2">
-            <LineChart className="w-5 h-5 text-emerald-600" />
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            <LineChart className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
               Fluxo de Caixa Direto
             </h1>
+            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[var(--surface-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)]">
+              {horizonLabel}
+            </span>
           </div>
-          <p className="text-xs text-slate-700 mt-0.5">
-            Demonstração da liquidez financeira por regime de caixa (entradas e saídas efetivas e projetadas).
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
+            Demonstração estruturada da liquidez por regime de caixa (entradas e saídas efetivas e projetadas).
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Realizado / Projetado / Combinado Toggles */}
-          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-medium">
+          <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs font-medium">
             <button
               onClick={() => setMode('REALIZADO')}
-              className={`px-3 py-1 rounded transition-colors ${
-                mode === 'REALIZADO' ? 'bg-white font-bold text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                mode === 'REALIZADO'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
               Realizado
             </button>
             <button
               onClick={() => setMode('PROJETADO')}
-              className={`px-3 py-1 rounded transition-colors ${
-                mode === 'PROJETADO' ? 'bg-white font-bold text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                mode === 'PROJETADO'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
               Projetado
             </button>
             <button
               onClick={() => setMode('COMBINADO')}
-              className={`px-3 py-1 rounded transition-colors ${
-                mode === 'COMBINADO' ? 'bg-white font-bold text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                mode === 'COMBINADO'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
               Combinado
             </button>
           </div>
 
-          <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-            <span className="font-semibold text-slate-700 px-1.5">Ano:</span>
+          {/* Seletor de Ano */}
+          <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
+            <span className="font-semibold text-[var(--text-secondary)] px-1.5">Ano:</span>
             {[currentYear - 1, currentYear, currentYear + 1].map(y => (
               <button
                 key={y}
                 onClick={() => setSelectedYear(y)}
-                className={`px-2 py-1 rounded font-medium transition-colors ${
-                  selectedYear === y ? 'bg-white font-bold text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                  selectedYear === y
+                    ? 'bg-[var(--surface-card)] font-bold text-[var(--text-primary)] shadow-xs border border-[var(--border-highlight)]'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 {y}
@@ -110,13 +311,49 @@ export const CashFlowView: React.FC = () => {
             ))}
           </div>
 
+          {/* Exportações */}
+          <button
+            onClick={handleExportPDF}
+            className="px-3.5 py-1.5 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded-xl text-xs font-semibold transition-colors flex items-center shadow-xs cursor-pointer"
+            title="Exportar demonstração executiva do fluxo de caixa em PDF (A4 Paisagem)"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-amber-500 shrink-0" />
+            PDF (A4)
+          </button>
+
+          <button
+            onClick={handlePrint}
+            className="px-3.5 py-1.5 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded-xl text-xs font-semibold transition-colors flex items-center shadow-xs cursor-pointer"
+            title="Imprimir ou Salvar em PDF pelo navegador (com variáveis de tema)"
+          >
+            <Printer className="w-4 h-4 mr-1.5 text-[var(--text-secondary)] shrink-0" />
+            Imprimir
+          </button>
+
           <button
             onClick={handleExportExcel}
-            className="px-3 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors flex items-center shadow-2xs"
+            className="px-3.5 py-1.5 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded-xl text-xs font-semibold transition-colors flex items-center shadow-xs cursor-pointer"
+            title="Exportar fluxo de caixa para planilha Excel"
           >
-            <FileSpreadsheet className="w-4 h-4 mr-1 text-emerald-700" />
+            <FileSpreadsheet className="w-4 h-4 mr-1.5 text-[var(--text-secondary)]" />
             Excel
           </button>
+
+          {/* Modo Foco */}
+          {onToggleFocusMode && (
+            <button
+              onClick={onToggleFocusMode}
+              className={`px-3.5 py-1.5 border rounded-xl text-xs font-semibold transition-all flex items-center shadow-xs cursor-pointer ${
+                isFocusMode
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-[var(--border-highlight)] font-bold'
+                  : 'bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-primary)]'
+              }`}
+              title={isFocusMode ? "Sair do Modo Foco (Esc)" : "Ocultar cabeçalho e menu lateral para focar no fluxo financeiro"}
+            >
+              {isFocusMode ? <Minimize2 className="w-4 h-4 mr-1.5" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
+              {isFocusMode ? 'Sair do Modo Foco' : 'Modo Foco'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -127,94 +364,430 @@ export const CashFlowView: React.FC = () => {
         totalCount={allTitles.length}
       />
 
-      {/* Mode explanation banner */}
-      <div className="bg-emerald-50/50 border border-emerald-100 p-3.5 rounded-lg flex items-center justify-between text-xs text-emerald-950">
-        <div className="flex items-center space-x-2">
-          <Wallet className="w-4 h-4 text-emerald-700 flex-shrink-0" />
-          <span>
-            Visualizando visão <strong>{mode}</strong> do Fluxo de Caixa Direto para o exercício <strong>{selectedYear}</strong>.
+      {/* Barra de Filtros de Prazos: Ano (12 meses) / Semestre / Trimestre */}
+      <div className="bg-[var(--surface-card)] p-4 rounded-2xl border border-[var(--border-subtle)] shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+
+          {/* Seletores Principais de Prazo */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider flex items-center mr-1">
+              <Calendar className="w-3.5 h-3.5 mr-1 text-[var(--text-secondary)]" />
+              Horizonte de Análise:
+            </span>
+
+            {/* Opção Ano Todo (12 meses) */}
+            <button
+              onClick={() => setTimeHorizon('ANO')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center cursor-pointer ${
+                timeHorizon === 'ANO'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                  : 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+              }`}
+            >
+              Ano Todo (12 Meses)
+            </button>
+
+            {/* Opção Semestre */}
+            <button
+              onClick={() => setTimeHorizon('SEMESTRE')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center cursor-pointer ${
+                timeHorizon === 'SEMESTRE'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                  : 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+              }`}
+            >
+              Semestre
+            </button>
+
+            {/* Opção Trimestre */}
+            <button
+              onClick={() => setTimeHorizon('TRIMESTRE')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center cursor-pointer ${
+                timeHorizon === 'TRIMESTRE'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                  : 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+              }`}
+            >
+              Trimestre
+            </button>
+          </div>
+
+          {/* Sub-filtros quando Semestre ou Trimestre está selecionado */}
+          <div className="flex items-center space-x-2">
+            {timeHorizon === 'SEMESTRE' && (
+              <div className="flex items-center space-x-1.5 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)]">
+                <button
+                  onClick={() => setSelectedSemester(1)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedSemester === 1
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  1º Semestre (Jan - Jun)
+                </button>
+                <button
+                  onClick={() => setSelectedSemester(2)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedSemester === 2
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  2º Semestre (Jul - Dez)
+                </button>
+              </div>
+            )}
+
+            {timeHorizon === 'TRIMESTRE' && (
+              <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)]">
+                {([1, 2, 3, 4] as const).map(q => {
+                  const qLabels = ['1T (Jan-Mar)', '2T (Abr-Jun)', '3T (Jul-Set)', '4T (Out-Dez)'];
+                  return (
+                    <button
+                      key={q}
+                      onClick={() => setSelectedQuarter(q)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        selectedQuarter === q
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {qLabels[q - 1]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Banner informativo de regime */}
+        <div className="bg-[var(--surface-elevated)] border border-[var(--border-subtle)] p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center space-x-2">
+            <Wallet className="w-4 h-4 text-[var(--text-secondary)] shrink-0" />
+            <span>
+              Visão <strong>{mode}</strong> do Fluxo de Caixa para <strong>{horizonLabel}</strong>.
+            </span>
+          </div>
+          <span className="text-[11px] text-[var(--text-secondary)]">
+            {mode === 'REALIZADO'
+              ? 'Considera liquidações bancárias efetivadas'
+              : mode === 'PROJETADO'
+              ? 'Considera títulos abertos pela data prevista de caixa'
+              : 'Unifica histórico realizado com saldo futuro projetado'}
           </span>
         </div>
-        <span className="text-[11px] text-emerald-800">
-          {mode === 'REALIZADO' 
-            ? 'Considera unicamente liquidações bancárias já confirmadas'
-            : mode === 'PROJETADO'
-            ? 'Considera títulos abertos por data de previsão de caixa'
-            : 'Unifica histórico realizado com saldo futuro projetado'}
-        </span>
       </div>
 
-      {/* Matrix Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
-                <th className="py-2.5 px-4 min-w-[280px] sticky left-0 bg-slate-100 z-10">Rubrica de Caixa</th>
-                {cashData.months.map(m => (
-                  <th key={m} className="py-2.5 px-2.5 text-right font-mono min-w-[90px]">{m}</th>
-                ))}
-                <th className="py-2.5 px-3.5 text-right font-bold text-slate-900 min-w-[120px] bg-slate-200/50">
-                  Total Exercício
+      {/* Toast de Exportação de PDF */}
+      {pdfToast && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-3 rounded-xl font-bold text-xs flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 stroke-[3]" />
+            <span>{pdfToast}</span>
+          </div>
+          <button
+            onClick={() => setPdfToast(null)}
+            className="text-slate-900 hover:text-black font-extrabold text-sm px-2 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Diagnóstico Executivo de Ponto Crítico de Liquidez */}
+      {liquidityDiagnostic && (
+        <div className={`p-4 rounded-2xl border transition-all shadow-xs ${
+          liquidityDiagnostic.status === 'CRITICO'
+            ? 'bg-rose-500/10 border-rose-500/40 text-rose-950 dark:text-rose-100'
+            : liquidityDiagnostic.status === 'ALERTA'
+            ? 'bg-amber-500/10 border-amber-500/40 text-amber-950 dark:text-amber-100'
+            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-950 dark:text-emerald-100'
+        }`}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className={`p-2.5 rounded-xl shrink-0 ${
+                liquidityDiagnostic.status === 'CRITICO'
+                  ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/50'
+                  : liquidityDiagnostic.status === 'ALERTA'
+                  ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/50'
+                  : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/50'
+              }`}>
+                {liquidityDiagnostic.status === 'CRITICO' ? (
+                  <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                ) : liquidityDiagnostic.status === 'ALERTA' ? (
+                  <AlertCircle className="w-5 h-5 stroke-[2.5]" />
+                ) : (
+                  <ShieldCheck className="w-5 h-5 stroke-[2.5]" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm text-[var(--text-primary)]">
+                    {liquidityDiagnostic.status === 'CRITICO'
+                      ? 'Ponto Crítico de Liquidez Detectado'
+                      : liquidityDiagnostic.status === 'ALERTA'
+                      ? 'Atenção à Margem de Segurança de Caixa'
+                      : 'Liquidez Operacional Blindada'}
+                  </span>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                    liquidityDiagnostic.status === 'CRITICO'
+                      ? 'bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-500/40'
+                      : liquidityDiagnostic.status === 'ALERTA'
+                      ? 'bg-amber-500/20 text-amber-900 dark:text-amber-300 border-amber-500/40'
+                      : 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border-emerald-500/40'
+                  }`}>
+                    {liquidityDiagnostic.status === 'CRITICO' ? 'Risco de Déficit' : liquidityDiagnostic.status === 'ALERTA' ? 'Margem Estreita' : 'Saudável'}
+                  </span>
+                </div>
+
+                <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
+                  {liquidityDiagnostic.status === 'CRITICO' ? (
+                    <>
+                      Projeção indica <strong>saldo negativo em {liquidityDiagnostic.minMonthName} ({formatBRL(liquidityDiagnostic.minBalance)})</strong>.
+                      Existem {liquidityDiagnostic.negativeMonthsCount} mês(es) com déficit de liquidez no período.
+                      Recomendado negociar prazos de fornecedores, acionar linha de crédito ou antecipar recebíveis.
+                    </>
+                  ) : liquidityDiagnostic.status === 'ALERTA' ? (
+                    <>
+                      Menor saldo projetado ocorre em <strong>{liquidityDiagnostic.minMonthName} ({formatBRL(liquidityDiagnostic.minBalance)})</strong>,
+                      abaixo da reserva prudencial recomendada de <strong>{formatBRL(liquidityDiagnostic.safetyBuffer)}</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Ponto mínimo de caixa preservado em <strong>{formatBRL(liquidityDiagnostic.minBalance)} ({liquidityDiagnostic.minMonthName})</strong>.
+                      A empresa mantém folga financeira em todos os meses analisados, sem risco de ruptura de liquidez.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <div className="text-right">
+                <span className="text-[10px] text-[var(--text-secondary)] block uppercase font-bold">Ponto Mais Baixo</span>
+                <span className={`font-mono font-bold text-xs ${
+                  liquidityDiagnostic.minBalance < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
+                }`}>
+                  {formatBRL(liquidityDiagnostic.minBalance)} ({liquidityDiagnostic.minMonthName})
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cards de Resumo Executivo do Período Filtrado */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        {/* 1. Saldo Inicial */}
+        <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+            <span>Saldo Inicial</span>
+            <Wallet className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+          </div>
+          <div className="mt-2 text-lg font-mono font-bold text-[var(--text-primary)]">
+            {formatBRL(periodKPIs.initialBalance)}
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)]">
+            Abertura em {cashData.months[activeMonthIndices[0]]}/{effectiveYear}
+          </span>
+        </div>
+
+        {/* 2. Total Entradas */}
+        <div className="bg-emerald-500/[0.08] dark:bg-emerald-950/20 p-3.5 rounded-xl border border-emerald-500/30 shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-emerald-800 dark:text-emerald-400 uppercase font-semibold">
+            <span>(+) Entradas</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+          </div>
+          <div className="mt-2 text-lg font-mono font-bold text-emerald-700 dark:text-emerald-300">
+            {formatBRL(periodKPIs.totalInflows)}
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)]">
+            Recebimentos no período
+          </span>
+        </div>
+
+        {/* 3. Total Saídas */}
+        <div className="bg-rose-500/[0.08] dark:bg-rose-950/20 p-3.5 rounded-xl border border-rose-500/30 shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-rose-800 dark:text-rose-400 uppercase font-semibold">
+            <span>(-) Saídas</span>
+            <ArrowDownRight className="w-3.5 h-3.5 text-rose-700 dark:text-rose-400" />
+          </div>
+          <div className="mt-2 text-lg font-mono font-bold text-rose-700 dark:text-rose-300">
+            {formatBRL(periodKPIs.totalOutflows)}
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)]">
+            Desembolsos no período
+          </span>
+        </div>
+
+        {/* 4. Geração Líquida */}
+        <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+            <span>(=) Geração Líquida</span>
+            <Scale className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+          </div>
+          <div className={`mt-2 text-lg font-mono font-bold ${periodKPIs.netCashGeneration >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+            {periodKPIs.netCashGeneration >= 0 ? '+' : ''}{formatBRL(periodKPIs.netCashGeneration)}
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)]">
+            {periodKPIs.netCashGeneration >= 0 ? 'Superávit financeiro' : 'Déficit financeiro'}
+          </span>
+        </div>
+
+        {/* 5. Saldo Final */}
+        <div className="bg-[var(--surface-elevated)] p-3.5 rounded-xl border-2 border-[var(--border-highlight)] shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-[var(--text-primary)] uppercase font-bold">
+            <span>(=) Saldo Final</span>
+            <Wallet className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+          </div>
+          <div className={`mt-2 text-lg font-mono font-bold ${periodKPIs.finalBalance >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+            {formatBRL(periodKPIs.finalBalance)}
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)] font-semibold">
+            Fechamento em {cashData.months[activeMonthIndices[activeMonthIndices.length - 1]]}/{effectiveYear}
+          </span>
+        </div>
+      </div>
+
+      {/* Tabela Estruturada do Fluxo de Caixa Direto */}
+      <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
+        <div className="p-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center space-x-2">
+            <span className="font-bold text-[var(--text-primary)]">Matriz do Fluxo de Caixa</span>
+            <span className="text-[11px] text-[var(--text-secondary)]">
+              • Exibindo {activeMonthIndices.length} meses ({horizonLabel})
+            </span>
+          </div>
+          <span className="text-[11px] text-[var(--text-secondary)] font-medium">
+            Valores expressos em Reais (R$)
+          </span>
+        </div>
+
+        <div className="overflow-x-auto max-h-[720px]">
+          <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 shadow-xs">
+              <tr className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                <th className="py-3 px-4 min-w-[280px] sticky left-0 bg-slate-100 dark:bg-slate-800 z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold">
+                  Rubrica Financeira / Estrutura
+                </th>
+
+                {/* Colunas dos Meses Selecionados */}
+                {activeMonthIndices.map(mIdx => {
+                  const mName = cashData.months[mIdx];
+                  return (
+                    <th 
+                      key={mIdx} 
+                      className="py-3 px-2 text-right min-w-[95px] border-r border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold bg-slate-100 dark:bg-slate-800"
+                    >
+                      {mName}/{String(effectiveYear).substring(2)}
+                    </th>
+                  );
+                })}
+
+                {/* Coluna de Total do Período */}
+                <th className="py-3 px-3 text-right font-extrabold text-slate-900 dark:text-slate-100 min-w-[130px] bg-slate-100 dark:bg-slate-800 border-l-2 border-slate-300 dark:border-slate-700">
+                  {totalColLabel}
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-150">
+
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {cashData.lines.map(line => {
                 const isSummary = line.isSummary;
+                const isHeader = line.isHeader;
                 const isFinalBalance = line.id === 'cf-final' || line.name.includes('SALDO FINAL');
                 const isInitialBalance = line.id === 'cf-initial' || line.name.includes('SALDO INICIAL');
                 const isOutflow = line.name.startsWith('(-)');
+                const isNetLine = line.id === 'cf-net-variation' || line.id === 'cf-op-net';
+                const periodTotal = getLinePeriodTotal(line);
+
+                let rowBg = 'hover:bg-slate-100/70 dark:hover:bg-slate-800/40 text-slate-900 dark:text-slate-100';
+                let stickyBg = 'bg-white dark:bg-[#121620] text-slate-900 dark:text-slate-100';
+
+                if (isFinalBalance) {
+                  rowBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs border-y-2 border-slate-400 dark:border-slate-600';
+                  stickyBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold';
+                } else if (isInitialBalance) {
+                  rowBg = 'bg-slate-50 dark:bg-slate-800/40 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700';
+                  stickyBg = 'bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-slate-100 font-semibold';
+                } else if (isHeader) {
+                  rowBg = 'bg-slate-100 dark:bg-slate-800/70 font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider text-xs border-t-2 border-slate-300 dark:border-slate-700';
+                  stickyBg = 'bg-slate-100 dark:bg-slate-800/70 text-slate-900 dark:text-slate-100 font-bold';
+                } else if (isSummary) {
+                  rowBg = 'bg-slate-100/90 dark:bg-slate-800/60 font-bold text-slate-900 dark:text-slate-100 border-t border-b border-slate-300 dark:border-slate-700';
+                  stickyBg = 'bg-slate-100 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 font-bold';
+                } else if (isNetLine) {
+                  rowBg = 'bg-blue-50/80 dark:bg-blue-950/40 font-bold text-slate-900 dark:text-slate-100 border-t-2 border-b-2 border-blue-200 dark:border-blue-800/60';
+                  stickyBg = 'bg-blue-50 dark:bg-blue-950/60 text-slate-900 dark:text-slate-100 font-bold';
+                }
 
                 return (
-                  <tr 
-                    key={line.id} 
-                    className={`transition-colors ${
-                      isFinalBalance
-                        ? 'bg-emerald-950 text-white font-extrabold text-xs'
-                        : isInitialBalance
-                        ? 'bg-slate-100/70 font-semibold text-slate-800'
-                        : isSummary 
-                        ? 'bg-slate-50/90 font-bold text-slate-900' 
-                        : 'hover:bg-slate-50/60 text-slate-700'
-                    }`}
-                  >
-                    <td className={`py-2 px-4 sticky left-0 z-10 ${
-                      isFinalBalance 
-                        ? 'bg-emerald-950' 
-                        : isSummary 
-                        ? 'bg-slate-50 font-bold' 
-                        : 'bg-white'
-                    }`} style={{ paddingLeft: `${line.level * 16 + 16}px` }}>
-                      <div className="flex items-center space-x-1.5 truncate max-w-xs sm:max-w-md">
-                        {line.code && <span className="font-mono text-[10px] text-slate-700">{line.code}</span>}
-                        <span className="truncate">{line.name}</span>
+                  <tr key={line.id} className={`${rowBg} transition-colors`}>
+                    {/* Nome da Rubrica com Recuo Hierárquico */}
+                    <td 
+                      className={`py-2 px-4 sticky left-0 z-10 border-r border-slate-200 dark:border-slate-700 ${stickyBg}`}
+                      style={{ paddingLeft: `${line.level * 16 + 16}px` }}
+                    >
+                      <div className="flex items-center space-x-2 truncate max-w-sm sm:max-w-md">
+                        {line.code && (
+                          <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                            {line.code}
+                          </span>
+                        )}
+                        <span className="truncate text-slate-900 dark:text-slate-100 font-semibold" title={line.name}>
+                          {line.name}
+                        </span>
                       </div>
                     </td>
 
-                    {line.valuesByMonth.map((val, mIdx) => (
-                      <td 
-                        key={mIdx} 
-                        className={`py-2 px-2.5 text-right font-mono ${
-                          isFinalBalance 
-                            ? 'text-emerald-300 font-bold' 
-                            : isOutflow && val > 0 
-                            ? 'text-rose-700' 
-                            : !isOutflow && val > 0 && !isInitialBalance
-                            ? 'text-emerald-700 font-medium'
-                            : 'text-slate-800'
-                        }`}
-                      >
-                        {val !== 0 ? formatBRL(Math.abs(val)) : '-'}
-                      </td>
-                    ))}
+                    {/* Valores dos Meses */}
+                    {activeMonthIndices.map(mIdx => {
+                      const val = line.valuesByMonth[mIdx] || 0;
+                      const isEven = mIdx % 2 === 0;
 
-                    <td className={`py-2 px-3.5 text-right font-bold font-mono ${
-                      isFinalBalance 
-                        ? 'bg-emerald-900 text-emerald-300 text-sm' 
-                        : 'bg-slate-100/40 text-slate-900'
+                      let cellColor = 'text-slate-900 dark:text-slate-100 font-medium';
+                      if (val === 0) {
+                        cellColor = 'text-slate-400 dark:text-slate-500 font-normal';
+                      } else if (isFinalBalance) {
+                        cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                      } else if (isInitialBalance) {
+                        cellColor = 'text-slate-900 dark:text-slate-100 font-bold';
+                      } else if (isOutflow && val > 0) {
+                        cellColor = 'text-rose-700 dark:text-rose-400 font-bold';
+                      } else if (!isOutflow && val > 0 && !isInitialBalance) {
+                        cellColor = 'text-emerald-700 dark:text-emerald-400 font-bold';
+                      } else if (isNetLine) {
+                        cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                      }
+
+                      const cellBg = (isFinalBalance || isHeader || isSummary || isNetLine) 
+                        ? '' 
+                        : (isEven ? 'bg-slate-50/40 dark:bg-white/[0.02]' : '');
+
+                      return (
+                        <td 
+                          key={mIdx} 
+                          className={`py-2 px-2 text-right font-mono border-r border-slate-200/60 dark:border-slate-800/60 ${cellColor} ${cellBg}`}
+                        >
+                          {val !== 0 ? formatBRL(Math.abs(val)) : '-'}
+                        </td>
+                      );
+                    })}
+
+                    {/* Total do Período Filtrado */}
+                    <td className={`py-2 px-3 text-right font-bold font-mono border-l-2 ${
+                      isFinalBalance
+                        ? 'bg-slate-200 dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-sm ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                        : isSummary
+                        ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold'
+                        : isNetLine
+                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 font-bold ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                        : 'bg-slate-50/80 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
                     }`}>
-                      {formatBRL(Math.abs(line.totalYear))}
+                      {formatBRL(Math.abs(periodTotal))}
                     </td>
                   </tr>
                 );

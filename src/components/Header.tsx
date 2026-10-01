@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
   Wallet, 
@@ -14,13 +14,18 @@ import {
   Calendar,
   Filter,
   Sun,
-  Moon
+  Moon,
+  Bell,
+  Search,
+  Calculator
 } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { NavigationScreen } from './Sidebar';
 import { storage } from '../services/storageService';
 import { FinancialEngine, formatBRL } from '../services/financialEngine';
 import { useGlobalPeriod } from '../hooks/useGlobalPeriod';
 import { GlobalPeriodSelectorModal } from './Common/GlobalPeriodSelectorModal';
+import { GlobalSearchModal } from './Common/GlobalSearchModal';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
 
 interface HeaderProps {
@@ -28,21 +33,59 @@ interface HeaderProps {
   onOpenNewTitleModal: (defaultType: 'RECEBER' | 'PAGAR') => void;
   onOpenTransferModal: () => void;
   onOpenBillingModal: () => void;
+  onNavigate?: (screen: NavigationScreen) => void;
+  onNavigateWithSearch?: (screen: NavigationScreen, searchFilter: string) => void;
+  onToggleCalculator?: () => void;
+  isCalculatorOpen?: boolean;
+  isCalculatorMinimized?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onOpenNewTitleModal,
   onOpenTransferModal,
-  onOpenBillingModal
+  onOpenBillingModal,
+  onNavigate,
+  onNavigateWithSearch,
+  onToggleCalculator,
+  isCalculatorOpen = false,
+  isCalculatorMinimized = false
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(storage.getTheme());
   const { period } = useGlobalPeriod();
   const company = storage.getCompany();
   const users = storage.getUsers();
   const consolidatedCash = FinancialEngine.getConsolidatedCashBalance();
+
+  // Keyboard shortcut Ctrl+K / Cmd+K para abrir busca global
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchModalOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Contagem de notificações em tempo real
+  const titles = storage.getTitles();
+  const todayStr = new Date().toISOString().split('T')[0];
+  const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+  const expiringContractsCount = contracts.filter(c => {
+    if (!c.endDate) return false;
+    const diffDays = Math.ceil((new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+    return diffDays >= 0 && diffDays <= 30;
+  }).length;
+  const payablesTodayCount = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === todayStr).length;
+  const pendingReconciliationCount = storage.getStatementEntries().filter(
+    s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO'
+  ).length;
+  const totalAlerts = expiringContractsCount + payablesTodayCount + pendingReconciliationCount;
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -106,10 +149,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
-      case 'ADMIN': return 'bg-amber-100 text-amber-800 border-amber-200';
-      case 'GESTOR_FINANCEIRO': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'OPERADOR': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-      case 'CONSULTA': return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'ADMIN': return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'GESTOR_FINANCEIRO': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      case 'OPERADOR': return 'bg-slate-500/20 text-slate-300 border-slate-500/40';
+      case 'CONSULTA': return 'bg-slate-500/15 text-slate-300 border-slate-500/30';
     }
   };
 
@@ -119,101 +162,150 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex justify-between items-center h-16">
           
           {/* Brand & Company info */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 shrink-0">
             <GoldenLionLogo size="md" />
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-bold text-[var(--text-primary)] text-base tracking-tight flex items-center gap-1.5">
+                <span className="font-bold text-[var(--text-primary)] text-base tracking-tight">
                   <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">CONTAJU</span>
-                </span>
-                <span className="text-[10px] bg-amber-500/10 text-amber-500 font-semibold px-2 py-0.5 rounded border border-amber-500/30">
-                  LEÃO DOURADO
                 </span>
               </div>
               <p className="text-xs text-[var(--text-secondary)] truncate max-w-xs">{company.tradeName}</p>
             </div>
           </div>
 
+          {/* Global Search Bar */}
+          <div className="flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2 sm:mx-4">
+            <button
+              type="button"
+              onClick={() => setIsSearchModalOpen(true)}
+              className="w-full h-9 flex items-center justify-between px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] hover:border-amber-500/50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer shadow-2xs group"
+              title="Buscar clientes, contratos, faturas, serviços (Ctrl+K ou ⌘K)"
+            >
+              <div className="flex items-center space-x-2 truncate">
+                <Search className="w-4 h-4 text-amber-500/80 group-hover:text-amber-500 transition-colors shrink-0" />
+                <span className="text-xs truncate">Buscar clientes, contratos, faturas...</span>
+              </div>
+              <kbd className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-bold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)] shrink-0">
+                <span className="text-xs">⌘</span>K
+              </kbd>
+            </button>
+          </div>
+
           {/* Center: Consolidated Cash Balance Indicator & Global Period Filter */}
-          <div className="hidden md:flex items-center space-x-3">
-            <div className="flex items-center space-x-2 bg-[var(--surface-elevated)] px-3.5 py-1.5 rounded-lg border border-[var(--border-subtle)]">
-              <Wallet className="w-4 h-4 text-emerald-400" />
-              <div className="text-xs">
-                <span className="text-[var(--text-secondary)] block text-[11px]">Disponibilidade:</span>
-                <span className="font-bold text-[var(--text-primary)] font-mono text-sm">{formatBRL(consolidatedCash)}</span>
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            <div className="h-9 flex items-center gap-2 bg-[var(--surface-elevated)] px-3 rounded-lg border border-[var(--border-subtle)] whitespace-nowrap">
+              <Wallet className="w-4 h-4 text-amber-400 shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[var(--text-secondary)] text-[11px]">Disponibilidade:</span>
+                <span className="font-bold text-[var(--text-primary)] font-mono">{formatBRL(consolidatedCash)}</span>
               </div>
             </div>
 
             {/* Global Period Filter Button */}
             <button
               onClick={() => setIsPeriodModalOpen(true)}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border transition-all text-xs ${
+              className={`h-9 flex items-center gap-2 px-3 rounded-lg border transition-all text-xs whitespace-nowrap shrink-0 ${
                 period.active 
                   ? 'bg-amber-500/10 border-amber-400/40 text-amber-400 shadow-xs' 
                   : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-500/40'
               }`}
               title="Filtrar por Mês e Ano Central (sincroniza todo o sistema)"
             >
-              <Calendar className={`w-4 h-4 ${period.active ? 'text-amber-400 animate-pulse' : 'text-[var(--text-secondary)]'}`} />
-              <div className="text-left">
-                <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block font-semibold">
-                  {period.active ? 'Filtro Central Ativo' : 'Período Geral'}
+              <Calendar className={`w-4 h-4 shrink-0 ${period.active ? 'text-amber-400 animate-pulse' : 'text-[var(--text-secondary)]'}`} />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold">
+                  {period.active ? 'Filtro:' : 'Período:'}
                 </span>
                 <span className="font-bold text-[var(--text-primary)]">
                   {period.active 
                     ? (period.month === 0 ? `Ano ${period.year}` : `${String(period.month).padStart(2, '0')}/${period.year}`)
-                    : 'Todos os Meses'}
+                    : 'Geral (Todos)'}
                 </span>
               </div>
             </button>
           </div>
 
           {/* Actions & User Selector */}
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center gap-2 shrink-0">
             
             {/* Quick Actions */}
-            <div className="hidden lg:flex items-center space-x-2">
+            <div className="hidden lg:flex items-center gap-2">
               <button
                 onClick={() => onOpenNewTitleModal('RECEBER')}
-                className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                className="h-9 inline-flex items-center px-3 text-xs font-bold rounded-lg text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800/60 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                 title="Novo lançamento a receber"
               >
-                <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                <PlusCircle className="w-4 h-4 mr-1.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                 + Receber
               </button>
 
               <button
                 onClick={() => onOpenNewTitleModal('PAGAR')}
-                className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors"
+                className="h-9 inline-flex items-center px-3 text-xs font-bold rounded-lg text-rose-900 bg-rose-100 hover:bg-rose-200 border border-rose-300 dark:text-rose-300 dark:bg-rose-950/50 dark:border-rose-800/60 dark:hover:bg-rose-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                 title="Novo lançamento a pagar"
               >
-                <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                <PlusCircle className="w-4 h-4 mr-1.5 shrink-0 text-rose-700 dark:text-rose-400" />
                 + Pagar
               </button>
 
               <button
                 onClick={onOpenTransferModal}
-                className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                className="h-9 inline-flex items-center px-3 text-xs font-semibold rounded-lg text-slate-800 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 border border-slate-300 dark:bg-slate-800/80 dark:border-slate-700 dark:hover:bg-slate-700 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
                 title="Transferência entre contas bancárias"
               >
-                <ArrowLeftRight className="w-3.5 h-3.5 mr-1" />
+                <ArrowLeftRight className="w-4 h-4 mr-1.5 shrink-0 text-slate-600 dark:text-slate-400" />
                 Transferência
               </button>
 
               <button
                 onClick={onOpenBillingModal}
-                className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-indigo-700 hover:bg-indigo-800 transition-colors shadow-sm"
+                className="h-9 inline-flex items-center px-3 text-xs font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-xs whitespace-nowrap cursor-pointer"
                 title="Gerar faturamento mensal de contratos"
               >
-                <CalendarClock className="w-3.5 h-3.5 mr-1" />
+                <CalendarClock className="w-4 h-4 mr-1.5 shrink-0" />
                 Faturar Mês
               </button>
             </div>
 
+            {/* Floating Calculator Toggle Button */}
+            {onToggleCalculator && (
+              <button
+                onClick={onToggleCalculator}
+                className={`h-9 flex items-center space-x-1.5 px-2.5 rounded-lg border transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer ${
+                  isCalculatorOpen && !isCalculatorMinimized
+                    ? 'border-amber-500 bg-amber-500/15 text-amber-400 shadow-amber-500/10'
+                    : isCalculatorOpen && isCalculatorMinimized
+                    ? 'border-amber-500/40 bg-slate-100 dark:bg-[#1B212D] text-amber-500 hover:border-amber-500'
+                    : 'border-slate-300 dark:border-[#273040] bg-slate-100 dark:bg-[#1B212D] text-slate-700 dark:text-[#F8FAFC] hover:border-amber-500/50 hover:text-amber-500'
+                }`}
+                title="Calculadora do Sistema (Atalho: Alt+C)"
+              >
+                <Calculator className={`w-4 h-4 shrink-0 ${isCalculatorOpen ? 'text-amber-500' : 'text-slate-600 dark:text-slate-300'}`} />
+                <span className="hidden xl:inline text-[11px] font-bold">
+                  Calc
+                </span>
+              </button>
+            )}
+
+            {/* Notification Bell */}
+            <button
+              onClick={() => onNavigate && onNavigate('NOTIFICACOES')}
+              className="h-9 w-9 flex items-center justify-center relative rounded-lg border border-slate-300 dark:border-[#273040] bg-slate-100 dark:bg-[#1B212D] text-slate-700 dark:text-[#F8FAFC] hover:border-amber-500/50 hover:text-amber-500 transition-all text-xs font-semibold shadow-xs shrink-0"
+              title="Abrir Central de Notificações e Alertas Operacionais"
+            >
+              <Bell className="w-4 h-4" />
+              {totalAlerts > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-slate-950 ring-2 ring-white dark:ring-[#1B212D] animate-pulse">
+                  {totalAlerts > 9 ? '9+' : totalAlerts}
+                </span>
+              )}
+            </button>
+
             {/* Theme Toggle Button */}
             <button
               onClick={toggleTheme}
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-[#273040] bg-slate-100 dark:bg-[#1B212D] text-slate-800 dark:text-[#F8FAFC] hover:border-amber-500/50 hover:text-amber-500 transition-all text-xs font-semibold shadow-xs"
+              className="h-9 flex items-center space-x-1.5 px-3 rounded-lg border border-slate-300 dark:border-[#273040] bg-slate-100 dark:bg-[#1B212D] text-slate-800 dark:text-[#F8FAFC] hover:border-amber-500/50 hover:text-amber-500 transition-all text-xs font-semibold shadow-xs shrink-0 whitespace-nowrap"
               title={theme === 'dark' ? 'Mudar para Tema Claro (Alto Contraste)' : 'Mudar para Tema Escuro (Leão Dourado)'}
             >
               {theme === 'dark' ? (
@@ -227,16 +319,16 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* User Switcher Dropdown */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-2 p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+                className="h-9 flex items-center space-x-2 px-2.5 rounded-lg border border-slate-200 dark:border-[#273040] hover:bg-slate-50 dark:hover:bg-[#1B212D] transition-colors whitespace-nowrap"
               >
-                <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-medium text-xs">
+                <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30 flex items-center justify-center font-bold text-xs">
                   {currentUser.name.charAt(0)}
                 </div>
                 <div className="text-left hidden sm:block">
-                  <div className="text-xs font-medium text-slate-800 leading-tight">{currentUser.name}</div>
+                  <div className="text-xs font-medium text-[var(--text-primary)] leading-tight">{currentUser.name}</div>
                   <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${getRoleBadgeColor(currentUser.role)}`}>
                     {getRoleLabel(currentUser.role)}
                   </span>
@@ -309,6 +401,19 @@ export const Header: React.FC<HeaderProps> = ({
       <GlobalPeriodSelectorModal
         isOpen={isPeriodModalOpen}
         onClose={() => setIsPeriodModalOpen(false)}
+      />
+
+      {/* Global Search Modal */}
+      <GlobalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onNavigateToItem={(screen, searchFilter) => {
+          if (onNavigateWithSearch) {
+            onNavigateWithSearch(screen, searchFilter);
+          } else if (onNavigate) {
+            onNavigate(screen);
+          }
+        }}
       />
     </header>
   );

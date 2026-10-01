@@ -10,6 +10,8 @@ export interface DRELineItem {
   isHeader?: boolean;
   isSummary?: boolean;
   level: number; // 0 for major group, 1 for subgroup, 2 for account
+  groupId?: string; // Identifier of top group (e.g. 'h-1', 'h-2', 'h-3', 'h-4', 'h-5', 'h-6')
+  parentHeaderId?: string; // Direct parent header id (e.g. 'h-4' or 'h-4.1')
   valuesByMonth: number[]; // 12 months: index 0 = Jan, ..., index 11 = Dec
   totalYear: number;
   matchedTitleIds?: string[];
@@ -104,6 +106,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-1',
+        parentHeaderId: 'h-1',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -121,6 +125,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-2',
+        parentHeaderId: 'h-2',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -142,6 +148,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-3',
+        parentHeaderId: 'h-3',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -164,6 +172,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-4',
+        parentHeaderId: 'h-4.1',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -180,6 +190,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-4',
+        parentHeaderId: 'h-4.2',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -196,6 +208,8 @@ export class ReportingEngine {
         name: acc.name,
         code: acc.code,
         level: 2,
+        groupId: 'h-4',
+        parentHeaderId: 'h-4.3',
         valuesByMonth: monthly,
         totalYear: total,
         matchedTitleIds: titleIds
@@ -215,14 +229,14 @@ export class ReportingEngine {
     const finRevAccs = accounts.filter(a => a.parentId === 'grp-4.1' && a.isAnalytical);
     const finRevLines = finRevAccs.map(acc => {
       const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-5', parentHeaderId: 'h-5.1', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
     });
     const finRevValues = sumArrays(finRevLines.map(l => l.valuesByMonth));
 
     const finExpAccs = accounts.filter(a => a.parentId === 'grp-4.2' && a.isAnalytical);
     const finExpLines = finExpAccs.map(acc => {
       const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-5', parentHeaderId: 'h-5.2', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
     });
     const finExpValues = sumArrays(finExpLines.map(l => l.valuesByMonth));
 
@@ -237,7 +251,7 @@ export class ReportingEngine {
     const taxAccs = accounts.filter(a => a.parentId === 'grp-5' && a.isAnalytical);
     const taxLines = taxAccs.map(acc => {
       const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-6', parentHeaderId: 'h-6', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
     });
     const taxValues = sumArrays(taxLines.map(l => l.valuesByMonth));
     const taxTotal = taxValues.reduce((a, b) => a + b, 0);
@@ -249,47 +263,151 @@ export class ReportingEngine {
     // Assemble hierarchical lines structure
     const lines: DRELineItem[] = [
       // 1. Receita Bruta
-      { id: 'h-1', name: 'RECEITA BRUTA DE SERVIÇOS', level: 0, isHeader: true, valuesByMonth: grossRevValues, totalYear: grossRevTotal },
+      { 
+        id: 'h-1', 
+        name: 'RECEITA BRUTA DE SERVIÇOS', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-1', 
+        valuesByMonth: grossRevValues, 
+        totalYear: grossRevTotal,
+        matchedTitleIds: grossRevLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...grossRevLines,
 
       // 2. Deduções
-      { id: 'h-2', name: '(-) Deduções e Tributos sobre Faturamento', level: 0, isHeader: true, valuesByMonth: deducValues, totalYear: deducTotal },
+      { 
+        id: 'h-2', 
+        name: '(-) Deduções e Tributos sobre Faturamento', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-2', 
+        valuesByMonth: deducValues, 
+        totalYear: deducTotal,
+        matchedTitleIds: deducLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...deducLines,
 
       // Summary Receita Líquida
       { id: 's-net-rev', name: '(=) RECEITA LÍQUIDA', level: 0, isSummary: true, valuesByMonth: netRevValues, totalYear: netRevTotal },
 
       // 3. Custos
-      { id: 'h-3', name: '(-) Custos dos Serviços Prestados', level: 0, isHeader: true, valuesByMonth: costValues, totalYear: costTotal },
+      { 
+        id: 'h-3', 
+        name: '(-) Custos dos Serviços Prestados', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-3', 
+        valuesByMonth: costValues, 
+        totalYear: costTotal,
+        matchedTitleIds: costLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...costLines,
 
       // Summary Lucro Bruto
       { id: 's-gross-profit', name: '(=) LUCRO BRUTO', level: 0, isSummary: true, valuesByMonth: grossProfitValues, totalYear: grossProfitTotal },
 
       // 4. Despesas Operacionais
-      { id: 'h-4', name: '(-) Despesas Operacionais', level: 0, isHeader: true, valuesByMonth: opExpValues, totalYear: opExpTotal },
-      { id: 'h-4.1', name: 'Despesas com Pessoal', level: 1, isHeader: true, valuesByMonth: personalValues, totalYear: personalValues.reduce((a, b) => a + b, 0) },
+      { 
+        id: 'h-4', 
+        name: '(-) Despesas Operacionais', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-4', 
+        valuesByMonth: opExpValues, 
+        totalYear: opExpTotal,
+        matchedTitleIds: [...personalLines, ...adminLines, ...commLines].flatMap(l => l.matchedTitleIds || [])
+      },
+      { 
+        id: 'h-4.1', 
+        name: 'Despesas com Pessoal', 
+        level: 1, 
+        isHeader: true, 
+        groupId: 'h-4', 
+        parentHeaderId: 'h-4', 
+        valuesByMonth: personalValues, 
+        totalYear: personalValues.reduce((a, b) => a + b, 0),
+        matchedTitleIds: personalLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...personalLines,
-      { id: 'h-4.2', name: 'Despesas Administrativas', level: 1, isHeader: true, valuesByMonth: adminValues, totalYear: adminValues.reduce((a, b) => a + b, 0) },
+      { 
+        id: 'h-4.2', 
+        name: 'Despesas Administrativas', 
+        level: 1, 
+        isHeader: true, 
+        groupId: 'h-4', 
+        parentHeaderId: 'h-4', 
+        valuesByMonth: adminValues, 
+        totalYear: adminValues.reduce((a, b) => a + b, 0),
+        matchedTitleIds: adminLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...adminLines,
-      { id: 'h-4.3', name: 'Despesas Comerciais', level: 1, isHeader: true, valuesByMonth: commValues, totalYear: commValues.reduce((a, b) => a + b, 0) },
+      { 
+        id: 'h-4.3', 
+        name: 'Despesas Comerciais', 
+        level: 1, 
+        isHeader: true, 
+        groupId: 'h-4', 
+        parentHeaderId: 'h-4', 
+        valuesByMonth: commValues, 
+        totalYear: commValues.reduce((a, b) => a + b, 0),
+        matchedTitleIds: commLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...commLines,
 
       // Summary Resultado Operacional
       { id: 's-op-result', name: '(=) RESULTADO OPERACIONAL', level: 0, isSummary: true, valuesByMonth: opResultValues, totalYear: opResultTotal },
 
       // 5. Resultado Financeiro
-      { id: 'h-5', name: '(+/-) Resultado Financeiro', level: 0, isHeader: true, valuesByMonth: netFinValues, totalYear: netFinTotal },
-      { id: 'h-5.1', name: '(+) Receitas Financeiras', level: 1, isHeader: true, valuesByMonth: finRevValues, totalYear: finRevValues.reduce((a, b) => a + b, 0) },
+      { 
+        id: 'h-5', 
+        name: '(+/-) Resultado Financeiro', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-5', 
+        valuesByMonth: netFinValues, 
+        totalYear: netFinTotal,
+        matchedTitleIds: [...finRevLines, ...finExpLines].flatMap(l => l.matchedTitleIds || [])
+      },
+      { 
+        id: 'h-5.1', 
+        name: '(+) Receitas Financeiras', 
+        level: 1, 
+        isHeader: true, 
+        groupId: 'h-5', 
+        parentHeaderId: 'h-5', 
+        valuesByMonth: finRevValues, 
+        totalYear: finRevValues.reduce((a, b) => a + b, 0),
+        matchedTitleIds: finRevLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...finRevLines,
-      { id: 'h-5.2', name: '(-) Despesas Financeiras', level: 1, isHeader: true, valuesByMonth: finExpValues, totalYear: finExpValues.reduce((a, b) => a + b, 0) },
+      { 
+        id: 'h-5.2', 
+        name: '(-) Despesas Financeiras', 
+        level: 1, 
+        isHeader: true, 
+        groupId: 'h-5', 
+        parentHeaderId: 'h-5', 
+        valuesByMonth: finExpValues, 
+        totalYear: finExpValues.reduce((a, b) => a + b, 0),
+        matchedTitleIds: finExpLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...finExpLines,
 
       // Summary LAIR
       { id: 's-lair', name: '(=) RESULTADO ANTES DOS TRIBUTOS', level: 0, isSummary: true, valuesByMonth: resultBeforeTaxes, totalYear: resultBeforeTaxesTotal },
 
       // 6. Tributos sobre Lucro
-      { id: 'h-6', name: '(-) Tributos sobre o Lucro', level: 0, isHeader: true, valuesByMonth: taxValues, totalYear: taxTotal },
+      { 
+        id: 'h-6', 
+        name: '(-) Tributos sobre o Lucro', 
+        level: 0, 
+        isHeader: true, 
+        groupId: 'h-6', 
+        valuesByMonth: taxValues, 
+        totalYear: taxTotal,
+        matchedTitleIds: taxLines.flatMap(l => l.matchedTitleIds || [])
+      },
       ...taxLines,
 
       // Final Summary

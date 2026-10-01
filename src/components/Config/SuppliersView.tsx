@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
-import { Truck, Plus, Search, Edit2, Trash2, CheckCircle2 } from 'lucide-react';
+import { Truck, Plus, Search, Edit2, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Counterparty } from '../../types';
 import { storage } from '../../services/storageService';
 import { formatBRL } from '../../services/financialEngine';
+import { CNPJInputField } from '../Common/CNPJInputField';
+import { validateFiscalDocument } from '../../utils/cnpjValidator';
+import { matchesSearch } from '../../utils/searchUtils';
 
 export const SuppliersView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Counterparty | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
 
   const counterparties = storage.getCounterparties();
   const suppliers = counterparties.filter(c => c.type === 'FORNECEDOR' || c.type === 'AMBOS');
@@ -24,12 +28,12 @@ export const SuppliersView: React.FC = () => {
   });
 
   const filtered = suppliers.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.document.includes(searchTerm)
+    matchesSearch([s.name, s.tradeName, s.document, s.email, s.phone, s.notes], searchTerm)
   );
 
   const handleOpenNew = () => {
     setEditingSupplier(null);
+    setDocError(null);
     setFormData({
       name: '',
       document: '',
@@ -44,6 +48,7 @@ export const SuppliersView: React.FC = () => {
 
   const handleEdit = (s: Counterparty) => {
     setEditingSupplier(s);
+    setDocError(null);
     setFormData(s);
     setIsModalOpen(true);
   };
@@ -51,6 +56,15 @@ export const SuppliersView: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
+
+    if (formData.document?.trim()) {
+      const fiscalCheck = validateFiscalDocument(formData.document);
+      if (fiscalCheck.status === 'invalid') {
+        setDocError(fiscalCheck.message);
+        return;
+      }
+    }
+    setDocError(null);
 
     const all = storage.getCounterparties();
     const currentUser = storage.getCurrentUser();
@@ -199,6 +213,13 @@ export const SuppliersView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSave} className="p-6 space-y-3 text-xs">
+              {docError && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center font-medium">
+                  <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0 text-rose-600" />
+                  <span>{docError}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Razão Social / Nome *</label>
                 <input
@@ -211,13 +232,16 @@ export const SuppliersView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">CNPJ ou CPF *</label>
-                <input
-                  type="text"
-                  required
+                <CNPJInputField
+                  id="supplier-cnpj-input"
                   value={formData.document || ''}
-                  onChange={e => setFormData({ ...formData, document: e.target.value })}
-                  className="w-full rounded border border-slate-300 px-3 py-1.5 font-mono"
+                  onChange={(maskedVal) => {
+                    setFormData(prev => ({ ...prev, document: maskedVal }));
+                    if (docError) setDocError(null);
+                  }}
+                  label="CNPJ (Cadastro Fiscal) *"
+                  required
+                  placeholder="00.000.000/0000-00"
                 />
               </div>
 

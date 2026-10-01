@@ -79,7 +79,7 @@ export interface ServiceItem {
   status: 'ATIVO' | 'INATIVO';
 }
 
-export type ContractStatus = 'RASCUNHO' | 'ATIVO' | 'SUSPENSO' | 'ENCERRADO' | 'CANCELADO';
+export type ContractStatus = 'RASCUNHO' | 'ATIVO' | 'SUSPENSO' | 'ENCERRADO' | 'CANCELADO' | 'INATIVO';
 export type DueDayRule = 'SAME_MONTH' | 'NEXT_MONTH';
 
 export interface ContractItem {
@@ -92,6 +92,73 @@ export interface ContractItem {
   total?: number;
 }
 
+export type AcquisitionChannel = 
+  | 'INDICACAO'
+  | 'REDE_SOCIAL'
+  | 'MECANISMO_PESQUISA'
+  | 'PROSPECCAO_ATIVA'
+  | 'EVENTO'
+  | 'OUTRO';
+
+export type SocialNetworkType = 
+  | 'INSTAGRAM'
+  | 'LINKEDIN'
+  | 'FACEBOOK'
+  | 'YOUTUBE'
+  | 'TIKTOK'
+  | 'OUTRA';
+
+export type ContractAdjustmentReason = 
+  | 'REAJUSTE_ANUAL' 
+  | 'IGPM' 
+  | 'IPCA' 
+  | 'ACORDO_MUTUO' 
+  | 'AUMENTO_ESCOPO' 
+  | 'OUTRO';
+
+export interface ContractAdjustment {
+  id: string;
+  date: string; // Data de vigência do novo valor (YYYY-MM-DD)
+  previousAmount: number;
+  newAmount: number;
+  percentage: number; // % de variação calculada (ex: +8.5%)
+  reason: ContractAdjustmentReason;
+  reasonLabel?: string;
+  notes?: string;
+  appliedAt: string; // Data/hora do registro
+  appliedBy?: string;
+}
+
+export type AnnualBalanceFeeInstallmentType = 
+  | 'UNICA_DEZEMBRO' 
+  | 'DUAS_PARCELAS' 
+  | 'TRES_PARCELAS' 
+  | 'PERSONALIZADO';
+
+export interface AnnualBalanceFeeConfig {
+  enabled: boolean;
+  amount: number; // Valor total da taxa anual em R$ (ex: 2500.00)
+  installmentType: AnnualBalanceFeeInstallmentType;
+  billingMonths: number[]; // Meses de 1 a 12 em que será cobrada (ex: [12], [11, 12], [10, 11, 12])
+  dueDay?: number; // Dia de vencimento específico (opcional, senão herda o do contrato)
+  notes?: string;
+}
+
+export type ContractType = 'RECORRENTE' | 'AVULSO';
+
+export interface ContractStatusHistoryEntry {
+  id: string;
+  contractId: string;
+  previousStatus: ContractStatus;
+  newStatus: ContractStatus;
+  changedAt: string; // Data e hora ISO da alteração
+  changedBy: string; // Usuário responsável pela mudança
+  userRole?: string;
+  reason?: string; // Motivo da alteração de status
+  notes?: string; // Observações / histórico
+  effectiveDate?: string; // Data de vigência ou término (YYYY-MM-DD)
+}
+
 export interface Contract {
   id: string;
   contractNumber: string;
@@ -102,14 +169,31 @@ export interface Contract {
   monthlyTotal: number;
   startDate: string; // YYYY-MM-DD
   endDate?: string; // Optional
+  entryDate?: string; // Data de entrada / início do cliente (YYYY-MM-DD)
+  contractType?: ContractType; // RECORRENTE (mensalidade contínua) ou AVULSO (serviço pontual)
+  isRecurring?: boolean; // true = Recorrente (Padrão), false = Pontual / Avulso
+  autoGenerateFutureMonths?: boolean; // Se gera títulos futuros automaticamente
+  futureMonthsCount?: number; // Quantidade de meses antecipados (ex: 12)
+  acquisitionChannel?: AcquisitionChannel; // Origem da aquisição
+  acquisitionReferrerName?: string; // Nome de quem indicou (se for indicação)
+  acquisitionSocialNetwork?: SocialNetworkType | string; // Rede social específica
+  acquisitionNotes?: string; // Termo de busca / campanha / detalhes adicionais
   periodicity: 'MENSAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL';
   billingFrequency?: string;
   dueDay: number; // 1 to 31
   dueRule: DueDayRule; // SAME_MONTH or NEXT_MONTH of competence
   billingMethod: 'BOLETO' | 'PIX' | 'TRANSFERENCIA' | 'OUTRO';
   status: ContractStatus;
+  cancellationDate?: string; // Data a partir da qual o contrato foi cancelado/inativado (YYYY-MM-DD)
+  cancellationReason?: string; // Motivo do cancelamento/inatividade
+  cancellationNotes?: string; // Observações ou histórico da rescisão
+  inactivatedAt?: string; // Data/hora do registro de cancelamento/inativação
+  inactivatedBy?: string; // Usuário responsável pelo cancelamento/inativação
+  statusHistory?: ContractStatusHistoryEntry[]; // Log cronológico de auditoria de cada mudança de status (Ativo/Inativo/Cancelado)
   notes?: string;
   adjustmentRule?: string; // e.g. 'IPCA anual'
+  adjustments?: ContractAdjustment[]; // Histórico cronológico de reajustes de valor
+  annualBalanceFee?: AnnualBalanceFeeConfig; // Configuração da Taxa de Balanço Anual (13º honorário)
   lastGeneratedCompetence?: string; // 'YYYY-MM'
   createdAt: string;
 }
@@ -138,6 +222,11 @@ export interface Sale {
   installmentsCount: number;
   notes?: string;
   createdAt: string;
+  contractId?: string;
+  contractNumber?: string;
+  originType?: 'CONTRATO' | 'AVULSO';
+  status?: 'CONFIRMADA' | 'CANCELADA';
+  titleIds?: string[];
 }
 
 export type TitleType = 'RECEBER' | 'PAGAR';
@@ -178,6 +267,12 @@ export interface FinancialTitle {
   originId?: string;
   installmentIndex?: number;
   totalInstallments?: number;
+
+  // Vínculo Contrato <-> Venda <-> Parcela a Receber
+  contractId?: string;
+  contractNumber?: string;
+  saleId?: string;
+  saleNumber?: string;
   
   // Cartão de Crédito (quando originType === 'CARTAO_CREDITO')
   creditCardId?: string;
@@ -185,6 +280,14 @@ export interface FinancialTitle {
   isCreditCardPurchase?: boolean;
 
   expectedBankAccountId?: string;
+  barcode?: string; // Linha digitável ou código de barras do boleto / tributo
+  bankDocumentNumber?: string; // Nosso Número ou Número do Documento Bancário
+  externalId?: string; // Identificador estável do ERP de origem (ex: Conta Azul)
+  fingerprint?: string; // Hash único para controle de idempotência e detecção de alterações
+  importSource?: string; // 'CONTA_AZUL' | 'PLANILHA_BASE' | 'MANUAL' | etc.
+  categoryName?: string; // Categoria original da planilha
+  customFields?: Record<string, any>; // Colunas extras importadas não nativas
+  reconciliationStatus?: 'PENDENTE' | 'CONCILIADO' | 'SUGESTAO';
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -277,6 +380,26 @@ export interface CashCountRecord {
   status: 'EQUILIBRADO' | 'SOBRA' | 'FALTA';
   notes?: string;
   adjustedInSystem: boolean;
+  createdAt: string;
+}
+
+// ==========================================
+// CONFERÊNCIA DE SALDOS BANCÁRIOS & FECHAMENTO PERFEITO
+// ==========================================
+export interface BankBalanceClosingRecord {
+  id: string;
+  bankAccountId: string;
+  closingDate: string; // YYYY-MM-DD
+  closingTime: string; // HH:mm
+  closedBy: string;
+  systemBalance: number; // Saldo do Sistema (ERP)
+  realBalance: number; // Saldo Real que Tenho (Extrato/App Bancário)
+  difference: number; // realBalance - systemBalance
+  status: 'PERFEITO' | 'SOBRA' | 'FALTA';
+  notes?: string;
+  pendingStatementsCount?: number;
+  pendingTitlesCount?: number;
+  adjustedInSystem?: boolean;
   createdAt: string;
 }
 
@@ -394,6 +517,75 @@ export interface StatementEntry {
 
 export type BankStatementEntry = StatementEntry;
 
+export type ReconciliationMatchConfidence = 'MUITO_FORTE' | 'FORTE' | 'POSSIVEL' | 'BAIXA';
+
+export interface MatchFactorBreakdown {
+  amountScore: number; // 0 - 50
+  dateScore: number; // 0 - 30
+  descriptionScore: number; // 0 - 20
+  amountSummary: string;
+  dateSummary: string;
+  descriptionSummary: string;
+}
+
+export interface ReconciliationMatchResult {
+  score: number; // 0 - 100
+  confidence: ReconciliationMatchConfidence;
+  isHighlighted: boolean; // score >= 60
+  breakdown: MatchFactorBreakdown;
+  summaryBadge: string;
+}
+
+// ==========================================
+// REGRAS DE CONCILIAÇÃO AUTOMÁTICA (DE-PARA)
+// ==========================================
+export type ReconciliationRuleMatchType = 'CONTAINS' | 'STARTS_WITH' | 'EQUALS' | 'REGEX';
+export type ReconciliationRuleAction = 'AUTO_CREATE_AND_RECONCILE' | 'AUTO_SUGGEST';
+export type ReconciliationRuleTransactionType = 'DEBIT' | 'CREDIT' | 'BOTH';
+
+export interface ReconciliationRule {
+  id: string;
+  name: string; // Ex: "Tarifas Bancárias Pacote PJ"
+  pattern: string; // Ex: "TARIFA", "PACOTE DE SERVICOS", "PIX ENVIADO"
+  matchType: ReconciliationRuleMatchType;
+  transactionType: ReconciliationRuleTransactionType; // DEBIT / CREDIT / BOTH
+  chartAccountId: string; // Conta Contábil mapeada (ex: acc-4.1.01)
+  counterpartyId?: string; // Fornecedor/Cliente/Banco favorecido opcional
+  action: ReconciliationRuleAction; // 'AUTO_CREATE_AND_RECONCILE' | 'AUTO_SUGGEST'
+  active: boolean;
+  priority: number;
+  descriptionTemplate?: string; // Template para descrição gerada no ERP
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==========================================
+// LOG DETALHADO DO MOTOR DE CONCILIAÇÃO
+// ==========================================
+export interface ReconciliationDiagnosticLog {
+  id: string;
+  timestamp: string;
+  bankAccountId: string;
+  stmtId: string;
+  fitId?: string;
+  date: string;
+  amount: number;
+  description: string;
+  status: 'CONCILIADO' | 'SUGESTAO_ENCONTRADA' | 'NAO_CONCILIADO' | 'REGRA_APLICADA';
+  ruleAppliedName?: string;
+  toleranceThresholdUsed: number;
+  bestCandidateTitleId?: string;
+  bestCandidateTitleNumber?: string;
+  bestCandidateCounterpartyName?: string;
+  bestCandidateScore: number;
+  primaryReason: string; // Motivo claro em linguagem natural
+  detailedReasons: string[]; // Lista de fatores analisados
+  breakdown?: MatchFactorBreakdown;
+  suggestedAction: 'CRIAR_TITULO' | 'AJUSTAR_TOLERANCIA' | 'CRIAR_REGRA_DE_PARA' | 'CONCILIAR_MANUAL' | 'JA_CONCILIADO';
+  actionNote?: string;
+}
+
 export interface StatementImportBatch {
   id: string;
   bankAccountId: string;
@@ -404,6 +596,31 @@ export interface StatementImportBatch {
   importedCount: number;
   duplicateCount: number;
   status: 'SUCESSO' | 'PARCIAL' | 'FALHA';
+}
+
+export interface BankClosureSnapshot {
+  bankAccountId: string;
+  bankName: string;
+  institution: string;
+  systemBalance: number;
+  declaredBalance: number;
+  difference: number;
+  isMatched: boolean;
+}
+
+export interface PeriodClosureChecklist {
+  reconciled: boolean;
+  pendingReconciliationCount: number;
+  unsettledPayablesCount: number;
+  unsettledReceivablesCount: number;
+  totalUnsettledPayables: number;
+  totalUnsettledReceivables: number;
+  unclassifiedCount: number;
+  taxesProvisioned: boolean;
+  bankBalancesMatched: boolean;
+  totalSystemBankBalance: number;
+  totalDeclaredBankBalance: number;
+  totalBankDifference: number;
 }
 
 export interface PeriodClosure {
@@ -417,6 +634,8 @@ export interface PeriodClosure {
   reopenedAt?: string;
   reopenedBy?: string;
   reopenReason?: string;
+  bankSnapshots?: BankClosureSnapshot[];
+  checklistSnapshot?: PeriodClosureChecklist;
 }
 
 export interface AuditLogEntry {
@@ -493,6 +712,29 @@ export interface AnnualBudgetPlan {
   items: BudgetItem[];
 }
 
+export interface BudgetChangeRecord {
+  accountId: string;
+  accountName: string;
+  accountCode?: string;
+  monthIndex: number; // 0..11
+  previousValue: number;
+  newValue: number;
+  changeType: 'PERCENT' | 'MANUAL' | 'MONTH_BY_MONTH' | 'REPLICATE' | 'RESET';
+  percentage?: number;
+}
+
+export interface BudgetVersion {
+  id: string;
+  versionNumber: string; // Ex: "v1.1", "v1.2", "Meta Aprovada"
+  year: number;
+  approvedAt: string;
+  approvedBy: string;
+  notes: string;
+  totalChanges: number;
+  changes: BudgetChangeRecord[];
+  planSnapshot: AnnualBudgetPlan;
+}
+
 export interface BudgetComparisonLine {
   id: string;
   code?: string;
@@ -528,4 +770,25 @@ export interface BatchEditOptions {
   postponeDays?: number;
   accountId?: string;
   expectedBankAccountId?: string;
+}
+
+export type DelinquencyImpactMode = 'TOTAL' | 'PERCENTAGE' | 'FIXED_VALUE';
+
+export interface ClientDelinquencySetting {
+  clientId: string;
+  clientName: string;
+  mode: DelinquencyImpactMode;
+  percentage?: number; // ex: 50 para 50%
+  fixedAmount?: number; // ex: 1500
+  notes?: string;
+}
+
+export interface SavedCashSimulationScenario {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  clientSettings: ClientDelinquencySetting[];
+  createdAt: string;
+  updatedAt: string;
 }

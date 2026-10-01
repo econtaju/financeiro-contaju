@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Landmark, Plus, ArrowLeftRight, Edit2, Wallet, CheckCircle2, Building, Calculator, Coins } from 'lucide-react';
+import { Landmark, Plus, ArrowLeftRight, Edit2, Wallet, CheckCircle2, Building, Calculator, Coins, FileText, Scale } from 'lucide-react';
 import { BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL } from '../../services/financialEngine';
 import { CashCalculatorModal } from './CashCalculatorModal';
+import { BankAccountStatementModal } from './BankAccountStatementModal';
+import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 
 interface BankAccountsViewProps {
   onOpenTransferModal: () => void;
@@ -14,9 +16,18 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [isCashCalcOpen, setIsCashCalcOpen] = useState(false);
   const [selectedCashAccount, setSelectedCashAccount] = useState<BankAccount | null>(null);
+  const [statementAccount, setStatementAccount] = useState<BankAccount | null>(null);
+  const [isStatementOpen, setIsStatementOpen] = useState(false);
+  const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
+  const [closingAccount, setClosingAccount] = useState<BankAccount | null>(null);
 
   const accounts = storage.getBankAccounts();
   const consolidated = FinancialEngine.getConsolidatedCashBalance();
+
+  const handleOpenStatement = (acc: BankAccount) => {
+    setStatementAccount(acc);
+    setIsStatementOpen(true);
+  };
 
   const handleOpenCashCalculator = (acc?: BankAccount) => {
     if (acc) {
@@ -125,6 +136,17 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
 
         <div className="flex items-center space-x-2 flex-wrap gap-y-2">
           <button
+            onClick={() => {
+              setClosingAccount(null);
+              setIsClosingModalOpen(true);
+            }}
+            className="px-3.5 py-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/25 rounded-lg text-xs font-bold transition-colors flex items-center shadow-2xs cursor-pointer"
+            title="Confrontar saldos atuais do sistema com o saldo real que você tem no banco para o fechamento perfeito"
+          >
+            <Scale className="w-4 h-4 mr-1.5 text-amber-500" />
+            Conferência de Saldos (Fechamento)
+          </button>
+          <button
             id="btn-open-cash-calculator"
             onClick={() => handleOpenCashCalculator()}
             className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs"
@@ -173,22 +195,47 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
         {accounts.map(acc => {
           const balance = FinancialEngine.getAccountBalance(acc.id);
           return (
-            <div key={acc.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div 
+              key={acc.id} 
+              onDoubleClick={() => handleOpenStatement(acc)}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-amber-400 hover:shadow-xs transition-all cursor-pointer group"
+              title="Dê dois cliques para abrir o extrato completo e movimentações"
+            >
               <div>
                 <div className="flex justify-between items-start">
                   <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
                     <Landmark className="w-5 h-5" />
                   </div>
-                  <button
-                    onClick={() => handleEdit(acc)}
-                    className="text-slate-400 hover:text-slate-700 p-1"
-                    title="Editar Conta"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenStatement(acc);
+                      }}
+                      className="text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 p-1 rounded"
+                      title="Ver Extrato Bancário Completo"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(acc);
+                      }}
+                      className="text-slate-400 hover:text-slate-700 p-1 rounded"
+                      title="Editar Conta"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                <h3 className="font-bold text-slate-900 text-sm mt-3">{acc.name}</h3>
+                <div className="flex items-center space-x-1.5 mt-3">
+                  <h3 className="font-bold text-slate-900 text-sm group-hover:text-amber-900">{acc.name}</h3>
+                  <span className="text-[9px] font-medium text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    (2 cliques = extrato)
+                  </span>
+                </div>
                 <div className="text-[11px] text-slate-700 space-y-0.5 mt-1 font-mono">
                   {acc.agency && <div>Agência: {acc.agency}</div>}
                   {acc.accountNumber && <div>Conta: {acc.accountNumber}</div>}
@@ -205,13 +252,30 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
                 {acc.type === 'CAIXA_FISICO' && (
                   <button
                     id={`btn-count-cash-${acc.id}`}
-                    onClick={() => handleOpenCashCalculator(acc)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenCashCalculator(acc);
+                    }}
                     className="mt-3 w-full py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
                   >
                     <Calculator className="w-3.5 h-3.5 text-emerald-700" />
                     Contar Cédulas & Moedas
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setClosingAccount(acc);
+                    setIsClosingModalOpen(true);
+                  }}
+                  className="mt-2 w-full py-1.5 px-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                  title="Conferir saldo do sistema versus saldo real no banco"
+                >
+                  <Scale className="w-3.5 h-3.5 text-amber-500" />
+                  Conferir com Banco
+                </button>
               </div>
             </div>
           );
@@ -334,6 +398,29 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
           </div>
         </div>
       )}
+
+      {/* Bank Account Statement Modal (aberto com 2 cliques na conta) */}
+      {isStatementOpen && statementAccount && (
+        <BankAccountStatementModal
+          isOpen={isStatementOpen}
+          onClose={() => {
+            setIsStatementOpen(false);
+            setStatementAccount(null);
+          }}
+          account={statementAccount}
+        />
+      )}
+
+      {/* Modal de Conferência de Saldos Bancários & Fechamento Perfeito */}
+      <BankBalanceClosingModal
+        isOpen={isClosingModalOpen}
+        onClose={() => {
+          setIsClosingModalOpen(false);
+          setClosingAccount(null);
+        }}
+        defaultAccountId={closingAccount?.id || 'ALL'}
+        onSuccess={() => {}}
+      />
 
     </div>
   );

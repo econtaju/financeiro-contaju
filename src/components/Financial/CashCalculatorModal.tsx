@@ -27,7 +27,7 @@ interface CashCalculatorModalProps {
 
 const BILL_DENOMINATIONS: Array<{ key: keyof CashDenominations['bills']; value: number; label: string; color: string }> = [
   { key: '200', value: 200, label: 'R$ 200', color: 'bg-stone-800 text-amber-200 border-amber-700/40' },
-  { key: '100', value: 100, label: 'R$ 100', color: 'bg-cyan-950/60 text-cyan-200 border-cyan-700/40' },
+  { key: '100', value: 100, label: 'R$ 100', color: 'bg-slate-800/80 text-slate-200 border-slate-600/50' },
   { key: '50', value: 50, label: 'R$ 50', color: 'bg-amber-950/60 text-amber-300 border-amber-700/40' },
   { key: '20', value: 20, label: 'R$ 20', color: 'bg-yellow-950/60 text-yellow-300 border-yellow-700/40' },
   { key: '10', value: 10, label: 'R$ 10', color: 'bg-red-950/60 text-red-300 border-red-700/40' },
@@ -318,13 +318,13 @@ export const CashCalculatorModal: React.FC<CashCalculatorModalProps> = ({
                   difference === 0 
                     ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300' 
                     : difference > 0 
-                      ? 'bg-cyan-950/30 border-cyan-800/40 text-cyan-300' 
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300' 
                       : 'bg-rose-950/30 border-rose-800/40 text-rose-300'
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
                       {difference === 0 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                      {difference > 0 && <TrendingUp className="w-4 h-4 text-cyan-400" />}
+                      {difference > 0 && <TrendingUp className="w-4 h-4 text-amber-400" />}
                       {difference < 0 && <TrendingDown className="w-4 h-4 text-rose-400" />}
                       Confronto Físico vs. Sistema
                     </span>
@@ -332,7 +332,7 @@ export const CashCalculatorModal: React.FC<CashCalculatorModalProps> = ({
                       difference === 0 
                         ? 'bg-emerald-500/20 text-emerald-300' 
                         : difference > 0 
-                          ? 'bg-cyan-500/20 text-cyan-300' 
+                          ? 'bg-amber-500/20 text-amber-300' 
                           : 'bg-rose-500/20 text-rose-300'
                     }`}>
                       {difference === 0 ? 'EQUILIBRADO' : difference > 0 ? 'SOBRA DE CAIXA' : 'FALTA / QUEBRA'}
@@ -596,7 +596,7 @@ export const CashCalculatorModal: React.FC<CashCalculatorModalProps> = ({
                             rec.difference === 0 
                               ? 'text-emerald-400' 
                               : rec.difference > 0 
-                                ? 'text-cyan-400' 
+                                ? 'text-amber-400' 
                                 : 'text-rose-400'
                           }`}>
                             {rec.difference > 0 && '+'}
@@ -607,7 +607,7 @@ export const CashCalculatorModal: React.FC<CashCalculatorModalProps> = ({
                               rec.status === 'EQUILIBRADO'
                                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                 : rec.status === 'SOBRA'
-                                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                                   : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                             }`}>
                               {rec.status}
@@ -647,7 +647,7 @@ export const CashCalculatorModal: React.FC<CashCalculatorModalProps> = ({
                   difference === 0
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40'
                     : difference > 0
-                      ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/40'
+                      ? 'bg-amber-500 hover:bg-amber-400 text-[#0f172a] shadow-amber-900/40 font-bold'
                       : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/40'
                 } disabled:opacity-50 disabled:cursor-not-allowed active:scale-95`}
               >

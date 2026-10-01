@@ -28,7 +28,9 @@ import {
   ChevronRight,
   Pin,
   PinOff,
-  CreditCard
+  CreditCard,
+  Bell,
+  Database
 } from 'lucide-react';
 import { storage } from '../services/storageService';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
@@ -50,6 +52,7 @@ export type NavigationScreen =
   | 'PLANEJAMENTO_ORCAMENTARIO'
   | 'COMPARE_DRE_CAIXA'
   | 'RELATORIOS'
+  | 'CONFIGURACOES'
   | 'EMPRESA'
   | 'FORNECEDORES'
   | 'PLANO_CONTAS'
@@ -57,8 +60,10 @@ export type NavigationScreen =
   | 'USUARIOS_PERMISSOES'
   | 'FECHAMENTO_PERIODO'
   | 'MODULOS_INTEGRACOES'
+  | 'NOTIFICACOES'
   | 'MELHORIAS'
-  | 'AUDITORIA';
+  | 'AUDITORIA'
+  | 'BACKUP';
 
 interface SidebarProps {
   currentScreen: NavigationScreen;
@@ -128,6 +133,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const stmts = storage.getStatementEntries();
   const pendingReconciliation = stmts.filter(s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO').length;
 
+  // Alertas de Notificação (Contratos a vencer em 30d + A pagar hoje + Conciliação)
+  const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+  const expiringContractsCount = contracts.filter(c => {
+    if (!c.endDate) return false;
+    const diffDays = Math.ceil((new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+    return diffDays >= 0 && diffDays <= 30;
+  }).length;
+  const payablesTodayCount = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === today).length;
+  const totalNotificationAlerts = expiringContractsCount + payablesTodayCount + pendingReconciliation;
+
   const groups: NavGroup[] = [
     {
       title: 'Visão Geral',
@@ -177,7 +192,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'Conciliação',
           icon: CheckCheck,
           badge: pendingReconciliation > 0 ? pendingReconciliation : undefined,
-          badgeColor: 'bg-blue-100 text-blue-800'
+          badgeColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
         }
       ]
     },
@@ -194,15 +209,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Configurações',
       items: [
-        { id: 'EMPRESA', label: 'Dados da Empresa', shortLabel: 'Empresa', icon: Building },
-        { id: 'FORNECEDORES', label: 'Fornecedores', shortLabel: 'Forneced.', icon: Truck },
-        { id: 'PLANO_CONTAS', label: 'Plano de Contas', shortLabel: 'Plano C.', icon: Network },
-        { id: 'RECORRENCIAS', label: 'Regras de Recorrência', shortLabel: 'Recorrência', icon: Clock },
-        { id: 'USUARIOS_PERMISSOES', label: 'Usuários e Permissões', shortLabel: 'Usuários', icon: ShieldCheck },
-        { id: 'FECHAMENTO_PERIODO', label: 'Fechamento de Período', shortLabel: 'Fechamento', icon: LockKeyhole },
-        { id: 'MODULOS_INTEGRACOES', label: 'Módulos e Integrações', shortLabel: 'Módulos', icon: Sliders },
-        { id: 'MELHORIAS', label: 'Solicitações de Melhorias', shortLabel: 'Melhorias', icon: Lightbulb },
-        { id: 'AUDITORIA', label: 'Trilha de Auditoria', shortLabel: 'Auditoria', icon: History }
+        { 
+          id: 'CONFIGURACOES', 
+          label: 'Configurações do Sistema', 
+          shortLabel: 'Configurações', 
+          icon: Sliders,
+          badge: totalNotificationAlerts > 0 ? totalNotificationAlerts : undefined,
+          badgeColor: 'bg-amber-500 text-slate-950 font-bold'
+        }
       ]
     }
   ];
@@ -308,7 +322,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="space-y-1 pt-0.5">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = currentScreen === item.id;
+                  const isConfigScreen = [
+                    'CONFIGURACOES', 'EMPRESA', 'FORNECEDORES', 'PLANO_CONTAS', 'RECORRENCIAS',
+                    'USUARIOS_PERMISSOES', 'FECHAMENTO_PERIODO', 'MODULOS_INTEGRACOES',
+                    'NOTIFICACOES', 'MELHORIAS', 'AUDITORIA', 'BACKUP'
+                  ].includes(currentScreen);
+                  const isActive = item.id === 'CONFIGURACOES' ? isConfigScreen : currentScreen === item.id;
 
                   if (isMinimized) {
                     // Minimized display: Centered Icon + Micro Label underneath
@@ -321,15 +340,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }}
                         title={`${item.label}${item.badge ? ` (${item.badge})` : ''}`}
                         className={`
-                          w-full flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all relative group
+                          w-full flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all relative group cursor-pointer
                           ${isActive 
-                            ? 'bg-amber-500/15 text-amber-400 font-semibold border-l-2 border-amber-400 shadow-2xs' 
-                            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-primary)] border-l-2 border-transparent'
+                            ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-950 dark:text-amber-300 font-bold border-l-3 border-amber-600 dark:border-amber-400 shadow-2xs' 
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white border-l-3 border-transparent'
                           }
                         `}
                       >
                         <div className="relative">
-                          <Icon className={`w-5 h-5 ${isActive ? 'text-amber-400' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}`} />
+                          <Icon className={`w-5 h-5 ${isActive ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'}`} />
                           {item.badge !== undefined && (
                             <span className="absolute -top-1.5 -right-2 text-[9px] font-bold px-1 py-0.2 rounded-full bg-rose-500 text-white shadow-xs">
                               {item.badge}
@@ -337,7 +356,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           )}
                         </div>
                         <span className={`text-[10px] leading-tight text-center font-medium mt-1 truncate max-w-[68px] ${
-                          isActive ? 'text-amber-300 font-bold' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
+                          isActive ? 'text-amber-950 dark:text-amber-300 font-bold' : 'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
                         }`}>
                           {item.shortLabel}
                         </span>
@@ -354,15 +373,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onCloseMobile();
                       }}
                       className={`
-                        w-full flex items-center justify-between px-3 py-2 rounded-md font-medium text-xs transition-all
+                        w-full flex items-center justify-between px-3 py-2 rounded-md font-medium text-xs transition-all cursor-pointer
                         ${isActive 
-                          ? 'border-l-2 border-amber-400 bg-amber-500/15 text-amber-400 font-semibold shadow-2xs' 
-                          : 'text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-primary)] border-l-2 border-transparent'
+                          ? 'border-l-3 border-amber-600 dark:border-amber-400 bg-amber-100 dark:bg-amber-500/15 text-amber-950 dark:text-amber-300 font-bold shadow-2xs' 
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white border-l-3 border-transparent'
                         }
                       `}
                     >
                       <div className="flex items-center space-x-2.5 truncate">
-                        <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`} />
+                        <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`} />
                         <span className="truncate">{item.label}</span>
                       </div>
                       {item.badge !== undefined && (
@@ -387,7 +406,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>v1.0.0 Gerencial</span>
               <button
                 onClick={toggleMinimized}
-                className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium p-1 rounded hover:bg-[var(--surface-elevated)]"
+                className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium p-1 rounded hover:bg-[var(--surface-elevated)]"
                 title="Minimizar barra lateral"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -397,7 +416,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <button
               onClick={toggleMinimized}
-              className="p-1.5 rounded-lg text-cyan-400 hover:bg-[var(--surface-elevated)] hover:text-cyan-300 transition-colors flex items-center justify-center"
+              className="p-1.5 rounded-lg text-amber-400 hover:bg-[var(--surface-elevated)] hover:text-amber-300 transition-colors flex items-center justify-center"
               title="Expandir barra lateral"
             >
               <ChevronRight className="w-4 h-4" />

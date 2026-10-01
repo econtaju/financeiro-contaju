@@ -29,6 +29,7 @@ import {
   UserPlus,
   UserCheck
 } from 'lucide-react';
+import { BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus } from '../../services/financialEngine';
 import { ReportingEngine } from '../../services/reportingEngine';
@@ -36,6 +37,9 @@ import { NavigationScreen } from '../Sidebar';
 import { useDashboardConfig } from '../../hooks/useDashboardConfig';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { PendingAlertsWidget } from './PendingAlertsWidget';
+import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
+import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
 
 interface DashboardViewProps {
   onNavigate: (screen: NavigationScreen) => void;
@@ -58,6 +62,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Tab: 'DASHBOARD' | 'KPIS_CONFIG'
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'KPIS_CONFIG'>('DASHBOARD');
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+
+  // Extrato bancário aberto por duplo clique
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+  const [selectedAccountForStatement, setSelectedAccountForStatement] = useState<BankAccount | null>(null);
+
+  const handleOpenAccountStatement = (acc: BankAccount) => {
+    setSelectedAccountForStatement(acc);
+    setIsStatementModalOpen(true);
+  };
 
   // Effective year & month factoring in global period filter
   const effectiveYear = period.active ? period.year : selectedYear;
@@ -339,7 +352,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onClick={() => onNavigate('CONCILIACAO')}
               className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-50 transition-colors flex items-center"
             >
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
               Conciliação Bancária
             </button>
           </div>
@@ -391,6 +404,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {activeTab === 'DASHBOARD' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           
+          {/* WIDGET SOLICITADO: AVISOS PENDENTES (PRÓXIMOS 3 DIAS) */}
+          {(!config.visibleWidgets || config.visibleWidgets.includes('widget_avisos_pendentes')) && (
+            <PendingAlertsWidget titles={titles} onNavigate={onNavigate} />
+          )}
+
+          {/* NOVO WIDGET SOLICITADO: PROJEÇÃO DE CAIXA LÍQUIDO & SIMULAÇÃO DE INADIMPLÊNCIA ESPERADA */}
+          <CashLiquiditySimulationWidget
+            currentCompetenceStr={currentCompetenceStr}
+            nominalCashBalance={consolidatedCash}
+            openReceivablesThisMonth={receivables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)) && t.balancePrincipal > 0).reduce((acc, t) => acc + t.balancePrincipal, 0)}
+            openPayablesThisMonth={payables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)) && t.balancePrincipal > 0).reduce((acc, t) => acc + t.balancePrincipal, 0)}
+            receivablesTitlesThisMonth={receivables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)))}
+            contracts={contracts}
+            counterparties={counterparties}
+          />
+
           {/* WIDGETS CONFIGURÁVEIS SOLICITADOS: FATURAMENTO & SALDOS BANCÁRIOS CONSOLIDADOS */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
@@ -401,7 +430,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 
                 <div className="flex items-center justify-between pb-3 border-b border-indigo-800/60">
                   <div className="flex items-center space-x-2">
-                    <div className="p-1.5 bg-indigo-600/60 rounded-lg">
+                    <div className="p-1.5 bg-amber-500/60 rounded-lg">
                       <Receipt className="w-4 h-4 text-indigo-200" />
                     </div>
                     <div>
@@ -415,7 +444,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                   <button
                     onClick={onOpenBillingModal}
-                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold rounded shadow-xs transition-colors flex items-center"
+                    className="px-2.5 py-1 bg-amber-500 hover:bg-indigo-500 text-white text-[11px] font-semibold rounded shadow-xs transition-colors flex items-center"
                   >
                     Faturar Lote
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -481,11 +510,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <Wallet className="w-4 h-4 text-emerald-600" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                          Saldos Bancários Consolidados
-                        </h3>
+                        <div className="flex items-center space-x-1.5">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                            Saldos Bancários Consolidados
+                          </h3>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-200">
+                            2 cliques abre extrato
+                          </span>
+                        </div>
                         <div className="text-[11px] text-slate-700">
-                          Posição real de liquidez disponível
+                          Dê dois cliques na conta para abrir o extrato detalhado
                         </div>
                       </div>
                     </div>
@@ -502,20 +536,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {bankAccountsWithBalance.map(b => (
                       <div 
                         key={b.id} 
-                        className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                        onDoubleClick={() => handleOpenAccountStatement(b)}
+                        className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 flex items-center justify-between hover:bg-amber-50/40 hover:border-amber-400 transition-all cursor-pointer group shadow-2xs"
+                        title="Dê dois cliques para abrir o extrato detalhado agrupado por dia, semana ou mês"
                       >
                         <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                           <div>
-                            <div className="text-xs font-semibold text-slate-800">{b.name}</div>
+                            <div className="text-xs font-semibold text-slate-800 group-hover:text-amber-900 flex items-center gap-1">
+                              <span>{b.name}</span>
+                            </div>
                             <div className="text-[10px] text-slate-700 font-mono">Ag {b.agency || '-'} / CC {b.accountNumber || '-'}</div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className={`text-xs font-bold font-mono ${b.calculatedBalance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
-                            {formatBRL(b.calculatedBalance)}
+                        <div className="flex items-center space-x-2">
+                          <div className="text-right">
+                            <div className={`text-xs font-bold font-mono ${b.calculatedBalance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                              {formatBRL(b.calculatedBalance)}
+                            </div>
+                            <span className="text-[9px] text-slate-700">Conciliado</span>
                           </div>
-                          <span className="text-[9px] text-slate-700">Conciliado</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAccountStatement(b);
+                            }}
+                            className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-100 rounded transition-colors"
+                            title="Ver Extrato e Movimentações"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -523,12 +574,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
-                  <span className="text-slate-700 text-[11px]">
+                  <span className="text-slate-700 text-[11px] flex items-center">
+                    <Sparkles className="w-3 h-3 text-amber-500 mr-1" />
                     {bankAccounts.length} contas bancárias integradas ao fluxo
                   </span>
                   <button
                     onClick={() => onNavigate('CONCILIACAO')}
-                    className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 flex items-center"
+                    className="text-xs font-semibold text-indigo-700 hover:text-[var(--text-primary)] flex items-center"
                   >
                     Ver Extratos & Conciliação
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -543,7 +595,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
                     <div className="flex items-center space-x-2.5">
-                      <div className="p-2 bg-blue-50 rounded-lg border border-blue-100 text-blue-700">
+                      <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/30 text-amber-400">
                         <Users className="w-5 h-5" />
                       </div>
                       <div>
@@ -551,7 +603,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
                             Panorama da Carteira de Clientes & Expansão
                           </h3>
-                          <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
                             {clientMetrics.activeClients} Ativos
                           </span>
                         </div>
@@ -564,7 +616,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => onNavigate('CLIENTES')}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition-colors flex items-center border border-blue-200"
+                        className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 text-xs font-semibold rounded-lg transition-colors flex items-center border border-amber-500/30"
                       >
                         <Users className="w-3.5 h-3.5 mr-1" />
                         Ver Todos os Clientes
@@ -578,14 +630,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/60 space-y-1">
                       <div className="flex justify-between items-center text-xs text-slate-700">
                         <span className="font-semibold text-slate-700">Clientes Ativos</span>
-                        <Users className="w-4 h-4 text-blue-600" />
+                        <Users className="w-4 h-4 text-amber-400" />
                       </div>
                       <div className="text-2xl font-bold text-slate-900 tracking-tight">
                         {clientMetrics.activeClients}
                       </div>
                       <div className="text-[11px] text-slate-600 flex items-center justify-between pt-0.5">
                         <span>Taxa de Ativação:</span>
-                        <span className="font-semibold text-blue-700">{clientMetrics.activePercentage}% da base</span>
+                        <span className="font-semibold text-amber-400">{clientMetrics.activePercentage}% da base</span>
                       </div>
                     </div>
 
@@ -619,10 +671,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-lg border border-indigo-200 bg-indigo-50/40 space-y-1">
+                    <div className="p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1">
                       <div className="flex justify-between items-center text-xs text-indigo-800">
-                        <span className="font-semibold text-indigo-900">Ticket Médio (ARPU)</span>
-                        <DollarSign className="w-4 h-4 text-indigo-600" />
+                        <span className="font-semibold text-[var(--text-primary)]">Ticket Médio (ARPU)</span>
+                        <DollarSign className="w-4 h-4 text-amber-400" />
                       </div>
                       <div className="text-xl font-bold text-indigo-950 tracking-tight">
                         {formatBRL(clientMetrics.averageTicketPerClient)}
@@ -670,7 +722,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                   <button
                     onClick={() => onNavigate('CLIENTES')}
-                    className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 flex items-center"
+                    className="text-xs font-semibold text-indigo-700 hover:text-[var(--text-primary)] flex items-center"
                   >
                     Gerenciar Clientes & Contratos
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -686,14 +738,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <div className="w-2 h-2 rounded-full bg-amber-500" />
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                     Indicadores Financeiros Chave (KPIs Selecionados)
                   </h3>
                 </div>
                 <button
                   onClick={() => setActiveTab('KPIS_CONFIG')}
-                  className="text-xs text-indigo-700 hover:text-indigo-900 font-medium flex items-center"
+                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium flex items-center"
                 >
                   <Sliders className="w-3.5 h-3.5 mr-1" />
                   Editar KPIs visíveis
@@ -705,10 +757,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   .filter(kpi => config.visibleKpis.includes(kpi.id))
                   .map(kpi => {
                     const IconComponent = kpi.icon;
+                    const navTarget: NavigationScreen | null = 
+                      kpi.id === 'contas_pagar_aberto' ? 'CONTAS_PAGAR' :
+                      kpi.id === 'contas_receber_aberto' ? 'CONTAS_RECEBER' :
+                      (kpi.id === 'saldo_liquido_caixa' || kpi.id === 'entradas_caixa' || kpi.id === 'saidas_caixa') ? 'FLUXO_CAIXA' :
+                      (kpi.id === 'receita_liquida' || kpi.id === 'lucro_liquido' || kpi.id === 'ebitda' || kpi.id === 'margem_liquida') ? 'DRE' :
+                      kpi.id === 'ticket_medio' ? 'CLIENTES' : null;
+
                     return (
                       <div 
                         key={kpi.id}
-                        className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:border-slate-300 transition-colors space-y-1.5"
+                        onClick={() => navTarget && onNavigate(navTarget)}
+                        className={`p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:border-slate-300 transition-all space-y-1.5 ${
+                          navTarget ? 'cursor-pointer hover:bg-slate-100/70 hover:shadow-2xs active:scale-[0.99]' : ''
+                        }`}
+                        title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
                       >
                         <div className="flex justify-between items-center text-xs text-slate-700">
                           <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
@@ -717,8 +780,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div className="text-lg font-bold text-slate-900 tracking-tight">
                           {kpi.value}
                         </div>
-                        <div className="text-[11px] text-slate-700 truncate" title={kpi.subtext}>
-                          {kpi.subtext}
+                        <div className="text-[11px] text-slate-700 truncate flex items-center justify-between" title={kpi.subtext}>
+                          <span>{kpi.subtext}</span>
+                          {navTarget && <ArrowRight className="w-3 h-3 text-slate-400 opacity-60 ml-1 shrink-0" />}
                         </div>
                       </div>
                     );
@@ -732,14 +796,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center space-x-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                   <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                     Demonstração do Resultado do Exercício (DRE Econômico)
                   </h2>
                 </div>
                 <button
                   onClick={() => onNavigate('DRE')}
-                  className="text-xs text-indigo-700 hover:text-indigo-900 font-medium"
+                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium"
                 >
                   Abrir DRE Completa →
                 </button>
@@ -747,9 +811,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-4 rounded-lg bg-indigo-50/50 border border-indigo-100">
-                  <div className="flex justify-between items-center text-xs text-indigo-900 font-medium">
+                  <div className="flex justify-between items-center text-xs text-[var(--text-primary)] font-medium">
                     <span>Receita Reconhecida ({dreData.months[effectiveMonthIdx]})</span>
-                    <Receipt className="w-4 h-4 text-indigo-600" />
+                    <Receipt className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="text-xl font-bold text-indigo-950 mt-1">
                     {formatBRL(currentMonthGrossRevenue)}
@@ -822,7 +886,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <button
                   onClick={() => onNavigate('FLUXO_CAIXA')}
-                  className="text-xs text-indigo-700 hover:text-indigo-900 font-medium"
+                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium"
                 >
                   Ver Fluxo de Caixa →
                 </button>
@@ -871,7 +935,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="flex justify-between items-center text-xs text-slate-700 font-medium">
                     <span>Carteira em Aberto</span>
-                    <Clock className="w-4 h-4 text-blue-600" />
+                    <Clock className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="text-sm font-semibold text-emerald-700 mt-1">
                     + {formatBRL(openReceivables)} <span className="text-[10px] text-slate-700 font-normal">(Receber)</span>
@@ -897,7 +961,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </h3>
                   <button
                     onClick={() => onNavigate('CONTAS_RECEBER')}
-                    className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                    className="text-xs font-medium text-indigo-700 hover:text-[var(--text-primary)]"
                   >
                     Ver todos ({receivables.filter(t => t.balancePrincipal > 0).length}) →
                   </button>
@@ -952,7 +1016,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </h3>
                   <button
                     onClick={() => onNavigate('CONTAS_PAGAR')}
-                    className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                    className="text-xs font-medium text-indigo-700 hover:text-[var(--text-primary)]"
                   >
                     Ver todos ({payables.filter(t => t.balancePrincipal > 0).length}) →
                   </button>
@@ -1015,7 +1079,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-100 pb-4">
               <div>
                 <h2 className="text-base font-bold text-slate-900 flex items-center">
-                  <Sliders className="w-5 h-5 mr-2 text-indigo-600" />
+                  <Sliders className="w-5 h-5 mr-2 text-amber-400" />
                   Central de Personalização de KPIs Financeiros
                 </h2>
                 <p className="text-xs text-slate-700 mt-1">
@@ -1049,17 +1113,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => applyPreset('EXECUTIVO')}
-                  className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 text-xs font-medium transition-colors flex items-center"
+                  className="px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-[var(--text-primary)] text-xs font-medium transition-colors flex items-center"
                 >
-                  <Building2 className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
+                  <Building2 className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
                   Perfil Diretoria & Executivo (MRR, Clientes, Lucro e Inadimplência)
                 </button>
 
                 <button
                   onClick={() => applyPreset('COMERCIAL')}
-                  className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 text-xs font-medium transition-colors flex items-center"
+                  className="px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-[var(--text-primary)] text-xs font-medium transition-colors flex items-center"
                 >
-                  <Users className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                  <Users className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
                   Perfil Comercial & Clientes (Clientes Ativos, Crescimento, Cobertura, MRR)
                 </button>
 
@@ -1109,7 +1173,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     onClick={() => toggleKpi(kpi.id)}
                     className={`p-4 rounded-xl border-2 transition-all cursor-pointer select-none relative flex flex-col justify-between ${
                       isSelected
-                        ? 'border-indigo-600 bg-indigo-50/40 shadow-xs'
+                        ? 'border-amber-500 bg-amber-500/10 shadow-xs'
                         : 'border-slate-200 hover:border-slate-300 bg-white opacity-70 hover:opacity-100'
                     }`}
                   >
@@ -1120,14 +1184,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </span>
                         
                         <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
-                          isSelected ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                          isSelected ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                         }`}>
                           {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
                       </div>
 
                       <div className="flex items-center space-x-2 mt-2.5">
-                        <IconComponent className={`w-4 h-4 ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`} />
+                        <IconComponent className={`w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-slate-400'}`} />
                         <h4 className="font-bold text-xs text-slate-900">{kpi.name}</h4>
                       </div>
 
@@ -1164,13 +1228,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_faturamento_resumo')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_faturamento_resumo')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="space-y-1 pr-3">
                   <div className="flex items-center space-x-2">
-                    <Receipt className="w-4 h-4 text-indigo-600" />
+                    <Receipt className="w-4 h-4 text-amber-400" />
                     <span className="text-xs font-bold text-slate-900">Widget: Resumo Rápido de Faturamento</span>
                   </div>
                   <p className="text-[11px] text-slate-700">
@@ -1178,7 +1242,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_faturamento_resumo') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_faturamento_resumo') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_faturamento_resumo') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -1189,7 +1253,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_saldos_consolidados')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_saldos_consolidados')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
@@ -1203,7 +1267,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_saldos_consolidados') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_saldos_consolidados') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_saldos_consolidados') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -1214,13 +1278,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_resumo_clientes')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_resumo_clientes')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="space-y-1 pr-3">
                   <div className="flex items-center space-x-2">
-                    <Users className="w-4 h-4 text-blue-600" />
+                    <Users className="w-4 h-4 text-amber-400" />
                     <span className="text-xs font-bold text-slate-900">Bloco: Panorama & Métricas da Carteira de Clientes</span>
                   </div>
                   <p className="text-[11px] text-slate-700">
@@ -1228,9 +1292,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_resumo_clientes') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_resumo_clientes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_resumo_clientes') && <Check className="w-3 h-3 stroke-[3]" />}
+                </div>
+              </div>
+
+              {/* Widget: Avisos Pendentes (Próximos 3 Dias) */}
+              <div 
+                onClick={() => toggleWidget('widget_avisos_pendentes')}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
+                  config.visibleWidgets.includes('widget_avisos_pendentes')
+                    ? 'border-amber-500 bg-amber-500/10'
+                    : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
+                }`}
+              >
+                <div className="space-y-1 pr-3">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-bold text-slate-900">Bloco: Avisos Pendentes (Próximos 3 Dias)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-700">
+                    Cálculo automático e monitoramento de contas a pagar e receber vencendo em até 3 dias.
+                  </p>
+                </div>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                  config.visibleWidgets.includes('widget_avisos_pendentes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                }`}>
+                  {config.visibleWidgets.includes('widget_avisos_pendentes') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1239,13 +1328,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_dre_economico')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_dre_economico')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="space-y-1 pr-3">
                   <div className="flex items-center space-x-2">
-                    <TrendingUp className="w-4 h-4 text-indigo-600" />
+                    <TrendingUp className="w-4 h-4 text-amber-400" />
                     <span className="text-xs font-bold text-slate-900">Bloco: Resultado Econômico por Competência (DRE)</span>
                   </div>
                   <p className="text-[11px] text-slate-700">
@@ -1253,7 +1342,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_dre_economico') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_dre_economico') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_dre_economico') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -1264,7 +1353,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_posicao_caixa')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_posicao_caixa')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
@@ -1278,7 +1367,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_posicao_caixa') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_posicao_caixa') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_posicao_caixa') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -1289,13 +1378,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => toggleWidget('widget_proximos_vencimentos')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
                   config.visibleWidgets.includes('widget_proximos_vencimentos')
-                    ? 'border-indigo-600 bg-indigo-50/40'
+                    ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="space-y-1 pr-3">
                   <div className="flex items-center space-x-2">
-                    <Clock className="w-4 h-4 text-blue-600" />
+                    <Clock className="w-4 h-4 text-amber-400" />
                     <span className="text-xs font-bold text-slate-900">Bloco: Próximos Vencimentos (Receber & Pagar)</span>
                   </div>
                   <p className="text-[11px] text-slate-700">
@@ -1303,7 +1392,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_proximos_vencimentos') ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white'
+                  config.visibleWidgets.includes('widget_proximos_vencimentos') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
                   {config.visibleWidgets.includes('widget_proximos_vencimentos') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -1328,6 +1417,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
         </div>
+      )}
+
+      {/* Modal de Extrato Bancário e Movimentações com Agrupamento (2 cliques na conta) */}
+      {isStatementModalOpen && selectedAccountForStatement && (
+        <BankAccountStatementModal
+          isOpen={isStatementModalOpen}
+          onClose={() => {
+            setIsStatementModalOpen(false);
+            setSelectedAccountForStatement(null);
+          }}
+          account={selectedAccountForStatement}
+        />
       )}
 
     </div>

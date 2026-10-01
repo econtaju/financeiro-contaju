@@ -3,17 +3,22 @@ import { X, ArrowLeftRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL } from '../../services/financialEngine';
 import { SearchableSelect } from '../Common/SearchableSelect';
+import { toast } from '../../hooks/useToast';
 
 interface TransferModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCompleted: () => void;
+  onCompleted?: () => void;
+  onTransferred?: () => void;
+  onError?: (err: string) => void;
 }
 
 export const TransferModal: React.FC<TransferModalProps> = ({
   isOpen,
   onClose,
-  onCompleted
+  onCompleted,
+  onTransferred,
+  onError
 }) => {
   const accounts = storage.getBankAccounts().filter(a => a.status === 'ATIVO');
   const today = new Date().toISOString().split('T')[0];
@@ -31,11 +36,17 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     setErrorMessage('');
 
     if (originAccountId === destinationAccountId) {
-      setErrorMessage('A conta de origem e destino devem ser diferentes.');
+      const msg = 'A conta de origem e destino devem ser diferentes.';
+      setErrorMessage(msg);
+      toast.error(msg, 'Contas Idênticas');
+      if (onError) onError(msg);
       return;
     }
     if (amount <= 0) {
-      setErrorMessage('O valor da transferência deve ser positivo.');
+      const msg = 'O valor da transferência deve ser positivo.';
+      setErrorMessage(msg);
+      toast.error(msg, 'Valor Inválido');
+      if (onError) onError(msg);
       return;
     }
 
@@ -49,10 +60,13 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     });
 
     if (res.success) {
-      onCompleted();
+      if (onCompleted) onCompleted();
+      if (onTransferred) onTransferred();
       onClose();
     } else {
       setErrorMessage(res.message);
+      toast.error(res.message, 'Falha na Transferência');
+      if (onError) onError(res.message);
     }
   };
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Network, Plus, Search, Layers, Edit2 } from 'lucide-react';
 import { ChartOfAccount } from '../../types';
 import { storage } from '../../services/storageService';
+import { matchesSearch } from '../../utils/searchUtils';
 
 export const ChartOfAccountsView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,8 +21,7 @@ export const ChartOfAccountsView: React.FC = () => {
   });
 
   const filtered = accounts.filter(a => 
-    a.code.includes(searchTerm) ||
-    a.name.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch([a.code, a.name, a.nature, a.dreLineMapping], searchTerm)
   );
 
   const handleOpenNew = () => {

@@ -4,6 +4,9 @@ import {
   Counterparty, 
   ServiceItem, 
   Contract, 
+  ContractStatus,
+  ContractStatusHistoryEntry,
+  Sale,
   FinancialTitle, 
   Settlement, 
   BankAccount, 
@@ -15,13 +18,19 @@ import {
   StatementEntry,
   ChartAccount,
   AnnualBudgetPlan,
+  BudgetVersion,
+  BudgetChangeRecord,
   GlobalPeriodFilter,
   DashboardConfig,
   BatchEditOptions,
   CreditCard,
   CreditCardPurchase,
   CreditCardInvoicePayment,
-  CashCountRecord
+  CashCountRecord,
+  SavedCashSimulationScenario,
+  ClientDelinquencySetting,
+  ReconciliationRule,
+  BankBalanceClosingRecord
 } from '../types';
 import { 
   INITIAL_COMPANY, 
@@ -46,6 +55,8 @@ import {
   INITIAL_CARD_PURCHASES, 
   INITIAL_CASH_COUNTS 
 } from '../data/creditCardsData';
+import { INITIAL_RECONCILIATION_RULES } from '../data/reconciliationRulesData';
+import { advanceCompetence, addMonthsSafe } from '../utils/dateUtils';
 
 const STORAGE_KEYS = {
   COMPANY: 'contaju_company_profile',
@@ -65,13 +76,20 @@ const STORAGE_KEYS = {
   MODULES: 'contaju_modules',
   IMPROVEMENTS: 'contaju_improvements',
   BUDGET_PLANS: 'contaju_budget_plans',
+  BUDGET_VERSIONS: 'contaju_budget_versions',
   CREDIT_CARDS: 'contaju_credit_cards',
   CARD_PURCHASES: 'contaju_card_purchases',
   CARD_INVOICE_PAYMENTS: 'contaju_card_invoice_payments',
   CASH_COUNTS: 'contaju_cash_counts',
   GLOBAL_PERIOD_FILTER: 'contaju_global_period_filter',
   DASHBOARD_CONFIG: 'contaju_dashboard_config',
-  THEME: 'contaju_theme'
+  CASH_SIMULATION_SCENARIOS: 'contaju_cash_simulation_scenarios',
+  RECONCILIATION_RULES: 'contaju_reconciliation_rules',
+  SALES: 'contaju_sales',
+  THEME: 'contaju_theme',
+  DELETED_TITLE_IDS: 'contaju_deleted_title_ids',
+  DELETED_SALE_IDS: 'contaju_deleted_sale_ids',
+  BANK_CLOSINGS: 'contaju_bank_closings'
 };
 
 const DEFAULT_GLOBAL_PERIOD_FILTER = {
@@ -93,6 +111,7 @@ const DEFAULT_DASHBOARD_CONFIG = {
     'saidas_caixa'
   ],
   visibleWidgets: [
+    'widget_avisos_pendentes',
     'widget_faturamento_resumo',
     'widget_saldos_consolidados',
     'widget_resumo_clientes',
@@ -117,7 +136,10 @@ class StorageService {
   }
 
   private notify() {
-    this.listeners.forEach(fn => fn());
+    // Agendado no próximo tick para evitar "Cannot update a component while rendering a different component"
+    setTimeout(() => {
+      this.listeners.forEach(fn => fn());
+    }, 0);
   }
 
   public initIfEmpty(force = false) {
@@ -158,15 +180,27 @@ class StorageService {
       localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify(INITIAL_CASH_COUNTS));
     }
 
-    // Sync any newly added initial titles or settlements to existing storage
+    // Sync any newly added initial titles or settlements to existing storage ONLY on first initialization or if not deleted
     try {
-      const existingTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
-      const missingTitles = INITIAL_TITLES.filter(it => !existingTitles.some(et => et.id === it.id));
-      if (missingTitles.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([...existingTitles, ...missingTitles]));
+      const isAlreadyInitialized = !!localStorage.getItem(STORAGE_KEYS.COMPANY);
+      const deletedIds = new Set(this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []));
+
+      // Se o sistema já foi inicializado anteriormente pelo usuário, NÃO ressuscitar títulos que foram deletados
+      if (!isAlreadyInitialized) {
+        const existingTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
+        const missingTitles = INITIAL_TITLES.filter(it => !existingTitles.some(et => et.id === it.id) && !deletedIds.has(it.id));
+        if (missingTitles.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([...existingTitles, ...missingTitles]));
+        }
+
+        const existingSettlements = this.get<Settlement[]>(STORAGE_KEYS.SETTLEMENTS, []);
+        const missingSettlements = INITIAL_SETTLEMENTS.filter(is => !existingSettlements.some(es => es.id === is.id));
+        if (missingSettlements.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify([...existingSettlements, ...missingSettlements]));
+        }
       }
 
-      // Also ensure initial credit card purchase titles are synced to TITLES (Contas a Pagar)
+      // Also ensure initial credit card purchase titles are synced to TITLES (Contas a Pagar) ONLY if not deleted
       const currentTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
       const purchases = this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES);
       const cards = this.get<CreditCard[]>(STORAGE_KEYS.CREDIT_CARDS, INITIAL_CREDIT_CARDS);
@@ -177,7 +211,7 @@ class StorageService {
         const card = cards.find(c => c.id === pur.cardId);
         for (const inst of pur.installments) {
           const expectedTitleId = `title-cc-${pur.id}-${inst.installmentNumber}`;
-          if (!currentTitles.some(t => t.id === expectedTitleId)) {
+          if (!currentTitles.some(t => t.id === expectedTitleId || (t.originType === 'CARTAO_CREDITO' && t.originId === pur.id && t.installmentIndex === inst.installmentNumber)) && !deletedIds.has(expectedTitleId)) {
             newTitlesToAdd.push({
               id: expectedTitleId,
               companyId: 'comp-1',
@@ -217,12 +251,6 @@ class StorageService {
 
       if (titlesUpdated && newTitlesToAdd.length > 0) {
         localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([...currentTitles, ...newTitlesToAdd]));
-      }
-
-      const existingSettlements = this.get<Settlement[]>(STORAGE_KEYS.SETTLEMENTS, []);
-      const missingSettlements = INITIAL_SETTLEMENTS.filter(is => !existingSettlements.some(es => es.id === is.id));
-      if (missingSettlements.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify([...existingSettlements, ...missingSettlements]));
       }
     } catch {
       // ignore parsing issues
@@ -318,6 +346,457 @@ class StorageService {
   }
   public saveContracts(contracts: Contract[]) {
     this.set(STORAGE_KEYS.CONTRACTS, contracts);
+  }
+
+  // Sales (Vendas & Faturamento vinculado a Contratos e Avulsos)
+  public getSales(): Sale[] {
+    const rawSales = this.get<Sale[]>(STORAGE_KEYS.SALES, []);
+    const deletedSaleIds = new Set(this.get<string[]>(STORAGE_KEYS.DELETED_SALE_IDS, []));
+    const sales = rawSales.filter(s => !deletedSaleIds.has(s.id));
+
+    // Auto-sync: sincroniza faturas de contratos e vendas para garantir vínculo 100% íntegro
+    const titles = this.getTitles();
+    const billingTitles = titles.filter(t => 
+      t.type === 'RECEBER' && 
+      (t.originType === 'CONTRATO' || t.originType === 'VENDA') && 
+      t.documentState !== 'CANCELADO'
+    );
+    
+    const contracts = this.getContracts();
+    let hasNew = false;
+    const existingSaleIds = new Set(sales.map(s => s.id));
+    const existingTitleIdsInSales = new Set(sales.flatMap(s => s.titleIds || []));
+
+    for (const t of billingTitles) {
+      if (t.id && !existingTitleIdsInSales.has(t.id)) {
+        const contract = contracts.find(c => 
+          c.id === t.originId || 
+          c.id === t.contractId || 
+          c.contractNumber === t.contractNumber ||
+          c.contractNumber === t.originId
+        );
+        const saleId = t.saleId || `sale-${t.originType === 'CONTRATO' ? 'ctr' : 'venda'}-${t.id}`;
+        
+        if (!existingSaleIds.has(saleId) && !deletedSaleIds.has(saleId)) {
+          const comp = t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : new Date().toISOString().substring(0, 7));
+          const generatedSaleNumber = t.saleNumber || (t.titleNumber ? `VEN-${t.titleNumber.replace('FAT-', '').replace('TB-', 'TB-')}` : `VEN-${t.id.slice(-6)}`);
+          
+          const newSale: Sale = {
+            id: saleId,
+            saleNumber: generatedSaleNumber,
+            customerId: t.counterpartyId,
+            competence: comp,
+            date: t.issueDate || t.launchDate || new Date().toISOString().split('T')[0],
+            items: [
+              {
+                id: `item-${t.id}`,
+                serviceId: contract?.items?.[0]?.serviceId || 'srv-1',
+                description: t.description || (contract ? `Mensalidade Contrato ${contract.contractNumber}` : 'Faturamento de Venda'),
+                quantity: 1,
+                unitPrice: t.originalAmount,
+                discount: 0,
+                total: t.originalAmount,
+                accountId: t.accountId || 'acc-1.1.01'
+              }
+            ],
+            grossTotal: t.originalAmount,
+            discountTotal: 0,
+            netTotal: t.originalAmount,
+            installmentsCount: t.totalInstallments || 1,
+            notes: contract ? `Venda gerada do Contrato ${contract.contractNumber}` : (t.notes || 'Faturamento de serviço avulso'),
+            createdAt: t.createdAt || new Date().toISOString(),
+            originType: t.originType === 'CONTRATO' ? 'CONTRATO' : 'AVULSO',
+            contractId: contract?.id || t.contractId,
+            contractNumber: contract?.contractNumber || t.contractNumber,
+            status: 'CONFIRMADA',
+            titleIds: [t.id]
+          };
+          sales.push(newSale);
+          existingSaleIds.add(saleId);
+          existingTitleIdsInSales.add(t.id);
+          hasNew = true;
+        }
+      }
+    }
+
+    if (hasNew) {
+      localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
+    }
+
+    return sales;
+  }
+
+  public saveSales(sales: Sale[]): void {
+    this.set(STORAGE_KEYS.SALES, sales);
+  }
+
+  public addSale(sale: Sale): void {
+    const sales = this.getSales();
+    this.saveSales([sale, ...sales]);
+  }
+
+  public updateSale(updatedSale: Sale, updateLinkedTitles = true): void {
+    const sales = this.getSales();
+    const existingSale = sales.find(s => s.id === updatedSale.id);
+    this.saveSales(sales.map(s => s.id === updatedSale.id ? updatedSale : s));
+
+    if (updateLinkedTitles && existingSale) {
+      const titles = this.getTitles();
+      const linkedTitleIds = new Set(updatedSale.titleIds || existingSale.titleIds || []);
+      
+      const updatedTitles = titles.map(t => {
+        const isLinked = t.saleId === updatedSale.id || 
+          linkedTitleIds.has(t.id) || 
+          (updatedSale.contractId && (t.originId === updatedSale.contractId || t.contractId === updatedSale.contractId) && t.competence === existingSale.competence);
+
+        if (isLinked) {
+          const isSettled = t.settlementState === 'LIQUIDADO';
+          const newAmount = updatedSale.netTotal || updatedSale.grossTotal;
+          const totalInst = t.totalInstallments || updatedSale.installmentsCount || 1;
+          const installmentAmount = totalInst > 1 ? Number((newAmount / totalInst).toFixed(2)) : newAmount;
+
+          const updatedDocState = updatedSale.status === 'CANCELADA' && !isSettled 
+            ? ('CANCELADO' as const) 
+            : t.documentState;
+
+          return {
+            ...t,
+            counterpartyId: updatedSale.customerId,
+            competence: updatedSale.competence || t.competence,
+            description: updatedSale.items?.[0]?.description 
+              ? `${updatedSale.items[0].description}${totalInst > 1 ? ` (Parcela ${t.installmentIndex || 1}/${totalInst})` : ''}` 
+              : t.description,
+            originalAmount: !isSettled ? installmentAmount : t.originalAmount,
+            balancePrincipal: !isSettled ? Math.max(0, installmentAmount - (t.settledPrincipal || 0)) : t.balancePrincipal,
+            accountId: updatedSale.items?.[0]?.accountId || t.accountId,
+            documentState: updatedDocState,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return t;
+      });
+
+      this.saveTitles(updatedTitles);
+    }
+  }
+
+  public deleteSale(id: string, options?: { deleteLinkedTitles?: boolean }): { success: boolean; deletedTitlesCount: number } {
+    const sales = this.getSales();
+    const saleToDelete = sales.find(s => s.id === id);
+    if (!saleToDelete) return { success: false, deletedTitlesCount: 0 };
+
+    this.saveSales(sales.filter(s => s.id !== id));
+
+    // Registrar ID de venda excluída para evitar ressuscitação automática
+    const currentDeletedSales = this.get<string[]>(STORAGE_KEYS.DELETED_SALE_IDS, []);
+    this.set(STORAGE_KEYS.DELETED_SALE_IDS, Array.from(new Set([...currentDeletedSales, id])));
+
+    let deletedTitlesCount = 0;
+    if (options?.deleteLinkedTitles !== false) {
+      const titles = this.getTitles();
+      const linkedTitleIds = new Set(saleToDelete.titleIds || []);
+      const titleIdsToDelete = titles
+        .filter(t => 
+          t.saleId === id || 
+          linkedTitleIds.has(t.id) || 
+          (saleToDelete.contractId && (t.originId === saleToDelete.contractId || t.contractId === saleToDelete.contractId) && t.competence === saleToDelete.competence)
+        )
+        // Se ainda não estiver liquidado, exclui definitivamente
+        .filter(t => t.settlementState !== 'LIQUIDADO')
+        .map(t => t.id);
+
+      if (titleIdsToDelete.length > 0) {
+        this.batchDeleteTitles(titleIdsToDelete);
+        deletedTitlesCount = titleIdsToDelete.length;
+      }
+    }
+
+    return { success: true, deletedTitlesCount };
+  }
+
+  public cancelOrInactivateContract(
+    contractId: string, 
+    options: {
+      status: 'CANCELADO' | 'INATIVO' | 'ENCERRADO';
+      cancellationDate: string; // YYYY-MM-DD
+      cancellationReason: string;
+      cancellationNotes?: string;
+      inactivateClient?: boolean;
+      cancelPendingTitlesAfterDate?: boolean;
+    }
+  ): { success: boolean; message: string; cancelledTitlesCount: number } {
+    const contracts = this.getContracts();
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return { success: false, message: 'Contrato não encontrado.', cancelledTitlesCount: 0 };
+
+    const currentUser = this.getCurrentUser();
+    const nowIso = new Date().toISOString();
+
+    const updatedContracts = contracts.map(c => {
+      if (c.id === contractId) {
+        const historyEntry: ContractStatusHistoryEntry = {
+          id: `csh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          contractId,
+          previousStatus: c.status,
+          newStatus: options.status,
+          changedAt: nowIso,
+          changedBy: currentUser.name,
+          userRole: currentUser.role,
+          reason: options.cancellationReason,
+          notes: options.cancellationNotes,
+          effectiveDate: options.cancellationDate
+        };
+
+        return {
+          ...c,
+          status: options.status,
+          cancellationDate: options.cancellationDate,
+          cancellationReason: options.cancellationReason,
+          cancellationNotes: options.cancellationNotes,
+          inactivatedAt: nowIso,
+          inactivatedBy: currentUser.name,
+          statusHistory: [historyEntry, ...(c.statusHistory || [])]
+        };
+      }
+      return c;
+    });
+    this.saveContracts(updatedContracts);
+
+    // Cancel pending titles if requested
+    let cancelledTitlesCount = 0;
+    if (options.cancelPendingTitlesAfterDate) {
+      const titles = this.getTitles();
+      const cancellationMonth = options.cancellationDate.substring(0, 7);
+      
+      const updatedTitles = titles.map(t => {
+        if (
+          t.originType === 'CONTRATO' && 
+          t.originId === contractId && 
+          t.settlementState !== 'LIQUIDADO' &&
+          t.documentState !== 'CANCELADO' &&
+          (t.dueDate >= options.cancellationDate || (t.competence && t.competence >= cancellationMonth))
+        ) {
+          cancelledTitlesCount++;
+          return {
+            ...t,
+            documentState: 'CANCELADO' as const,
+            notes: `${t.notes ? t.notes + ' • ' : ''}Título cancelado devido ao encerramento/cancelamento do contrato a partir de ${options.cancellationDate}. Motivo: ${options.cancellationReason}`
+          };
+        }
+        return t;
+      });
+
+      if (cancelledTitlesCount > 0) {
+        this.saveTitles(updatedTitles);
+      }
+    }
+
+    // Inactivate client if requested
+    if (options.inactivateClient && contract.customerId) {
+      const counterparties = this.getCounterparties();
+      const updatedCounterparties = counterparties.map(cp => {
+        if (cp.id === contract.customerId) {
+          return { ...cp, status: 'INATIVO' as const };
+        }
+        return cp;
+      });
+      this.saveCounterparties(updatedCounterparties);
+    }
+
+    // Audit log
+    const statusLabel = options.status === 'CANCELADO' ? 'Cancelamento' : (options.status === 'INATIVO' ? 'Inativação' : 'Encerramento');
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: options.status === 'CANCELADO' ? 'CANCELAMENTO_CONTRATO' : 'INATIVACAO_CONTRATO',
+      module: 'Contratos Recorrentes',
+      recordId: contractId,
+      details: `${statusLabel} do contrato ${contract.contractNumber} a partir de ${options.cancellationDate}. Motivo: ${options.cancellationReason}. ${cancelledTitlesCount > 0 ? `(${cancelledTitlesCount} títulos futuros cancelados)` : ''}`
+    });
+
+    return { 
+      success: true, 
+      message: `Contrato ${contract.contractNumber} marcado como ${options.status} com sucesso!`,
+      cancelledTitlesCount 
+    };
+  }
+
+  public reactivateContract(
+    contractId: string,
+    options?: { reactivateClient?: boolean }
+  ): { success: boolean; message: string } {
+    const contracts = this.getContracts();
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return { success: false, message: 'Contrato não encontrado.' };
+
+    const currentUser = this.getCurrentUser();
+    const nowIso = new Date().toISOString();
+    const updatedContracts = contracts.map(c => {
+      if (c.id === contractId) {
+        const historyEntry: ContractStatusHistoryEntry = {
+          id: `csh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          contractId,
+          previousStatus: c.status,
+          newStatus: 'ATIVO',
+          changedAt: nowIso,
+          changedBy: currentUser.name,
+          userRole: currentUser.role,
+          reason: 'Reativação para carteira ativa',
+          notes: 'Contrato reativado para faturamento contínuo',
+          effectiveDate: new Date().toISOString().split('T')[0]
+        };
+
+        return {
+          ...c,
+          status: 'ATIVO' as const,
+          cancellationNotes: c.cancellationDate ? `Reativado em ${new Date().toISOString().split('T')[0]} por ${currentUser.name}. (Anteriormente cancelado em ${c.cancellationDate}: ${c.cancellationReason || ''})` : undefined,
+          statusHistory: [historyEntry, ...(c.statusHistory || [])]
+        };
+      }
+      return c;
+    });
+    this.saveContracts(updatedContracts);
+
+    if (options?.reactivateClient && contract.customerId) {
+      const counterparties = this.getCounterparties();
+      const updatedCounterparties = counterparties.map(cp => {
+        if (cp.id === contract.customerId) {
+          return { ...cp, status: 'ATIVO' as const };
+        }
+        return cp;
+      });
+      this.saveCounterparties(updatedCounterparties);
+    }
+
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'REATIVACAO_CONTRATO',
+      module: 'Contratos Recorrentes',
+      recordId: contractId,
+      details: `Reativação do contrato ${contract.contractNumber} para a carteira ativa.`
+    });
+
+    return { success: true, message: `Contrato ${contract.contractNumber} reativado com sucesso na carteira ativa!` };
+  }
+
+  public changeContractStatus(
+    contractId: string,
+    newStatus: ContractStatus,
+    options?: {
+      reason?: string;
+      notes?: string;
+      effectiveDate?: string;
+    }
+  ): { success: boolean; message: string } {
+    const contracts = this.getContracts();
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return { success: false, message: 'Contrato não encontrado.' };
+
+    if (contract.status === newStatus) {
+      return { success: true, message: `O contrato já se encontra no status ${newStatus}.` };
+    }
+
+    const currentUser = this.getCurrentUser();
+    const nowIso = new Date().toISOString();
+    const effective = options?.effectiveDate || nowIso.split('T')[0];
+
+    const historyEntry: ContractStatusHistoryEntry = {
+      id: `csh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      contractId,
+      previousStatus: contract.status,
+      newStatus,
+      changedAt: nowIso,
+      changedBy: currentUser.name,
+      userRole: currentUser.role,
+      reason: options?.reason || `Alteração manual de status para ${newStatus}`,
+      notes: options?.notes,
+      effectiveDate: effective
+    };
+
+    const updatedContracts = contracts.map(c => {
+      if (c.id === contractId) {
+        return {
+          ...c,
+          status: newStatus,
+          cancellationDate: (newStatus === 'CANCELADO' || newStatus === 'INATIVO' || newStatus === 'ENCERRADO') ? effective : c.cancellationDate,
+          cancellationReason: options?.reason || c.cancellationReason,
+          cancellationNotes: options?.notes || c.cancellationNotes,
+          inactivatedAt: (newStatus === 'CANCELADO' || newStatus === 'INATIVO') ? nowIso : undefined,
+          inactivatedBy: (newStatus === 'CANCELADO' || newStatus === 'INATIVO') ? currentUser.name : undefined,
+          statusHistory: [historyEntry, ...(c.statusHistory || [])]
+        };
+      }
+      return c;
+    });
+
+    this.saveContracts(updatedContracts);
+
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'ALTERACAO_STATUS_CONTRATO',
+      module: 'Contratos Recorrentes',
+      recordId: contractId,
+      details: `Status do contrato ${contract.contractNumber} alterado de ${contract.status} para ${newStatus}. Motivo: ${options?.reason || 'Não informado'}. Usuário: ${currentUser.name}.`
+    });
+
+    return { 
+      success: true, 
+      message: `Status do contrato alterado de ${contract.status} para ${newStatus} com sucesso!` 
+    };
+  }
+
+  public getContractAuditLogs(contractId: string, contractNumber?: string): AuditLogEntry[] {
+    const logs = this.getAuditLogs();
+    return logs.filter(l => 
+      l.recordId === contractId || 
+      (contractNumber && l.details.includes(contractNumber)) ||
+      (l.module === 'Contratos Recorrentes' && l.recordId === contractId)
+    );
+  }
+
+  public deleteContract(
+    contractId: string, 
+    options?: { cancelPendingTitles?: boolean }
+  ): { success: boolean; message: string; cancelledCount: number } {
+    const contracts = this.getContracts();
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return { success: false, message: 'Contrato não encontrado.', cancelledCount: 0 };
+
+    const currentUser = this.getCurrentUser();
+    const updatedContracts = contracts.filter(c => c.id !== contractId);
+    this.saveContracts(updatedContracts);
+
+    let cancelledCount = 0;
+    if (options?.cancelPendingTitles) {
+      const titles = this.getTitles();
+      const updatedTitles = titles.map(t => {
+        if (t.originType === 'CONTRATO' && t.originId === contractId && t.settlementState !== 'LIQUIDADO' && t.documentState !== 'CANCELADO') {
+          cancelledCount++;
+          return {
+            ...t,
+            documentState: 'CANCELADO' as const,
+            notes: `${t.notes ? t.notes + ' • ' : ''}Título cancelado devido à exclusão definitiva do contrato ${contract.contractNumber}.`
+          };
+        }
+        return t;
+      });
+      if (cancelledCount > 0) {
+        this.saveTitles(updatedTitles);
+      }
+    }
+
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_CONTRATO',
+      module: 'Contratos Recorrentes',
+      recordId: contractId,
+      details: `Exclusão do contrato ${contract.contractNumber} (${contract.description}). ${cancelledCount > 0 ? `${cancelledCount} títulos pendentes foram cancelados.` : ''}`
+    });
+
+    return { success: true, message: `Contrato ${contract.contractNumber} excluído com sucesso!`, cancelledCount };
   }
 
   // Titles (Receivables & Payables)
@@ -430,6 +909,28 @@ class StorageService {
     this.set(STORAGE_KEYS.BUDGET_PLANS, updated);
   }
 
+  // Budget Versions & Simulation History
+  public getBudgetVersions(year?: number): BudgetVersion[] {
+    const all = this.get<BudgetVersion[]>(STORAGE_KEYS.BUDGET_VERSIONS, []);
+    if (year) {
+      return all.filter(v => v.year === year);
+    }
+    return all;
+  }
+
+  public saveBudgetVersion(version: BudgetVersion) {
+    const all = this.getBudgetVersions();
+    const existingIdx = all.findIndex(v => v.id === version.id);
+    let updated: BudgetVersion[];
+    if (existingIdx >= 0) {
+      updated = [...all];
+      updated[existingIdx] = version;
+    } else {
+      updated = [version, ...all];
+    }
+    this.set(STORAGE_KEYS.BUDGET_VERSIONS, updated);
+  }
+
   // Global Period Filter
   public getGlobalPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, DEFAULT_GLOBAL_PERIOD_FILTER);
@@ -515,6 +1016,90 @@ class StorageService {
     return { cancelledCount, ignoredCount };
   }
 
+  // Batch delete titles permanently from storage
+  public batchDeleteTitles(ids: string[]): { deletedCount: number; affectedSettlements: number } {
+    if (!ids || ids.length === 0) return { deletedCount: 0, affectedSettlements: 0 };
+    const setIds = new Set(ids);
+    const titles = this.getTitles();
+    const settlements = this.getSettlements();
+    const movements = this.getMovements();
+    const bankAccounts = this.getBankAccounts();
+
+    const titlesToDelete = titles.filter(t => setIds.has(t.id));
+    const deletedCount = titlesToDelete.length;
+    if (deletedCount === 0) return { deletedCount: 0, affectedSettlements: 0 };
+
+    // 1. Remove titles from titles list and record IDs to prevent future resurrection
+    const remainingTitles = titles.filter(t => !setIds.has(t.id));
+    this.saveTitles(remainingTitles);
+
+    const currentDeleted = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
+    const updatedDeleted = Array.from(new Set([...currentDeleted, ...ids]));
+    this.set(STORAGE_KEYS.DELETED_TITLE_IDS, updatedDeleted);
+
+    // 2. Identify linked settlements to reverse balances and clean up
+    const linkedSettlements = settlements.filter(s => setIds.has(s.titleId));
+    const affectedSettlements = linkedSettlements.length;
+
+    if (affectedSettlements > 0) {
+      // Safely adjust bank account balances for any linked settlements being deleted
+      const updatedBankAccounts = bankAccounts.map(ba => {
+        let balanceAdjustment = 0;
+        linkedSettlements.forEach(s => {
+          if (s.bankAccountId === ba.id) {
+            const title = titlesToDelete.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER') {
+              // Was income received: subtract back from bank account
+              balanceAdjustment -= s.components.netFinancialAmount;
+            } else if (title?.type === 'PAGAR') {
+              // Was expense paid: refund back to bank account
+              balanceAdjustment += s.components.netFinancialAmount;
+            }
+          }
+        });
+        if (balanceAdjustment !== 0) {
+          return {
+            ...ba,
+            currentBalance: ba.currentBalance + balanceAdjustment,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return ba;
+      });
+      this.saveBankAccounts(updatedBankAccounts);
+
+      // Remove the orphan settlements
+      const remainingSettlements = settlements.filter(s => !setIds.has(s.titleId));
+      this.saveSettlements(remainingSettlements);
+
+      // Remove any movements linked to these settlements
+      const linkedSettlementIds = new Set(linkedSettlements.map(s => s.id));
+      const remainingMovements = movements.filter(m => 
+        !(m.originType === 'BAIXA_TITULO' && m.originReferenceId && linkedSettlementIds.has(m.originReferenceId))
+      );
+      this.saveMovements(remainingMovements);
+    }
+
+    // 3. Add audit log
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_EM_LOTE',
+      module: 'Financeiro',
+      recordId: `batch-${deletedCount}`,
+      details: `Exclusão permanente de ${deletedCount} título(s)${affectedSettlements > 0 ? ` com estorno de ${affectedSettlements} baixa(s) vinculada(s)` : ''}.`
+    });
+
+    return { deletedCount, affectedSettlements };
+  }
+
+  // Single delete title
+  public deleteTitle(id: string): boolean {
+    const res = this.batchDeleteTitles([id]);
+    return res.deletedCount > 0;
+  }
+
   // Duplicate titles (single or multiple)
   public duplicateTitles(ids: string[], advanceMonth: boolean = false): FinancialTitle[] {
     const setIds = new Set(ids);
@@ -531,18 +1116,8 @@ class StorageService {
       let nextExpectedCashDate = src.expectedCashDate || src.dueDate;
 
       if (advanceMonth) {
-        const [cYear, cMonth] = src.competence.split('-').map(Number);
-        const nextMonthDate = new Date(cYear, cMonth, 1); // cMonth is 1-based, new Date(y, m, 1) advances 1 month
-        const ny = nextMonthDate.getFullYear();
-        const nm = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-        nextCompetence = `${ny}-${nm}`;
-
-        // Advance due date by ~1 month
-        const dParts = src.dueDate.split('-').map(Number);
-        const dueObj = new Date(dParts[0], dParts[1], dParts[2]);
-        const nextDueMonth = String(dueObj.getMonth() + 1).padStart(2, '0');
-        const nextDueDay = String(dueObj.getDate()).padStart(2, '0');
-        nextDueDate = `${dueObj.getFullYear()}-${nextDueMonth}-${nextDueDay}`;
+        nextCompetence = advanceCompetence(src.competence, 1);
+        nextDueDate = addMonthsSafe(src.dueDate, 1);
         nextExpectedCashDate = nextDueDate;
       }
 
@@ -651,6 +1226,69 @@ class StorageService {
     this.saveTitles([...newTitles, ...titles]);
   }
 
+  public batchAddCardPurchasesAndSyncTitles(newPurchases: CreditCardPurchase[]) {
+    if (newPurchases.length === 0) return;
+
+    const currentPurchases = this.getCardPurchases();
+    this.saveCardPurchases([...newPurchases, ...currentPurchases]);
+
+    const cards = this.getCreditCards();
+    const titles = this.getTitles();
+    const newTitles: FinancialTitle[] = [];
+
+    for (const purchase of newPurchases) {
+      const card = cards.find(c => c.id === purchase.cardId);
+
+      for (const inst of purchase.installments) {
+        const titleId = `title-cc-${purchase.id}-${inst.installmentNumber}`;
+        newTitles.push({
+          id: titleId,
+          companyId: 'comp-1',
+          type: 'PAGAR',
+          titleNumber: `CC-${card?.brand?.slice(0, 3) || 'CRD'}-${purchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
+          counterpartyId: purchase.counterpartyId || 'prov-2',
+          description: `[Cartão ${card?.name || 'Corporativo'}] ${purchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
+          accountId: purchase.chartAccountId || 'acc-desp-1',
+          launchDate: purchase.purchaseDate,
+          competence: inst.competence,
+          issueDate: purchase.purchaseDate,
+          dueDate: inst.dueDate,
+          expectedCashDate: inst.dueDate,
+          originalAmount: inst.amount,
+          settledPrincipal: 0,
+          balancePrincipal: inst.amount,
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: 'CARTAO_CREDITO',
+          originId: purchase.id,
+          installmentIndex: inst.installmentNumber,
+          totalInstallments: inst.totalInstallments,
+          creditCardId: purchase.cardId,
+          creditCardInvoiceMonth: inst.invoiceMonth,
+          isCreditCardPurchase: true,
+          expectedBankAccountId: card?.defaultPaymentBankAccountId || 'bank-1',
+          notes: `Lançamento importado da fatura - Fatura ${inst.invoiceMonth}`,
+          createdAt: purchase.createdAt,
+          updatedAt: purchase.createdAt
+        });
+      }
+    }
+
+    this.saveTitles([...newTitles, ...titles]);
+
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'IMPORTACAO_FATURA_CARTAO',
+      module: 'Cartões de Crédito',
+      recordId: `imp-cc-${Date.now()}`,
+      details: `Importação e cadastro de ${newPurchases.length} novos lançamentos faltantes da fatura de cartão de crédito. Títulos sincronizados no Contas a Pagar.`
+    });
+  }
+
   public getCardInvoicePayments(): CreditCardInvoicePayment[] {
     return this.get<CreditCardInvoicePayment[]>(STORAGE_KEYS.CARD_INVOICE_PAYMENTS, []);
   }
@@ -682,31 +1320,152 @@ class StorageService {
 
   // Full backup / restore
   public exportFullBackup(): string {
-    const backup: Record<string, unknown> = {};
+    const rawData: Record<string, unknown> = {};
     for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
       try {
         const val = localStorage.getItem(storageKey);
-        backup[key] = val ? JSON.parse(val) : null;
+        rawData[key] = val ? JSON.parse(val) : null;
       } catch {
         // ignore
       }
     }
-    return JSON.stringify(backup, null, 2);
+
+    const company = this.getCompany();
+    const titles = this.getTitles();
+    const contracts = this.getContracts();
+    const counterparties = this.getCounterparties();
+    const movements = this.getMovements();
+    const bankAccounts = this.getBankAccounts();
+
+    const fullPackage = {
+      system: 'Sistema Financeiro & Contábil Leão Dourado',
+      version: '2.5.0',
+      exportedAt: new Date().toISOString(),
+      companyName: company?.tradeName || company?.companyName || 'Empresa Contábil',
+      stats: {
+        totalTitles: titles.length,
+        totalContracts: contracts.length,
+        totalCounterparties: counterparties.length,
+        totalMovements: movements.length,
+        totalBankAccounts: bankAccounts.length
+      },
+      data: rawData
+    };
+
+    return JSON.stringify(fullPackage, null, 2);
   }
 
-  public importFullBackup(jsonStr: string): boolean {
+  public downloadBackupFile(): { filename: string; sizeKb: number } {
+    const jsonStr = this.exportFullBackup();
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+    const filename = `backup-leao-dourado-${dateStr}_${timeStr}.json`;
+
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXPORTACAO_BACKUP',
+      module: 'Segurança e Backup',
+      recordId: 'backup',
+      details: `Download de backup completo da base de dados em formato JSON (${filename}, ${(blob.size / 1024).toFixed(1)} KB).`
+    });
+
+    return {
+      filename,
+      sizeKb: parseFloat((blob.size / 1024).toFixed(1))
+    };
+  }
+
+  public importFullBackup(jsonStr: string): { success: boolean; message: string; keysRestored: number } {
     try {
-      const data = JSON.parse(jsonStr);
+      const parsed = JSON.parse(jsonStr);
+      // Suporta formato estruturado (com campo .data) ou objeto plano de chaves
+      const payload = (parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object')
+        ? parsed.data
+        : parsed;
+
+      let keysRestored = 0;
       for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
-        if (data[key] !== undefined) {
-          localStorage.setItem(storageKey, JSON.stringify(data[key]));
+        if (payload[key] !== undefined && payload[key] !== null) {
+          localStorage.setItem(storageKey, JSON.stringify(payload[key]));
+          keysRestored++;
         }
       }
+
+      const currentUser = this.getCurrentUser();
+      this.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'RESTAURACAO_BACKUP',
+        module: 'Segurança e Backup',
+        recordId: 'restore',
+        details: `Restauração de backup JSON concluída com sucesso. ${keysRestored} tabelas/módulos restaurados.`
+      });
+
       this.notify();
-      return true;
-    } catch {
-      return false;
+      return {
+        success: true,
+        message: `Backup restaurado com sucesso! ${keysRestored} áreas de dados foram sincronizadas.`,
+        keysRestored
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: 'Arquivo de backup inválido ou corrompido. O JSON não pôde ser processado.',
+        keysRestored: 0
+      };
     }
+  }
+
+  // Importação de contratos em lote com criação de novos clientes
+  public batchImportContracts(
+    newContracts: Contract[], 
+    newCounterparties: Counterparty[]
+  ): { importedContracts: number; createdClients: number } {
+    // 1. Salva novos clientes caso existam
+    let createdClients = 0;
+    if (newCounterparties.length > 0) {
+      const currentClients = this.getCounterparties();
+      const existingIds = new Set(currentClients.map(c => c.id));
+      const filteredNew = newCounterparties.filter(c => !existingIds.has(c.id));
+      if (filteredNew.length > 0) {
+        this.saveCounterparties([...currentClients, ...filteredNew]);
+        createdClients = filteredNew.length;
+      }
+    }
+
+    // 2. Salva os novos contratos
+    const currentContracts = this.getContracts();
+    this.saveContracts([...currentContracts, ...newContracts]);
+
+    // 3. Auditoria
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'IMPORTACAO_LOTE_CONTRATOS',
+      module: 'Contratos Recorrentes',
+      recordId: 'import-batch',
+      details: `Importação em lote de ${newContracts.length} contratos e cadastro de ${createdClients} novos clientes.`
+    });
+
+    this.notify();
+    return {
+      importedContracts: newContracts.length,
+      createdClients
+    };
   }
 
   // Theme Management (Futurismo Clean Dark / Light)
@@ -726,6 +1485,197 @@ class StorageService {
     } catch {
       // fallback
     }
+    this.notify();
+  }
+
+  // ==========================================
+  // CENÁRIOS DE SIMULAÇÃO DE FLUXO DE CAIXA E INADIMPLÊNCIA
+  // ==========================================
+  public getCashSimulationScenarios(): SavedCashSimulationScenario[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao ler cenários de simulação:', e);
+    }
+
+    // Cenário padrão inicial caso ainda não exista nenhum
+    const counterparties = this.getCounterparties();
+    const client1 = counterparties.find(c => c.id === 'cli-1') || counterparties[0];
+    const client5 = counterparties.find(c => c.id === 'cli-5') || counterparties[1];
+
+    const initialScenario: SavedCashSimulationScenario = {
+      id: 'scen-default-1',
+      name: 'Cenário Conservador Padrão',
+      description: 'Projeção preventiva considerando atrasos médios em clientes recorrentes.',
+      isActive: true,
+      clientSettings: [
+        ...(client1 ? [{
+          clientId: client1.id,
+          clientName: client1.name,
+          mode: 'PERCENTAGE' as const,
+          percentage: 50,
+          notes: 'Atraso parcial habitual na virada de competência'
+        }] : []),
+        ...(client5 ? [{
+          clientId: client5.id,
+          clientName: client5.name,
+          mode: 'TOTAL' as const,
+          notes: 'Pagamento postergado para o mês seguinte'
+        }] : [])
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const initialList = [initialScenario];
+    this.saveCashSimulationScenarios(initialList);
+    return initialList;
+  }
+
+  public saveCashSimulationScenarios(scenarios: SavedCashSimulationScenario[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify(scenarios));
+      this.notify();
+    } catch (e) {
+      console.error('Erro ao salvar cenários de simulação:', e);
+    }
+  }
+
+  public getActiveCashSimulationScenario(): SavedCashSimulationScenario | null {
+    const scenarios = this.getCashSimulationScenarios();
+    return scenarios.find(s => s.isActive) || scenarios[0] || null;
+  }
+
+  public setActiveCashSimulationScenario(id: string | null): void {
+    const scenarios = this.getCashSimulationScenarios();
+    const updated = scenarios.map(s => ({
+      ...s,
+      isActive: s.id === id
+    }));
+    this.saveCashSimulationScenarios(updated);
+  }
+
+  public saveOrUpdateCashSimulationScenario(scenario: SavedCashSimulationScenario): void {
+    const scenarios = this.getCashSimulationScenarios();
+    const index = scenarios.findIndex(s => s.id === scenario.id);
+    let updated: SavedCashSimulationScenario[];
+
+    if (scenario.isActive) {
+      scenarios.forEach(s => { s.isActive = false; });
+    }
+
+    if (index >= 0) {
+      updated = [...scenarios];
+      updated[index] = {
+        ...scenario,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      updated = [
+        ...scenarios,
+        {
+          ...scenario,
+          createdAt: scenario.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ];
+    }
+    this.saveCashSimulationScenarios(updated);
+  }
+
+  public deleteCashSimulationScenario(id: string): void {
+    const scenarios = this.getCashSimulationScenarios();
+    const updated = scenarios.filter(s => s.id !== id);
+    // Se excluiu o ativo e ainda sobraram outros, ativa o primeiro
+    if (updated.length > 0 && !updated.some(s => s.isActive)) {
+      updated[0].isActive = true;
+    }
+    this.saveCashSimulationScenarios(updated);
+  }
+
+  // ==========================================
+  // REGRAS DE CONCILIAÇÃO AUTOMÁTICA (DE-PARA)
+  // ==========================================
+  public getReconciliationRules(): ReconciliationRule[] {
+    const stored = this.get<ReconciliationRule[]>(STORAGE_KEYS.RECONCILIATION_RULES, []);
+    if (!stored || stored.length === 0) {
+      this.saveReconciliationRules(INITIAL_RECONCILIATION_RULES);
+      return INITIAL_RECONCILIATION_RULES;
+    }
+    return stored;
+  }
+
+  public saveReconciliationRules(rules: ReconciliationRule[]): void {
+    this.set(STORAGE_KEYS.RECONCILIATION_RULES, rules);
+  }
+
+  public addReconciliationRule(rule: ReconciliationRule): void {
+    const rules = this.getReconciliationRules();
+    this.saveReconciliationRules([rule, ...rules]);
+  }
+
+  public updateReconciliationRule(id: string, updates: Partial<ReconciliationRule>): void {
+    const rules = this.getReconciliationRules();
+    const updated = rules.map(r => {
+      if (r.id === id) {
+        return {
+          ...r,
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return r;
+    });
+    this.saveReconciliationRules(updated);
+  }
+
+  public toggleReconciliationRule(id: string): void {
+    const rules = this.getReconciliationRules();
+    const updated = rules.map(r => {
+      if (r.id === id) {
+        return {
+          ...r,
+          active: !r.active,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return r;
+    });
+    this.saveReconciliationRules(updated);
+  }
+
+  public deleteReconciliationRule(id: string): void {
+    const rules = this.getReconciliationRules();
+    this.saveReconciliationRules(rules.filter(r => r.id !== id));
+  }
+
+  // ==========================================
+  // CONFERÊNCIA DE SALDOS BANCÁRIOS & FECHAMENTO PERFEITO
+  // ==========================================
+  public getBankClosingRecords(): BankBalanceClosingRecord[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.BANK_CLOSINGS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public saveBankClosingRecord(record: BankBalanceClosingRecord): void {
+    const records = this.getBankClosingRecords();
+    const updated = [record, ...records.filter(r => r.id !== record.id)];
+    localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify(updated));
+    this.notify();
+  }
+
+  public saveBankClosingRecords(records: BankBalanceClosingRecord[]): void {
+    localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify(records));
     this.notify();
   }
 }

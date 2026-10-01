@@ -36,6 +36,24 @@ export interface BudgetSummaryKPIs {
   realizedNetIncome: number;
   netIncomeVariance: number;
   netIncomeExecutionRate: number;
+
+  overallBudgetAdherence: number;
+  favorableAccountsCount: number;
+  criticalAlertsCount: number;
+
+  // Aliases for view compatibility
+  totalRevenueRealized: number;
+  totalRevenuePlanned: number;
+  revenueVarianceNominal: number;
+
+  totalExpensesRealized: number;
+  totalExpensesPlanned: number;
+  expensesExecutionRate: number;
+  expensesVarianceNominal: number;
+
+  netIncomeRealized: number;
+  netIncomePlanned: number;
+  netIncomeVarianceNominal: number;
 }
 
 export class BudgetEngine {
@@ -516,6 +534,20 @@ export class BudgetEngine {
     const netIncomeVariance = realizedNetIncome - plannedNetIncome;
     const netIncomeExecutionRate = plannedNetIncome !== 0 ? (realizedNetIncome / plannedNetIncome) * 100 : 0;
 
+    const analyticalLines = lines.filter(l => l.isAnalytical);
+    const favorableAccountsCount = analyticalLines.filter(l => l.favorableStatus === 'FAVORAVEL').length;
+    const criticalAlertsCount = analyticalLines.filter(l => l.favorableStatus === 'DESFAVORAVEL').length;
+
+    const revAdherence = totalPlannedRevenue > 0 
+      ? Math.min(100, (totalRealizedRevenue / totalPlannedRevenue) * 100) 
+      : 100;
+    const expAdherence = totalPlannedCostsAndExpenses > 0 
+      ? Math.max(0, 100 - Math.max(0, ((totalRealizedCostsAndExpenses - totalPlannedCostsAndExpenses) / totalPlannedCostsAndExpenses) * 100)) 
+      : 100;
+    const overallBudgetAdherence = totalPlannedRevenue > 0 || totalPlannedCostsAndExpenses > 0
+      ? (revAdherence + expAdherence) / 2
+      : 100;
+
     const kpis: BudgetSummaryKPIs = {
       totalPlannedRevenue,
       totalRealizedRevenue,
@@ -528,7 +560,24 @@ export class BudgetEngine {
       plannedNetIncome,
       realizedNetIncome,
       netIncomeVariance,
-      netIncomeExecutionRate
+      netIncomeExecutionRate,
+
+      overallBudgetAdherence,
+      favorableAccountsCount,
+      criticalAlertsCount,
+
+      totalRevenueRealized: totalRealizedRevenue,
+      totalRevenuePlanned: totalPlannedRevenue,
+      revenueVarianceNominal: revenueVariance,
+
+      totalExpensesRealized: totalRealizedCostsAndExpenses,
+      totalExpensesPlanned: totalPlannedCostsAndExpenses,
+      expensesExecutionRate: costsExpensesExecutionRate,
+      expensesVarianceNominal: costsExpensesVariance,
+
+      netIncomeRealized: realizedNetIncome,
+      netIncomePlanned: plannedNetIncome,
+      netIncomeVarianceNominal: netIncomeVariance
     };
 
     return { lines, kpis, plan };
@@ -574,6 +623,66 @@ export class BudgetEngine {
       const newMonthly = i.monthlyPlanned.map(val => Math.round(val * factor));
       return { ...i, monthlyPlanned: newMonthly };
     });
+
+    return {
+      ...plan,
+      items: updatedItems,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Applies progressive month-over-month growth or reduction (e.g. +5% or -10% month by month)
+   */
+  public static applyMonthByMonthVariation(
+    plan: AnnualBudgetPlan,
+    accountId: string,
+    monthlyVariationPct: number,
+    startMonth: number = 0
+  ): AnnualBudgetPlan {
+    const item = plan.items.find(i => i.accountId === accountId);
+    if (!item) return plan;
+
+    const newMonthly = [...item.monthlyPlanned];
+    const initialBase = newMonthly[startMonth] || 0;
+    const factor = 1 + monthlyVariationPct / 100;
+
+    let runningVal = initialBase;
+    for (let m = startMonth + 1; m < 12; m++) {
+      runningVal = Math.round(runningVal * factor);
+      newMonthly[m] = runningVal;
+    }
+
+    const updatedItems = plan.items.map(i =>
+      i.accountId === accountId ? { ...i, monthlyPlanned: newMonthly } : i
+    );
+
+    return {
+      ...plan,
+      items: updatedItems,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Sets a constant monthly value across all 12 months for an account
+   */
+  public static setConstantMonthlyValue(
+    plan: AnnualBudgetPlan,
+    accountId: string,
+    constantAmount: number
+  ): AnnualBudgetPlan {
+    const newMonthly = new Array(12).fill(constantAmount);
+    const existingIndex = plan.items.findIndex(i => i.accountId === accountId);
+    let updatedItems: AnnualBudgetPlan['items'];
+
+    if (existingIndex >= 0) {
+      updatedItems = plan.items.map(i =>
+        i.accountId === accountId ? { ...i, monthlyPlanned: newMonthly } : i
+      );
+    } else {
+      updatedItems = [...plan.items, { accountId, monthlyPlanned: newMonthly }];
+    }
 
     return {
       ...plan,

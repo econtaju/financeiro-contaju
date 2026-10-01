@@ -1,46 +1,70 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
-    /* Dark Theme (Tema Leão Dourado: Fundo Preto/Chumbo Profundo + Dourado Ouro) */
-    --bg-app: #0A0D13;
-    --surface-card: #131720;
-    --surface-elevated: #1B212D;
-    --border-subtle: #273040;
+    /* ========================================================================= */
+    /* Tema Leão Dourado - Dark Mode (Sóbrio, Nobre, Alto Contraste, Sem Neon)   */
+    /* ========================================================================= */
+    --bg-app: #0B0E14;
+    --surface-card: #121620;
+    --surface-elevated: #19202D;
+    --border-subtle: #242D3D;
+    --border-highlight: #3A475C;
     --text-primary: #F8FAFC;
     --text-secondary: #CBD5E1;
-    --brand-gold: #E5A93C;
-    --brand-gold-glow: rgba(229, 169, 60, 0.25);
-    --brand-gold-light: #FDE047;
-    --brand-gold-dark: #B45309;
-    --brand-cyan: #D4AF37;
-    --brand-cyan-glow: rgba(212, 175, 55, 0.25);
-    --brand-primary-text: #0B0D13;
-    --brand-secondary: #EAB308;
+    --text-muted: #94A3B8;
+
+    /* Tons Nobres e Sóbrios: Preto, Cinza e Dourado (Zero Fluorescência / Zero Neon) */
+    --brand-gold: #D4AF37;
+    --brand-gold-glow: rgba(212, 175, 55, 0.15);
+    --brand-gold-light: #DFC070;
+    --brand-gold-dark: #996515;
+    --brand-cyan: #C59B27;
+    --brand-cyan-glow: rgba(197, 155, 39, 0.15);
+    --brand-primary-text: #0B0E14;
+    --brand-secondary: #B8860B;
+
+    /* Status Financeiros: Verde (Entradas/Sucesso), Âmbar (Atenção) e Vermelho (Saídas/Atrasos) */
     --status-success: #10B981;
+    --status-success-bg: rgba(16, 185, 129, 0.15);
     --status-warning: #F59E0B;
+    --status-warning-bg: rgba(245, 158, 11, 0.15);
     --status-danger: #EF4444;
+    --status-danger-bg: rgba(239, 68, 68, 0.15);
   }
 
   html.light {
-    /* Light Theme (Alto Contraste: Fundo Limpo, Textos Escuros Nítidos + Destaques Ouro Nobre) */
-    --bg-app: #F8F9FA;
+    /* ========================================================================= */
+    /* Tema Leão Dourado - Light Mode (Clean, Executivo, Nítido, Alto Contraste) */
+    /* ========================================================================= */
+    --bg-app: #F8FAFC;
     --surface-card: #FFFFFF;
-    --surface-elevated: #F1F3F5;
-    --border-subtle: #D8DFE8;
+    --surface-elevated: #F1F5F9;
+    --border-subtle: #E2E8F0;
+    --border-highlight: #CBD5E1;
     --text-primary: #0F172A;
     --text-secondary: #334155;
-    --brand-gold: #B45309;
-    --brand-gold-glow: rgba(180, 83, 9, 0.15);
-    --brand-gold-light: #D97706;
+    --text-muted: #64748B;
+
+    /* Tons Nobres do Leão Dourado para Fundos Claros */
+    --brand-gold: #996515;
+    --brand-gold-glow: rgba(153, 101, 21, 0.10);
+    --brand-gold-light: #B8860B;
     --brand-gold-dark: #78350F;
-    --brand-cyan: #B45309;
-    --brand-cyan-glow: rgba(180, 83, 9, 0.15);
+    --brand-cyan: #996515;
+    --brand-cyan-glow: rgba(153, 101, 21, 0.10);
     --brand-primary-text: #FFFFFF;
     --brand-secondary: #92400E;
-    --status-success: #059669;
-    --status-warning: #D97706;
-    --status-danger: #DC2626;
+
+    /* Status Financeiros de Alto Contraste para Modo Claro */
+    --status-success: #047857;
+    --status-success-bg: rgba(4, 120, 87, 0.10);
+    --status-warning: #B45309;
+    --status-warning-bg: rgba(180, 83, 9, 0.10);
+    --status-danger: #B91C1C;
+    --status-danger-bg: rgba(185, 28, 28, 0.10);
   }
 
   body {
@@ -62,7 +86,7 @@
   }
 }
 
-/* Custom modern scrollbars */
+/* Custom modern scrollbars para rolagem horizontal e vertical suave */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -75,11 +99,200 @@
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--text-muted);
 }
 
 /* Tabular figures for financial calculations */
 .font-tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* ========================================================================= */
+/* BLINDAGEM DE FORMULÁRIOS & CONTROLES NATIVOS (TEMA GRAFITE & TEMA CLARO) */
+/* ========================================================================= */
+
+/* Tema Grafite (Dark Mode / Leão Dourado) */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+html.dark select,
+html.dark textarea {
+  background-color: #19202D !important;
+  color: #F8FAFC !important;
+  border-color: #334155 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+html.dark select option {
+  background-color: #121620 !important;
+  color: #F8FAFC !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #D4AF37 !important;
+  box-shadow: 0 0 0 1.5px rgba(212, 175, 55, 0.25) !important;
+  outline: none !important;
+}
+
+/* Blindagem de Modais e Diálogos no Tema Grafite */
+html.dark .fixed .bg-white {
+  background-color: #121620 !important;
+  color: #F8FAFC !important;
+  border-color: #242D3D !important;
+}
+
+html.dark .fixed .bg-slate-50,
+html.dark .fixed .bg-slate-100 {
+  background-color: #161C28 !important;
+  color: #F8FAFC !important;
+  border-color: #242D3D !important;
+}
+
+html.dark .fixed .text-slate-900,
+html.dark .fixed .text-slate-800 {
+  color: #F8FAFC !important;
+}
+
+html.dark .fixed .text-slate-700 {
+  color: #CBD5E1 !important;
+}
+
+html.dark .fixed .text-slate-600,
+html.dark .fixed .text-slate-500 {
+  color: #94A3B8 !important;
+}
+
+html.dark .fixed .border-slate-200,
+html.dark .fixed .border-slate-300 {
+  border-color: #242D3D !important;
+}
+
+/* Tema Claro (Light Mode / Executivo Nítido) */
+html.light input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+html.light select,
+html.light textarea {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border-color: #CBD5E1 !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #64748B !important;
+}
+
+html.light select option {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+html.light input:focus,
+html.light select:focus,
+html.light textarea:focus {
+  border-color: #B45309 !important;
+  box-shadow: 0 0 0 1.5px rgba(180, 83, 9, 0.2) !important;
+  outline: none !important;
+}
+
+/* ========================================================================= */
+/* LAYOUT DE IMPRESSÃO / EXPORTAÇÃO PDF VIA BROWSER COM VARIÁVEIS DE TEMA     */
+/* ========================================================================= */
+@media print {
+  @page {
+    size: landscape;
+    margin: 8mm 6mm;
+  }
+
+  /* Ocultar elementos de navegação, modais e controles não pertinentes ao relatório */
+  aside,
+  nav,
+  header,
+  button:not(.print-visible),
+  .no-print,
+  .fixed,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  /* Desbloquear overflow para renderizar todas as linhas nas páginas impressas */
+  html, body {
+    background-color: var(--bg-app) !important;
+    color: var(--text-primary) !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    font-size: 10px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #root,
+  .h-screen,
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto,
+  main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Garantir que a tabela ocupe toda a largura com cabeçalhos em cada folha */
+  table {
+    width: 100% !important;
+    min-width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  th, td {
+    border-color: var(--border-subtle) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Manter as posições sticky como estáticas no impresso */
+  .sticky {
+    position: static !important;
+  }
+
+  /* Respeitar as cores do tema ativo */
+  .bg-\[var\(--surface-card\)\],
+  .bg-\[var\(--surface-elevated\)\] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+@keyframes toastProgress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+
+
 

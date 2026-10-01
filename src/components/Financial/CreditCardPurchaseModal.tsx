@@ -14,6 +14,7 @@ import {
 import { CreditCard, Counterparty, ChartAccount, CreditCardPurchase, CreditCardInstallment } from '../../types';
 import { storage } from '../../services/storageService';
 import { formatBRL } from '../../services/financialEngine';
+import { getDaysInMonth } from '../../utils/dateUtils';
 
 interface CreditCardPurchaseModalProps {
   isOpen: boolean;
@@ -117,7 +118,9 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
           dueYear += 1;
         }
       }
-      const dueDate = `${dueYear}-${String(dueMonth).padStart(2, '0')}-${String(selectedCard.dueDay).padStart(2, '0')}`;
+      const maxDays = getDaysInMonth(dueYear, dueMonth);
+      const actualDueDay = Math.min(selectedCard.dueDay, maxDays);
+      const dueDate = `${dueYear}-${String(dueMonth).padStart(2, '0')}-${String(actualDueDay).padStart(2, '0')}`;
 
       // Adjust last installment for roundings
       let currentInstAmount = finalInstallmentValue;

@@ -120,9 +120,9 @@ export const CompareDRECashView: React.FC = () => {
                 - {formatBRL(Math.abs(grossRevenue - netResultDRE))}
               </span>
             </div>
-            <div className="flex justify-between py-2 bg-indigo-50/50 p-2 rounded text-indigo-950 font-bold text-sm">
+            <div className="flex justify-between py-2 bg-slate-100 p-2 rounded text-slate-900 font-bold text-sm">
               <span>(=) Resultado Líquido do Exercício (Lucro/Prejuízo):</span>
-              <span className={netResultDRE >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+              <span className={netResultDRE >= 0 ? 'text-amber-700' : 'text-rose-700'}>
                 {formatBRL(netResultDRE)}
               </span>
             </div>
@@ -132,7 +132,7 @@ export const CompareDRECashView: React.FC = () => {
         {/* Right: Cash Flow Result */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
               Visão Financeira (Caixa Realizado)
             </span>
             <span className="text-[10px] font-mono text-slate-700">{formatCompetence(selectedCompetence)}</span>
@@ -141,7 +141,7 @@ export const CompareDRECashView: React.FC = () => {
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-600">Total de Entradas Efetivas no Banco:</span>
-              <span className="font-semibold text-emerald-700">
+              <span className="font-semibold text-amber-800">
                 + {formatBRL(cash.lines[2]?.valuesByMonth[monthIdx] || 0)}
               </span>
             </div>
@@ -151,9 +151,9 @@ export const CompareDRECashView: React.FC = () => {
                 - {formatBRL(cash.lines[3]?.valuesByMonth[monthIdx] || 0)}
               </span>
             </div>
-            <div className="flex justify-between py-2 bg-emerald-50/50 p-2 rounded text-emerald-950 font-bold text-sm">
+            <div className="flex justify-between py-2 bg-amber-500/10 p-2 rounded text-slate-900 font-bold text-sm border border-amber-500/20">
               <span>(=) Variação Líquida de Caixa no Mês:</span>
-              <span className={cashNetOperating >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+              <span className={cashNetOperating >= 0 ? 'text-amber-800' : 'text-rose-700'}>
                 {formatBRL(cashNetOperating)}
               </span>
             </div>
@@ -185,18 +185,18 @@ export const CompareDRECashView: React.FC = () => {
             <span className="font-medium">- {formatBRL(uncollectedRevenue)}</span>
           </div>
 
-          <div className="flex justify-between items-center py-1.5 text-emerald-700 pl-4 border-b border-slate-100">
+          <div className="flex justify-between items-center py-1.5 text-slate-800 pl-4 border-b border-slate-100">
             <span>
               (+) Despesas do mês incorridas mas ainda não pagas no caixa (Fornecedores a Pagar):
             </span>
-            <span className="font-medium">+ {formatBRL(unpaidExpenses)}</span>
+            <span className="font-medium text-amber-800">+ {formatBRL(unpaidExpenses)}</span>
           </div>
 
-          <div className="flex justify-between items-center py-1.5 text-emerald-700 pl-4 border-b border-slate-100">
+          <div className="flex justify-between items-center py-1.5 text-slate-800 pl-4 border-b border-slate-100">
             <span>
               (+) Recebimentos de faturamentos de competências anteriores que entraram agora no caixa:
             </span>
-            <span className="font-medium">+ {formatBRL(pastCollectionsInMonth)}</span>
+            <span className="font-medium text-amber-800">+ {formatBRL(pastCollectionsInMonth)}</span>
           </div>
 
           <div className="flex justify-between items-center py-1.5 text-rose-700 pl-4 border-b border-slate-100">
@@ -206,9 +206,9 @@ export const CompareDRECashView: React.FC = () => {
             <span className="font-medium">- {formatBRL(pastPaymentsInMonth)}</span>
           </div>
 
-          <div className="flex justify-between items-center py-3 bg-slate-100/70 p-3 rounded-lg font-bold text-slate-900 text-sm mt-2">
+          <div className="flex justify-between items-center py-3 bg-slate-100/70 p-3 rounded-lg font-bold text-slate-900 text-sm mt-2 border border-slate-200">
             <span>(=) Geração Operacional Efetiva de Caixa Calculada:</span>
-            <span className="text-emerald-700">{formatBRL(cashNetOperating)}</span>
+            <span className="text-amber-800">{formatBRL(cashNetOperating)}</span>
           </div>
 
         </div>

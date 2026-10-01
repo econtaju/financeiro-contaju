@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { X, Edit3, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { FinancialTitle, Counterparty } from '../../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet } from 'lucide-react';
+import { FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, getFilteredChartAccounts } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
+import { QuickCreateAccountModal } from './QuickCreateAccountModal';
 
 interface EditTitleModalProps {
   isOpen: boolean;
@@ -19,21 +20,38 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   onClose,
   onSaved
 }) => {
+  const today = new Date().toISOString().split('T')[0];
   const [description, setDescription] = useState('');
   const [counterpartyId, setCounterpartyId] = useState('');
+  const [counterpartyFilter, setCounterpartyFilter] = useState<'TODOS' | 'FORNECEDORES' | 'CLIENTES'>('TODOS');
   const [accountId, setAccountId] = useState('');
   const [competence, setCompetence] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [expectedCashDate, setExpectedCashDate] = useState('');
   const [originalAmount, setOriginalAmount] = useState<number>(0);
   const [expectedBankAccountId, setExpectedBankAccountId] = useState('');
+  const [barcode, setBarcode] = useState('');
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Quick account creation state
+  const [isQuickAccountModalOpen, setIsQuickAccountModalOpen] = useState(false);
 
   // Quick counterparty creation state
   const [quickCreatedId, setQuickCreatedId] = useState<string | null>(null);
   const [openCompleteModal, setOpenCompleteModal] = useState(false);
   const [openCompleteAfterSave, setOpenCompleteAfterSave] = useState(true);
+
+  // Estados de Baixa / Pagamento / Recebimento imediato
+  const [isAlreadySettled, setIsAlreadySettled] = useState(false);
+  const [settlementDate, setSettlementDate] = useState(today);
+  const [settlementBankAccountId, setSettlementBankAccountId] = useState('');
+  const [settlementPaymentMethod, setSettlementPaymentMethod] = useState<'PIX' | 'BOLETO' | 'TRANSFERENCIA' | 'CARTAO_DEBITO' | 'DINHEIRO' | 'DEBITO_AUTOMATICO' | 'OUTROS'>('PIX');
+  const [settlementDiscount, setSettlementDiscount] = useState<number>(0);
+  const [settlementInterest, setSettlementInterest] = useState<number>(0);
+  const [settlementBankFee, setSettlementBankFee] = useState<number>(0);
+  const [settlementVoucherRef, setSettlementVoucherRef] = useState('');
+  const [settlementNotes, setSettlementNotes] = useState('');
 
   useEffect(() => {
     if (title) {
@@ -45,30 +63,66 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       setExpectedCashDate(title.expectedCashDate || title.dueDate || '');
       setOriginalAmount(title.originalAmount || 0);
       setExpectedBankAccountId(title.expectedBankAccountId || '');
+      setBarcode(title.barcode || '');
       setNotes(title.notes || '');
       setErrorMessage('');
+
+      setIsAlreadySettled(false);
+      setSettlementDate(today);
+      setSettlementBankAccountId(title.expectedBankAccountId || '');
+      setSettlementPaymentMethod('PIX');
+      setSettlementDiscount(0);
+      setSettlementInterest(0);
+      setSettlementBankFee(0);
+      setSettlementVoucherRef('');
+      setSettlementNotes('');
     }
   }, [title, isOpen]);
+
+  // Filtrar rigorosamente o plano de contas:
+  // - Para RECEBER: apenas Receitas
+  // - Para PAGAR: apenas Custos e Despesas
+  const chartAccounts = useMemo(() => {
+    if (!title) return [];
+    const all = storage.getChartAccounts();
+    const filtered = getFilteredChartAccounts(all, title.type);
+    // Se o título já possui uma conta que não constava no filtro, preserva a conta existente
+    if (accountId && !filtered.some(a => a.id === accountId)) {
+      const current = all.find(a => a.id === accountId);
+      if (current) {
+        return [current, ...filtered];
+      }
+    }
+    return filtered;
+  }, [title?.type, accountId, isOpen]);
 
   if (!isOpen || !title) return null;
 
   const isReceber = title.type === 'RECEBER';
   const hasSettlements = title.settledPrincipal > 0;
 
-  const counterparties = storage.getCounterparties().filter(c => {
+  const allCounterparties = storage.getCounterparties();
+  const counterparties = allCounterparties.filter(c => {
     if (isReceber) return c.type === 'CLIENTE' || c.type === 'AMBOS';
-    return c.type === 'FORNECEDOR' || c.type === 'AMBOS';
+    if (counterpartyFilter === 'FORNECEDORES') return c.type === 'FORNECEDOR' || c.type === 'AMBOS';
+    if (counterpartyFilter === 'CLIENTES') return c.type === 'CLIENTE' || c.type === 'AMBOS';
+    return true; // TODOS
   });
-
-  const chartAccounts = storage.getChartAccounts().filter(a => a.isAnalytical && a.isActive);
   const bankAccounts = storage.getBankAccounts().filter(a => a.status === 'ATIVO');
 
-  const counterpartyOptions: SelectOption[] = counterparties.map(c => ({
-    value: c.id,
-    label: c.name,
-    sublabel: c.document ? `Doc: ${c.document}` : (c.tradeName || undefined),
-    badge: c.status === 'ATIVO' ? undefined : 'Inativo'
-  }));
+  const counterpartyOptions: SelectOption[] = counterparties.map(c => {
+    let typeBadge = '';
+    if (c.type === 'CLIENTE') typeBadge = 'Cliente';
+    else if (c.type === 'FORNECEDOR') typeBadge = 'Fornecedor';
+    else if (c.type === 'AMBOS') typeBadge = 'Cliente & Forn.';
+
+    return {
+      value: c.id,
+      label: c.name,
+      sublabel: c.document ? `Doc: ${c.document}` : (c.tradeName || undefined),
+      badge: c.status === 'ATIVO' ? typeBadge : 'Inativo'
+    };
+  });
 
   const chartAccountOptions: SelectOption[] = chartAccounts.map(a => ({
     value: a.id,
@@ -90,7 +144,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     const newParty: Counterparty = {
       id: newId,
       name,
-      type: isReceber ? 'CLIENTE' : 'FORNECEDOR',
+      type: isReceber ? 'CLIENTE' : (counterpartyFilter === 'CLIENTES' ? 'CLIENTE' : 'FORNECEDOR'),
       document: '',
       email: '',
       phone: '',
@@ -101,6 +155,10 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     storage.addCounterparty(newParty);
     setCounterpartyId(newId);
     setQuickCreatedId(newId);
+  };
+
+  const handleAccountCreated = (newAccount: ChartAccount) => {
+    setAccountId(newAccount.id);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -131,8 +189,13 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       return;
     }
 
-    if (FinancialEngine.isPeriodClosed(competence) && competence !== title.competence) {
-      setErrorMessage(`O período de competência ${competence} está fechado para alterações.`);
+    if (FinancialEngine.isPeriodClosed(title.competence)) {
+      setErrorMessage(`A competência atual deste título (${title.competence}) encontra-se FECHADA e travada para alterações contábeis. Reabra o período no Fechamento Mensal para realizar modificações.`);
+      return;
+    }
+
+    if (FinancialEngine.isPeriodClosed(competence)) {
+      setErrorMessage(`A competência informada (${competence}) encontra-se FECHADA e travada para alterações.`);
       return;
     }
 
@@ -144,16 +207,34 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
     const newBalance = originalAmount - title.settledPrincipal;
 
+    // Se marcou para liquidar/baixar agora o saldo restante
+    if (isAlreadySettled) {
+      if (!settlementBankAccountId) {
+        setErrorMessage('Selecione a conta bancária onde ocorreu a movimentação.');
+        return;
+      }
+      if (settlementDate > today) {
+        setErrorMessage('A data da liquidação não pode ser futura.');
+        return;
+      }
+      const settlementMonth = settlementDate.substring(0, 7);
+      if (FinancialEngine.isPeriodClosed(settlementMonth)) {
+        setErrorMessage(`O mês da liquidação (${settlementMonth}) encontra-se encerrado para alterações.`);
+        return;
+      }
+    }
+
     storage.updateTitle(title.id, {
       description: description.trim(),
       counterpartyId,
       accountId,
       competence,
       dueDate,
-      expectedCashDate: expectedCashDate || dueDate,
+      expectedCashDate: dueDate, // Oculto da interface, leva em conta a data de vencimento
       originalAmount: Number(originalAmount),
       balancePrincipal: newBalance,
-      expectedBankAccountId: expectedBankAccountId || undefined,
+      expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
+      barcode: barcode.trim() || undefined,
       notes
     });
 
@@ -165,6 +246,24 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       recordId: title.id,
       details: `Edição do título ${title.titleNumber} (${description}). Valor: ${formatBRL(originalAmount)}, Vencimento: ${dueDate}.`
     });
+
+    // Se marcou como liquidado agora, efetuar a baixa do saldo remanescente
+    if (isAlreadySettled && newBalance > 0) {
+      FinancialEngine.postSettlement({
+        titleId: title.id,
+        settlementDate,
+        bankAccountId: settlementBankAccountId,
+        principalSettled: newBalance,
+        discount: settlementDiscount,
+        interest: settlementInterest,
+        fine: 0,
+        bankFee: isReceber ? settlementBankFee : 0,
+        voucherRef: settlementVoucherRef.trim() || undefined,
+        notes: settlementNotes.trim() 
+          ? `${settlementNotes.trim()} [${settlementPaymentMethod}]` 
+          : `Baixa realizada na edição do título [${settlementPaymentMethod}]`
+      });
+    }
 
     if (quickCreatedId && openCompleteAfterSave) {
       setOpenCompleteModal(true);
@@ -214,9 +313,43 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  {isReceber ? 'Cliente *' : 'Fornecedor *'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-medium text-slate-700">
+                    {isReceber ? 'Cliente *' : 'Fornecedor ou Cliente *'}
+                  </label>
+                  {!isReceber && (
+                    <div className="flex items-center gap-1 text-[10px] bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setCounterpartyFilter('TODOS')}
+                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
+                          counterpartyFilter === 'TODOS' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600'
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCounterpartyFilter('FORNECEDORES')}
+                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
+                          counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600'
+                        }`}
+                      >
+                        Forn.
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCounterpartyFilter('CLIENTES')}
+                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
+                          counterpartyFilter === 'CLIENTES' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600'
+                        }`}
+                        title="Permite selecionar clientes cadastrados dos quais você comprou"
+                      >
+                        Clientes
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <SearchableSelect
                   options={counterpartyOptions}
                   value={counterpartyId}
@@ -264,21 +397,40 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-medium text-slate-700 mb-1">
-                Classificação (Plano de Contas) *
-              </label>
+              <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="block font-medium text-slate-700">
+                    {isReceber ? 'Classificação de Receitas (Plano de Contas) *' : 'Classificação de Custos & Despesas (Plano de Contas) *'}
+                  </label>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    isReceber 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}>
+                    {isReceber ? 'Apenas Receitas' : 'Apenas Custos & Despesas'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAccountModalOpen(true)}
+                  className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[11px] font-semibold transition-colors flex items-center gap-1"
+                >
+                  <FolderPlus className="w-3 h-3 text-indigo-600" />
+                  <span>+ Criar Categoria / Subcategoria</span>
+                </button>
+              </div>
               <SearchableSelect
                 options={chartAccountOptions}
                 value={accountId}
                 onChange={setAccountId}
-                placeholder="Selecione a conta analítica..."
+                placeholder={isReceber ? "Selecione a conta analítica de receitas..." : "Selecione a conta analítica de custos ou despesas..."}
                 searchPlaceholder="Buscar por código ou descrição..."
                 required
               />
             </div>
 
             {/* Datas */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-3 gap-2.5">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-slate-600 text-[11px] mb-1 font-medium">
                   Competência *
@@ -299,21 +451,12 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                 <input
                   type="date"
                   value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
+                  onChange={(e) => {
+                    setDueDate(e.target.value);
+                    setExpectedCashDate(e.target.value);
+                  }}
                   className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
                   required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Previsão de Caixa
-                </label>
-                <input
-                  type="date"
-                  value={expectedCashDate}
-                  onChange={(e) => setExpectedCashDate(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
                 />
               </div>
             </div>
@@ -333,6 +476,19 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
               <div>
                 <label className="block font-medium text-slate-700 mb-1">
+                  Linha Digitável / Código de Barras do Boleto
+                </label>
+                <input
+                  type="text"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  placeholder="Ex: 34191.79001 01043.510047 91020.150008 5 98450000185000"
+                  className="w-full font-mono text-xs rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">
                   Observações
                 </label>
                 <input
@@ -344,6 +500,182 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                 />
               </div>
             </div>
+
+            {/* SEÇÃO DE BAIXA / LIQUIDAÇÃO IMEDIATA (se o título ainda possuir saldo a quitar) */}
+            {title.balancePrincipal > 0 && (
+              <div className={`p-3.5 rounded-xl border transition-all ${
+                isAlreadySettled
+                  ? (isReceber ? 'bg-emerald-50/60 border-emerald-300 shadow-xs' : 'bg-rose-50/60 border-rose-300 shadow-xs')
+                  : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isAlreadySettled}
+                      onChange={(e) => {
+                        setIsAlreadySettled(e.target.checked);
+                        if (e.target.checked && !settlementBankAccountId && bankAccounts.length > 0) {
+                          setSettlementBankAccountId(bankAccounts[0].id);
+                        }
+                      }}
+                      className={`w-4 h-4 rounded border-slate-300 ${
+                        isReceber ? 'text-emerald-600 focus:ring-emerald-500' : 'text-rose-600 focus:ring-rose-500'
+                      }`}
+                    />
+                    <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                      <Wallet className={`w-4 h-4 ${isReceber ? 'text-emerald-600' : 'text-rose-600'}`} />
+                      {isReceber
+                        ? `Marcar como já recebido agora? (Saldo de ${formatBRL(title.balancePrincipal)})`
+                        : `Marcar como já pago agora? (Saldo de ${formatBRL(title.balancePrincipal)})`}
+                    </span>
+                  </label>
+
+                  {isAlreadySettled && (
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                      isReceber ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-800 border-rose-200'
+                    }`}>
+                      {isReceber ? '✓ Receber Agora' : '✓ Pagar Agora'}
+                    </span>
+                  )}
+                </div>
+
+                {isAlreadySettled && (
+                  <div className="mt-3 pt-3 border-t border-slate-200/90 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-slate-700 text-[11px] font-semibold mb-1">
+                          {isReceber ? 'Data do Recebimento *' : 'Data do Pagamento *'}
+                        </label>
+                        <input
+                          type="date"
+                          max={today}
+                          value={settlementDate}
+                          onChange={(e) => setSettlementDate(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium"
+                          required={isAlreadySettled}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 text-[11px] font-semibold mb-1">
+                          {isReceber ? 'Conta de Crédito *' : 'Conta de Débito *'}
+                        </label>
+                        <select
+                          value={settlementBankAccountId}
+                          onChange={(e) => setSettlementBankAccountId(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium"
+                          required={isAlreadySettled}
+                        >
+                          <option value="">Selecione a conta...</option>
+                          {bankAccounts.map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.name} ({b.institution})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 text-[11px] font-semibold mb-1">
+                          Forma de Pagamento
+                        </label>
+                        <select
+                          value={settlementPaymentMethod}
+                          onChange={(e) => setSettlementPaymentMethod(e.target.value as any)}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium"
+                        >
+                          <option value="PIX">PIX</option>
+                          <option value="BOLETO">Boleto Bancário</option>
+                          <option value="TRANSFERENCIA">Transferência</option>
+                          <option value="CARTAO_DEBITO">Cartão de Débito</option>
+                          <option value="DINHEIRO">Dinheiro em Espécie</option>
+                          <option value="DEBITO_AUTOMATICO">Débito Automático</option>
+                          <option value="OUTROS">Outros</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                      <div>
+                        <label className="block text-slate-600 text-[10px] font-medium mb-1">
+                          Desconto (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={settlementDiscount || ''}
+                          onChange={(e) => setSettlementDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="0,00"
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-600 text-[10px] font-medium mb-1">
+                          Juros / Multa (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={settlementInterest || ''}
+                          onChange={(e) => setSettlementInterest(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="0,00"
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white"
+                        />
+                      </div>
+
+                      {isReceber && (
+                        <div>
+                          <label className="block text-slate-600 text-[10px] font-medium mb-1">
+                            Tarifa Retida (R$)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={settlementBankFee || ''}
+                            onChange={(e) => setSettlementBankFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                            placeholder="0,00"
+                            className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-slate-600 text-[10px] font-medium mb-1">
+                          Nº Comprovante
+                        </label>
+                        <input
+                          type="text"
+                          value={settlementVoucherRef}
+                          onChange={(e) => setSettlementVoucherRef(e.target.value)}
+                          placeholder="Doc / Comprovante"
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium">
+                      <span className="text-slate-600">Líquido a movimentar na conta:</span>
+                      <span className={`font-bold ${isReceber ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {formatBRL(
+                          Math.max(
+                            0,
+                            (originalAmount - title.settledPrincipal) 
+                            - settlementDiscount 
+                            + settlementInterest 
+                            - (isReceber ? settlementBankFee : 0)
+                          )
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {quickCreatedId && (
               <div className="flex items-center space-x-2 pt-1">
@@ -397,6 +729,15 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
             onSaved();
             onClose();
           }}
+        />
+      )}
+
+      {isQuickAccountModalOpen && (
+        <QuickCreateAccountModal
+          isOpen={true}
+          titleType={title.type}
+          onClose={() => setIsQuickAccountModalOpen(false)}
+          onAccountCreated={handleAccountCreated}
         />
       )}
     </>

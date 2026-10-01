@@ -50,6 +50,7 @@ export function useDashboardConfig() {
         'contas_pagar_aberto'
       ],
       visibleWidgets: [
+        'widget_avisos_pendentes',
         'widget_faturamento_resumo',
         'widget_saldos_consolidados',
         'widget_resumo_clientes',

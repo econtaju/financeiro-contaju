@@ -1,16 +1,46 @@
 import React, { useState } from 'react';
-import { FileSpreadsheet, Download, AlertTriangle, Users, PieChart, Filter } from 'lucide-react';
+import { 
+  FileSpreadsheet, 
+  Download, 
+  AlertTriangle, 
+  Users, 
+  PieChart, 
+  Filter, 
+  FileText, 
+  TrendingUp, 
+  Wallet,
+  Calendar,
+  CheckCircle2,
+  ExternalLink
+} from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
+import { ReportingEngine } from '../../services/reportingEngine';
+import { 
+  exportDREToPDF, 
+  exportCashFlowToPDF, 
+  exportDREToCSV, 
+  exportCashFlowToCSV 
+} from '../../utils/pdfExportUtils';
+
+type ReportTab = 'DRE_CONTABIL' | 'FLUXO_CAIXA_CONTABIL' | 'AGING' | 'TOP_CLIENTS' | 'EXPENSE_CATEGORIES';
 
 export const ReportsView: React.FC = () => {
-  const [activeReport, setActiveReport] = useState<'AGING' | 'TOP_CLIENTS' | 'EXPENSE_CATEGORIES'>('AGING');
-  const today = new Date().toISOString().split('T')[0];
+  const [activeReport, setActiveReport] = useState<ReportTab>('DRE_CONTABIL');
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [cashFlowMode, setCashFlowMode] = useState<'REALIZADO' | 'PROJETADO' | 'CONSOLIDADO'>('CONSOLIDADO');
+  const [isExporting, setIsExporting] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
+  const today = new Date().toISOString().split('T')[0];
   const titles = storage.getTitles();
   const counterparties = storage.getCounterparties();
   const chartAccounts = storage.getChartAccounts();
+
+  // DRE & Cash Flow Data
+  const dreData = ReportingEngine.generateDRE(selectedYear);
+  const cashFlowData = ReportingEngine.generateCashFlow(selectedYear, cashFlowMode);
 
   // 1. Aging List (Inadimplência por faixa de atraso)
   const overdueTitles = titles.filter(t => t.type === 'RECEBER' && t.balancePrincipal > 0 && t.dueDate < today);
@@ -75,7 +105,58 @@ export const ReportsView: React.FC = () => {
 
   const expenseCategories = Object.values(expenseMap).sort((a, b) => b.total - a.total);
 
-  const handleExport = () => {
+  const showFeedback = (msg: string) => {
+    setFeedbackMsg(msg);
+    setTimeout(() => setFeedbackMsg(null), 4000);
+  };
+
+  const handleExportDRE_PDF = () => {
+    try {
+      setIsExporting(true);
+      exportDREToPDF(dreData, selectedYear, 'Contaju Gestão Financeira');
+      showFeedback(`DRE Exercício ${selectedYear} exportada com sucesso em PDF executivo!`);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao gerar PDF da DRE.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportDRE_CSV = () => {
+    try {
+      exportDREToCSV(dreData, selectedYear);
+      showFeedback(`DRE Exercício ${selectedYear} exportada em CSV.`);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao exportar CSV.');
+    }
+  };
+
+  const handleExportCashFlow_PDF = () => {
+    try {
+      setIsExporting(true);
+      exportCashFlowToPDF(cashFlowData, selectedYear, cashFlowMode, 'Contaju Gestão Financeira');
+      showFeedback(`Fluxo de Caixa (${cashFlowMode}) exportado com sucesso em PDF executivo!`);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao gerar PDF do Fluxo de Caixa.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportCashFlow_CSV = () => {
+    try {
+      exportCashFlowToCSV(cashFlowData, selectedYear, cashFlowMode);
+      showFeedback(`Fluxo de Caixa exportado em CSV.`);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao exportar CSV.');
+    }
+  };
+
+  const handleExportStandard = () => {
     if (activeReport === 'AGING') {
       const headers = ['Título', 'Cliente', 'Vencimento', 'Dias em Atraso', 'Saldo Vencido'];
       const rows = overdueTitles.map(t => {
@@ -85,14 +166,17 @@ export const ReportsView: React.FC = () => {
         return [t.titleNumber, c?.name || 'Cliente', t.dueDate, diffDays, t.balancePrincipal];
       });
       exportToExcel(`relatorio-aging-${today}`, 'Inadimplência Aging', headers, rows);
+      showFeedback('Relatório Aging exportado.');
     } else if (activeReport === 'TOP_CLIENTS') {
       const headers = ['Cliente', 'Documento', 'Faturamento Total', 'Saldo em Aberto'];
       const rows = topClients.map(c => [c.name, c.document, c.totalRevenue, c.openBalance]);
       exportToExcel(`ranking-clientes-${today}`, 'Top Clientes', headers, rows);
-    } else {
+      showFeedback('Ranking de Clientes exportado.');
+    } else if (activeReport === 'EXPENSE_CATEGORIES') {
       const headers = ['Código', 'Conta / Categoria', 'Total Despesas'];
       const rows = expenseCategories.map(e => [e.code, e.name, e.total]);
       exportToExcel(`despesas-por-categoria-${today}`, 'Despesas', headers, rows);
+      showFeedback('Despesas por Categoria exportadas.');
     }
   };
 
@@ -100,95 +184,499 @@ export const ReportsView: React.FC = () => {
     <div className="space-y-6">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
             <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Relatórios Gerenciais Especializados</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Central de Relatórios & Apresentações Contábeis</h1>
           </div>
-          <p className="text-xs text-slate-700 mt-0.5">
-            Análise aprofundada de inadimplência (Aging List), concentração de carteira e composição de despesas.
+          <p className="text-xs text-slate-600 mt-0.5">
+            Extração de DRE e Fluxo de Caixa em PDF e CSV para reuniões de diretoria, contadores e auditorias externas.
           </p>
         </div>
 
-        <button
-          onClick={handleExport}
-          className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors flex items-center shadow-2xs"
-        >
-          <Download className="w-4 h-4 mr-1.5 text-slate-600" />
-          Exportar Relatório Ativo
-        </button>
+        {/* Action buttons header */}
+        <div className="flex flex-wrap items-center gap-2">
+          {activeReport === 'DRE_CONTABIL' && (
+            <>
+              <button
+                id="btn-export-dre-pdf"
+                onClick={handleExportDRE_PDF}
+                disabled={isExporting}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center shadow-sm"
+              >
+                <FileText className="w-4 h-4 mr-1.5" />
+                Exportar DRE em PDF
+              </button>
+              <button
+                id="btn-export-dre-csv"
+                onClick={handleExportDRE_CSV}
+                className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-sm"
+              >
+                <Download className="w-4 h-4 mr-1.5 text-amber-400" />
+                Exportar DRE em CSV
+              </button>
+            </>
+          )}
+
+          {activeReport === 'FLUXO_CAIXA_CONTABIL' && (
+            <>
+              <button
+                id="btn-export-cashflow-pdf"
+                onClick={handleExportCashFlow_PDF}
+                disabled={isExporting}
+                className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold transition-colors flex items-center shadow-sm"
+              >
+                <FileText className="w-4 h-4 mr-1.5 text-amber-400" />
+                Exportar Fluxo de Caixa PDF
+              </button>
+              <button
+                id="btn-export-cashflow-csv"
+                onClick={handleExportCashFlow_CSV}
+                className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-sm"
+              >
+                <Download className="w-4 h-4 mr-1.5 text-amber-400" />
+                Exportar Fluxo de Caixa CSV
+              </button>
+            </>
+          )}
+
+          {activeReport !== 'DRE_CONTABIL' && activeReport !== 'FLUXO_CAIXA_CONTABIL' && (
+            <button
+              onClick={handleExportStandard}
+              className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors flex items-center shadow-2xs"
+            >
+              <Download className="w-4 h-4 mr-1.5 text-slate-600" />
+              Exportar Tabela Excel (XLSX)
+            </button>
+          )}
+        </div>
       </div>
 
+      {feedbackMsg && (
+        <div className="p-3 bg-slate-900 border border-amber-500/40 rounded-xl text-amber-300 text-xs font-medium flex items-center justify-between animate-in fade-in shadow-xs">
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{feedbackMsg}</span>
+          </div>
+          <span className="text-[10px] text-amber-400 font-mono">Arquivo baixado com sucesso</span>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex space-x-2 border-b border-slate-200 text-xs">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 text-xs">
+        <button
+          onClick={() => setActiveReport('DRE_CONTABIL')}
+          className={`pb-3 px-3.5 font-semibold transition-colors border-b-2 flex items-center ${
+            activeReport === 'DRE_CONTABIL'
+              ? 'border-indigo-600 text-indigo-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 mr-1.5" />
+          DRE Demonstrativo Contábil
+        </button>
+        <button
+          onClick={() => setActiveReport('FLUXO_CAIXA_CONTABIL')}
+          className={`pb-3 px-3.5 font-semibold transition-colors border-b-2 flex items-center ${
+            activeReport === 'FLUXO_CAIXA_CONTABIL'
+              ? 'border-indigo-600 text-indigo-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Wallet className="w-4 h-4 mr-1.5" />
+          Fluxo de Caixa Estruturado
+        </button>
         <button
           onClick={() => setActiveReport('AGING')}
-          className={`pb-3 px-4 font-semibold transition-colors border-b-2 ${
+          className={`pb-3 px-3.5 font-semibold transition-colors border-b-2 ${
             activeReport === 'AGING'
               ? 'border-indigo-600 text-indigo-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          Faixas de Atraso (Aging List)
+          Inadimplência (Aging List)
         </button>
         <button
           onClick={() => setActiveReport('TOP_CLIENTS')}
-          className={`pb-3 px-4 font-semibold transition-colors border-b-2 ${
+          className={`pb-3 px-3.5 font-semibold transition-colors border-b-2 ${
             activeReport === 'TOP_CLIENTS'
               ? 'border-indigo-600 text-indigo-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          Ranking de Faturamento por Cliente
+          Ranking de Clientes
         </button>
         <button
           onClick={() => setActiveReport('EXPENSE_CATEGORIES')}
-          className={`pb-3 px-4 font-semibold transition-colors border-b-2 ${
+          className={`pb-3 px-3.5 font-semibold transition-colors border-b-2 ${
             activeReport === 'EXPENSE_CATEGORIES'
               ? 'border-indigo-600 text-indigo-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          Despesas por Categoria Analítica
+          Despesas por Categoria
         </button>
       </div>
 
-      {/* 1. AGING LIST */}
+      {/* 1. DRE CONTÁBIL TAB */}
+      {activeReport === 'DRE_CONTABIL' && (
+        <div className="space-y-4">
+          {/* Controls bar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center space-x-3">
+              <span className="font-semibold text-slate-700 flex items-center">
+                <Calendar className="w-4 h-4 mr-1.5 text-slate-500" />
+                Ano Base do Exercício:
+              </span>
+              <div className="flex items-center space-x-1">
+                {[2024, 2025, 2026, 2027].map(yr => (
+                  <button
+                    key={yr}
+                    onClick={() => setSelectedYear(yr)}
+                    className={`px-3 py-1 rounded-lg font-mono font-medium transition-all ${
+                      selectedYear === yr
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {yr}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+              <span>Regime de Competência Econômica (CPC 26)</span>
+            </div>
+          </div>
+
+          {/* DRE Key Metrics Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Receita Bruta Total</p>
+              <p className="text-xl font-bold text-slate-900 mt-1">
+                {formatBRL(dreData.lines.find(l => l.id === 'h-1')?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Acumulado {selectedYear}</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lucro Bruto</p>
+              <p className="text-xl font-bold text-amber-800 mt-1">
+                {formatBRL(dreData.lines.find(l => l.id === 's-gross')?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Após Deduções e Custos</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Resultado Operacional</p>
+              <p className={`text-xl font-bold mt-1 ${
+                (dreData.lines.find(l => l.id === 's-op-result')?.totalYear || 0) >= 0 ? 'text-amber-800' : 'text-rose-700'
+              }`}>
+                {formatBRL(dreData.lines.find(l => l.id === 's-op-result')?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">LAJIR / EBITDA</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Resultado Líquido</p>
+              <p className={`text-xl font-bold mt-1 ${dreData.totalNetResult >= 0 ? 'text-amber-800' : 'text-rose-700'}`}>
+                {formatBRL(dreData.totalNetResult)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Margem do Período</p>
+            </div>
+          </div>
+
+          {/* DRE Preview Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Pré-visualização do Demonstrativo do Resultado (DRE {selectedYear})
+                </h3>
+                <p className="text-[11px] text-slate-500">Relatório consolidado mês a mês para exportação em PDF/CSV.</p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleExportDRE_PDF}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5 mr-1 text-amber-400" />
+                  Baixar PDF
+                </button>
+                <button
+                  onClick={handleExportDRE_CSV}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium flex items-center shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1 text-amber-400" />
+                  Baixar CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[500px]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-300 text-slate-700 font-semibold text-[11px]">
+                  <tr>
+                    <th className="py-2.5 px-4 min-w-[220px]">Estrutura de Contas</th>
+                    {dreData.months.map(m => (
+                      <th key={m} className="py-2.5 px-3 text-right font-mono min-w-[90px]">{m}</th>
+                    ))}
+                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 font-bold">Total Ano</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dreData.lines.map(line => {
+                    const isHeader = line.isHeader;
+                    const isSummary = line.isSummary;
+                    const indentClass = line.level === 1 ? 'pl-7' : line.level === 2 ? 'pl-11' : 'pl-4';
+
+                    let rowStyle = 'hover:bg-slate-50/80';
+                    if (isHeader) rowStyle = 'bg-slate-50 font-bold text-slate-900';
+                    if (isSummary) rowStyle = 'bg-amber-500/10 font-bold text-slate-900 border-t border-b border-amber-500/30';
+
+                    return (
+                      <tr key={line.id} className={rowStyle}>
+                        <td className={`py-2 px-4 ${indentClass}`}>
+                          {line.code && <span className="text-[10px] font-mono text-slate-500 mr-1.5">{line.code}</span>}
+                          <span>{line.name}</span>
+                        </td>
+                        {line.valuesByMonth.map((val, idx) => (
+                          <td key={idx} className={`py-2 px-3 text-right font-mono text-[11px] ${
+                            val < 0 ? 'text-rose-600 font-semibold' : val > 0 && isSummary ? 'text-amber-800 font-semibold' : 'text-slate-700'
+                          }`}>
+                            {val !== 0 ? formatBRL(val) : '-'}
+                          </td>
+                        ))}
+                        <td className={`py-2 px-4 text-right font-mono font-bold text-[11px] bg-slate-50/50 ${
+                          line.totalYear < 0 ? 'text-rose-600' : 'text-slate-900'
+                        }`}>
+                          {formatBRL(line.totalYear)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. FLUXO DE CAIXA CONTÁBIL TAB */}
+      {activeReport === 'FLUXO_CAIXA_CONTABIL' && (
+        <div className="space-y-4">
+          {/* Controls bar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <span className="font-semibold text-slate-700 flex items-center">
+                  <Calendar className="w-4 h-4 mr-1 text-slate-500" />
+                  Ano:
+                </span>
+                <div className="flex items-center space-x-1">
+                  {[2024, 2025, 2026, 2027].map(yr => (
+                    <button
+                      key={yr}
+                      onClick={() => setSelectedYear(yr)}
+                      className={`px-3 py-1 rounded-lg font-mono font-medium transition-all ${
+                        selectedYear === yr
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {yr}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="font-semibold text-slate-700">Modalidade:</span>
+                <div className="flex items-center space-x-1">
+                  {(['REALIZADO', 'PROJETADO', 'CONSOLIDADO'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setCashFlowMode(m)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        cashFlowMode === m
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
+              <span>Método Direto (Norma Contábil CPC 03 / IAS 7)</span>
+            </div>
+          </div>
+
+          {/* Cash Flow Key Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total de Ingressos (Entradas)</p>
+              <p className="text-xl font-bold text-amber-800 mt-1">
+                {formatBRL(cashFlowData.lines.find(l => l.name.includes('Ingressos') || l.name.includes('Entradas'))?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Atividades Operacionais & Recebimentos</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total de Desembolsos (Saídas)</p>
+              <p className="text-xl font-bold text-rose-700 mt-1">
+                {formatBRL(cashFlowData.lines.find(l => l.name.includes('Desembolsos') || l.name.includes('Saídas'))?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Pagamentos a Fornecedores & Custos</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Geração Líquida no Ano</p>
+              <p className={`text-xl font-bold mt-1 ${
+                (cashFlowData.lines.find(l => l.name.includes('Geração Líquida'))?.totalYear || 0) >= 0 ? 'text-amber-800' : 'text-rose-700'
+              }`}>
+                {formatBRL(cashFlowData.lines.find(l => l.name.includes('Geração Líquida'))?.totalYear || 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Variação de Disponibilidades</p>
+            </div>
+          </div>
+
+          {/* Cash Flow Preview Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Pré-visualização do Fluxo de Caixa Direto ({selectedYear} - {cashFlowMode})
+                </h3>
+                <p className="text-[11px] text-slate-500">Detalhamento mês a mês com saldos inicial, movimentos e saldo final de tesouraria.</p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleExportCashFlow_PDF}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5 mr-1 text-amber-400" />
+                  Baixar PDF
+                </button>
+                <button
+                  onClick={handleExportCashFlow_CSV}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium flex items-center shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1 text-amber-400" />
+                  Baixar CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[500px]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-300 text-slate-700 font-semibold text-[11px]">
+                  <tr>
+                    <th className="py-2.5 px-4 min-w-[220px]">Item do Fluxo de Caixa</th>
+                    {cashFlowData.months.map(m => (
+                      <th key={m} className="py-2.5 px-3 text-right font-mono min-w-[90px]">{m}</th>
+                    ))}
+                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 font-bold">Total Ano</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {cashFlowData.lines.map(line => {
+                    const isHeader = line.isHeader;
+                    const isSummary = line.isSummary;
+                    const indentClass = line.level === 1 ? 'pl-7' : line.level === 2 ? 'pl-11' : 'pl-4';
+
+                    let rowStyle = 'hover:bg-slate-50/80';
+                    if (isHeader) rowStyle = 'bg-slate-50 font-bold text-slate-900';
+                    if (isSummary) rowStyle = 'bg-amber-500/10 font-bold text-slate-900 border-t border-b border-amber-500/30';
+
+                    return (
+                      <tr key={line.id} className={rowStyle}>
+                        <td className={`py-2 px-4 ${indentClass}`}>
+                          <span>{line.name}</span>
+                        </td>
+                        {line.valuesByMonth.map((val, idx) => (
+                          <td key={idx} className={`py-2 px-3 text-right font-mono text-[11px] ${
+                            val < 0 ? 'text-rose-600 font-semibold' : val > 0 && isSummary ? 'text-amber-800 font-semibold' : 'text-slate-700'
+                          }`}>
+                            {val !== 0 ? formatBRL(val) : '-'}
+                          </td>
+                        ))}
+                        <td className={`py-2 px-4 text-right font-mono font-bold text-[11px] bg-slate-50/50 ${
+                          line.totalYear < 0 ? 'text-rose-600' : 'text-slate-900'
+                        }`}>
+                          {formatBRL(line.totalYear)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. AGING LIST */}
       {activeReport === 'AGING' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             {Object.entries(agingBuckets).map(([key, bucket]) => (
               <div key={key} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-xs text-slate-700 font-medium">{bucket.label}</span>
-                <div className="text-lg font-bold text-rose-700 mt-1">{formatBRL(bucket.total)}</div>
-                <span className="text-[11px] text-slate-700">{bucket.items.length} títulos vencidos</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    {bucket.label}
+                  </span>
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                </div>
+                <p className="text-lg font-bold text-slate-900 mt-2">
+                  {formatBRL(bucket.total)}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {bucket.items.length} títulos vencidos
+                </p>
               </div>
             ))}
           </div>
 
+          {/* Aging Details Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 bg-slate-50">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Títulos em Atraso Detalhados ({overdueTitles.length})
+                Detalhamento dos Títulos Inadimplentes
               </h3>
+              <button
+                onClick={handleExportStandard}
+                className="px-3 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md text-xs font-medium flex items-center"
+              >
+                <Download className="w-3.5 h-3.5 mr-1" />
+                Exportar Excel
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase">
                   <tr>
-                    <th className="py-2.5 px-4">Título</th>
+                    <th className="py-2.5 px-4">Nº Título</th>
                     <th className="py-2.5 px-4">Cliente</th>
                     <th className="py-2.5 px-4">Vencimento</th>
                     <th className="py-2.5 px-4 text-center">Dias em Atraso</th>
-                    <th className="py-2.5 px-4 text-right">Saldo Vencido</th>
+                    <th className="py-2.5 px-4 text-right">Saldo Devedor</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {overdueTitles.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-slate-700">
-                        Nenhum título em atraso na carteira! Parabéns pela adimplência.
+                      <td colSpan={5} className="py-6 text-center text-slate-400">
+                        Nenhum título vencido encontrado na carteira.
                       </td>
                     </tr>
                   ) : (
@@ -196,7 +684,6 @@ export const ReportsView: React.FC = () => {
                       const c = counterparties.find(cp => cp.id === t.counterpartyId);
                       const due = new Date(t.dueDate);
                       const diffDays = Math.floor((todayDate.getTime() - due.getTime()) / (1000 * 3600 * 24));
-
                       return (
                         <tr key={t.id} className="hover:bg-slate-50">
                           <td className="py-2.5 px-4 font-mono font-medium text-slate-900">{t.titleNumber}</td>
@@ -219,13 +706,20 @@ export const ReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* 2. TOP CLIENTS */}
+      {/* 4. TOP CLIENTS */}
       {activeReport === 'TOP_CLIENTS' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200 bg-slate-50">
+          <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
               Ranking de Clientes por Faturamento Emitido
             </h3>
+            <button
+              onClick={handleExportStandard}
+              className="px-3 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md text-xs font-medium flex items-center"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Exportar Excel
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -258,13 +752,20 @@ export const ReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* 3. EXPENSE CATEGORIES */}
+      {/* 5. EXPENSE CATEGORIES */}
       {activeReport === 'EXPENSE_CATEGORIES' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200 bg-slate-50">
+          <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
               Despesas e Custos por Categoria do Plano de Contas
             </h3>
+            <button
+              onClick={handleExportStandard}
+              className="px-3 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md text-xs font-medium flex items-center"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Exportar Excel
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">

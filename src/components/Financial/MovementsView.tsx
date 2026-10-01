@@ -13,14 +13,25 @@ import {
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
+import { matchesSearch } from '../../utils/searchUtils';
 import { FinancialMovement, FinancialTitle } from '../../types';
 import { EditTitleModal } from '../Modals/EditTitleModal';
 
-export const MovementsView: React.FC = () => {
+interface MovementsViewProps {
+  initialSearch?: string;
+}
+
+export const MovementsView: React.FC<MovementsViewProps> = ({ initialSearch = '' }) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [directionFilter, setDirectionFilter] = useState<'ALL' | 'ENTRADA' | 'SAIDA'>('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  React.useEffect(() => {
+    if (initialSearch !== undefined) {
+      setSearchTerm(initialSearch);
+    }
+  }, [initialSearch]);
 
   // States for ERP Title Edit Modal
   const [selectedTitleForEdit, setSelectedTitleForEdit] = useState<FinancialTitle | null>(null);
@@ -44,8 +55,10 @@ export const MovementsView: React.FC = () => {
     if (selectedAccountId !== 'ALL' && m.bankAccountId !== selectedAccountId) return false;
     if (directionFilter !== 'ALL' && m.direction !== directionFilter) return false;
     if (searchTerm) {
-      const match = m.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    (m.originReferenceId && m.originReferenceId.toLowerCase().includes(searchTerm.toLowerCase()));
+      const match = matchesSearch([
+        m.description,
+        m.originReferenceId
+      ], searchTerm);
       if (!match) return false;
     }
     return true;

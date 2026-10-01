@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserCheck, Building, Mail, Phone, MapPin, FileText, CheckCircle2 } from 'lucide-react';
+import { X, UserCheck, Building, Mail, Phone, MapPin, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Counterparty } from '../../types';
 import { storage } from '../../services/storageService';
+import { CNPJInputField } from '../Common/CNPJInputField';
+import { validateFiscalDocument } from '../../utils/cnpjValidator';
 
 interface CompleteCounterpartyModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
     status: 'ATIVO'
   });
   const [successMsg, setSuccessMsg] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
 
   useEffect(() => {
     if (counterpartyId) {
@@ -34,6 +37,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
       const target = parties.find(p => p.id === counterpartyId);
       if (target) {
         setFormData({ ...target });
+        setDocError(null);
       }
     }
   }, [counterpartyId, isOpen]);
@@ -43,6 +47,15 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
+
+    if (formData.document?.trim()) {
+      const fiscalCheck = validateFiscalDocument(formData.document);
+      if (fiscalCheck.status === 'invalid') {
+        setDocError(fiscalCheck.message);
+        return;
+      }
+    }
+    setDocError(null);
 
     const all = storage.getCounterparties();
     const updatedList = all.map(p => {
@@ -113,6 +126,12 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-3.5 text-xs">
+          {docError && (
+            <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center font-medium">
+              <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0 text-rose-600" />
+              <span>{docError}</span>
+            </div>
+          )}
           
           <div>
             <label className="block font-medium text-slate-700 mb-1">
@@ -127,7 +146,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block font-medium text-slate-700 mb-1">
                 Nome Fantasia
@@ -142,15 +161,15 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
             </div>
 
             <div>
-              <label className="block font-medium text-slate-700 mb-1">
-                CNPJ ou CPF
-              </label>
-              <input
-                type="text"
+              <CNPJInputField
+                id="modal-counterparty-cnpj"
                 value={formData.document || ''}
-                onChange={(e) => setFormData({ ...formData, document: e.target.value })}
+                onChange={(maskedVal) => {
+                  setFormData(prev => ({ ...prev, document: maskedVal }));
+                  if (docError) setDocError(null);
+                }}
+                label="CNPJ (Cadastro Fiscal) *"
                 placeholder="00.000.000/0000-00"
-                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
           </div>

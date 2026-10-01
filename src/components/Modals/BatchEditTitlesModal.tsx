@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Layers, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
 import { FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
+import { getFilteredChartAccounts } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 
 interface BatchEditTitlesModalProps {
@@ -37,7 +38,8 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
 
   if (!isOpen || selectedTitleIds.length === 0) return null;
 
-  const chartAccounts = storage.getChartAccounts().filter(a => a.isAnalytical && a.isActive);
+  const allChartAccounts = storage.getChartAccounts();
+  const chartAccounts = getFilteredChartAccounts(allChartAccounts, type);
   const bankAccounts = storage.getBankAccounts().filter(a => a.status === 'ATIVO');
 
   const chartAccountOptions: SelectOption[] = chartAccounts.map(a => ({
@@ -272,8 +274,17 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   onChange={(e) => setEnableAccount(e.target.checked)}
                   className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
-                <span>Alterar Classificação Contábil</span>
+                <span>
+                  Alterar Classificação Contábil ({type === 'RECEBER' ? 'Apenas Receitas' : 'Apenas Custos & Despesas'})
+                </span>
               </label>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                type === 'RECEBER' 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : 'bg-rose-50 text-rose-700 border-rose-200'
+              }`}>
+                {type === 'RECEBER' ? 'Receitas' : 'Custos & Despesas'}
+              </span>
             </div>
             {enableAccount && (
               <div className="pt-2 pl-6">
@@ -281,7 +292,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   options={chartAccountOptions}
                   value={accountId}
                   onChange={setAccountId}
-                  placeholder="Selecione nova conta analítica..."
+                  placeholder={type === 'RECEBER' ? "Selecione nova conta de receita..." : "Selecione nova conta de custos/despesas..."}
                   searchPlaceholder="Buscar conta analítica..."
                   required={enableAccount}
                 />

@@ -1,5 +1,6 @@
 import { 
   FinancialTitle, 
+  Sale,
   Settlement, 
   FinancialMovement, 
   BankAccount, 
@@ -56,12 +57,13 @@ export const formatCompetence = (comp: string): string => {
 
 export type TemporalStatus = 'A_VENCER' | 'VENCE_HOJE' | 'VENCIDO' | 'QUITADO';
 
-export const getTemporalStatus = (title: FinancialTitle, referenceDateStr?: string): TemporalStatus => {
+export const getTemporalStatus = (title?: FinancialTitle | null, referenceDateStr?: string): TemporalStatus => {
+  if (!title) return 'A_VENCER';
   if (title.settlementState === 'LIQUIDADO') {
     return 'QUITADO';
   }
   const ref = referenceDateStr || new Date().toISOString().split('T')[0];
-  const due = title.dueDate;
+  const due = title.dueDate || ref;
   if (due === ref) return 'VENCE_HOJE';
   if (due < ref) return 'VENCIDO';
   return 'A_VENCER';
@@ -242,39 +244,95 @@ export class FinancialEngine {
     const movements = storage.getMovements();
     const newMovements: FinancialMovement[] = [];
 
-    // Main net cash movement
-    if (netFinancialAmount !== 0) {
-      newMovements.push({
-        id: `mov-${Date.now()}-1`,
-        bankAccountId: params.bankAccountId,
-        date: params.settlementDate,
-        direction: title.type === 'RECEBER' ? 'ENTRADA' : 'SAIDA',
-        amount: Math.abs(netFinancialAmount),
-        originType: 'BAIXA_TITULO',
-        originReferenceId: settlementId,
-        description: `Baixa ${title.titleNumber} - ${title.description}`,
-        counterpartyId: title.counterpartyId,
-        accountId: title.accountId,
-        cashFlowCategory: 'OPERACIONAL',
-        createdAt: new Date().toISOString()
-      });
-    }
+    if (title.type === 'RECEBER') {
+      const grossSettlementAmount = Math.round((params.principalSettled - params.discount + params.interest + params.fine) * 100) / 100;
+      
+      // Main inflow movement (gross receipt before bank fee deduction)
+      if (grossSettlementAmount > 0) {
+        newMovements.push({
+          id: `mov-${Date.now()}-1`,
+          bankAccountId: params.bankAccountId,
+          date: params.settlementDate,
+          direction: 'ENTRADA',
+          amount: grossSettlementAmount,
+          originType: 'BAIXA_TITULO',
+          originReferenceId: settlementId,
+          description: `Baixa ${title.titleNumber} - ${title.description}`,
+          counterpartyId: title.counterpartyId,
+          accountId: title.accountId,
+          cashFlowCategory: 'OPERACIONAL',
+          createdAt: new Date().toISOString()
+        });
+      }
 
-    // If there was a bankFee retained on a receivable, record bank fee movement and expense account
-    if (params.bankFee > 0 && title.type === 'RECEBER') {
-      newMovements.push({
-        id: `mov-${Date.now()}-fee`,
-        bankAccountId: params.bankAccountId,
-        date: params.settlementDate,
-        direction: 'SAIDA',
-        amount: params.bankFee,
-        originType: 'BAIXA_TITULO',
-        originReferenceId: settlementId,
-        description: `Tarifa bancária retida - Tit. ${title.titleNumber}`,
-        accountId: 'acc-4.2.04', // Tarifas Bancárias
-        cashFlowCategory: 'OPERACIONAL',
-        createdAt: new Date().toISOString()
-      });
+      // Bank fee retained by bank (outflow expense, ensuring net bank balance matches netFinancialAmount exactly)
+      if (params.bankFee > 0) {
+        newMovements.push({
+          id: `mov-${Date.now()}-fee`,
+          bankAccountId: params.bankAccountId,
+          date: params.settlementDate,
+          direction: 'SAIDA',
+          amount: params.bankFee,
+          originType: 'BAIXA_TITULO',
+          originReferenceId: settlementId,
+          description: `Tarifa bancária retida - Tit. ${title.titleNumber}`,
+          accountId: 'acc-4.2.04', // Tarifas Bancárias
+          cashFlowCategory: 'OPERACIONAL',
+          createdAt: new Date().toISOString()
+        });
+      }
+    } else {
+      // PAGAR
+      const grossPaymentAmount = Math.round((params.principalSettled - params.discount + params.interest + params.fine) * 100) / 100;
+
+      if (params.bankFee > 0) {
+        // Outflow for title principal/components
+        if (grossPaymentAmount > 0) {
+          newMovements.push({
+            id: `mov-${Date.now()}-1`,
+            bankAccountId: params.bankAccountId,
+            date: params.settlementDate,
+            direction: 'SAIDA',
+            amount: grossPaymentAmount,
+            originType: 'BAIXA_TITULO',
+            originReferenceId: settlementId,
+            description: `Pagamento ${title.titleNumber} - ${title.description}`,
+            counterpartyId: title.counterpartyId,
+            accountId: title.accountId,
+            cashFlowCategory: 'OPERACIONAL',
+            createdAt: new Date().toISOString()
+          });
+        }
+        // Outflow for bank fee
+        newMovements.push({
+          id: `mov-${Date.now()}-fee`,
+          bankAccountId: params.bankAccountId,
+          date: params.settlementDate,
+          direction: 'SAIDA',
+          amount: params.bankFee,
+          originType: 'BAIXA_TITULO',
+          originReferenceId: settlementId,
+          description: `Tarifa bancária de liquidação - Tit. ${title.titleNumber}`,
+          accountId: 'acc-4.2.04', // Tarifas Bancárias
+          cashFlowCategory: 'OPERACIONAL',
+          createdAt: new Date().toISOString()
+        });
+      } else if (netFinancialAmount > 0) {
+        newMovements.push({
+          id: `mov-${Date.now()}-1`,
+          bankAccountId: params.bankAccountId,
+          date: params.settlementDate,
+          direction: 'SAIDA',
+          amount: netFinancialAmount,
+          originType: 'BAIXA_TITULO',
+          originReferenceId: settlementId,
+          description: `Pagamento ${title.titleNumber} - ${title.description}`,
+          counterpartyId: title.counterpartyId,
+          accountId: title.accountId,
+          cashFlowCategory: 'OPERACIONAL',
+          createdAt: new Date().toISOString()
+        });
+      }
     }
 
     storage.saveMovements([...newMovements, ...movements]);
@@ -489,7 +547,11 @@ export class FinancialEngine {
     totalAmountGenerated: number;
     results: Array<{ contract: Contract; title?: FinancialTitle; status: 'GERADO' | 'JA_EXISTE' | 'IGNORADO' }>;
   } {
-    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    const contracts = storage.getContracts().filter(c => 
+      c.status === 'ATIVO' && 
+      c.isRecurring !== false && 
+      c.contractType !== 'AVULSO'
+    );
     const titles = storage.getTitles();
     const counterparties = storage.getCounterparties();
 
@@ -506,17 +568,17 @@ export class FinancialEngine {
     const compMonthFormatted = compMonth.toString().padStart(2, '0');
 
     for (const contract of contracts) {
-      // Check if already generated for this competence
-      const existing = titles.find(t => 
-        t.originType === 'CONTRATO' && 
-        t.originId === contract.id && 
-        t.competence === competence &&
-        t.documentState !== 'CANCELADO'
-      );
+      // Ignorar contratos cancelados, inativos ou suspensos
+      if (contract.status !== 'ATIVO') {
+        ignoredCount++;
+        results.push({ contract, status: 'IGNORADO' });
+        continue;
+      }
 
-      if (existing) {
-        alreadyExistingCount++;
-        results.push({ contract, title: existing, status: 'JA_EXISTE' });
+      // Se o contrato foi cancelado/inativado a partir de uma data, ignorar competências posteriores ou iguais
+      if (contract.cancellationDate && contract.cancellationDate.substring(0, 7) <= competence) {
+        ignoredCount++;
+        results.push({ contract, status: 'IGNORADO' });
         continue;
       }
 
@@ -554,41 +616,174 @@ export class FinancialEngine {
       const clientName = client ? client.name : 'Cliente';
       const mainAccountId = contract.items[0]?.accountId || 'acc-1.1.01';
 
-      const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CT-', '')}`;
-      const newTitle: FinancialTitle = {
-        id: `tit-fat-${Date.now()}-${contract.id}`,
-        companyId: 'comp-1',
-        type: 'RECEBER',
-        titleNumber,
-        counterpartyId: contract.customerId,
-        description: `Mensalidade ${contract.description} - Comp. ${compMonthFormatted}/${compYear}`,
-        accountId: mainAccountId,
-        launchDate: new Date().toISOString().split('T')[0],
-        competence,
-        issueDate: new Date().toISOString().split('T')[0],
-        dueDate,
-        expectedCashDate: dueDate,
-        originalAmount: contract.monthlyTotal,
-        settledPrincipal: 0,
-        balancePrincipal: contract.monthlyTotal,
-        accruedInterest: 0,
-        accruedFine: 0,
-        documentState: 'CONFIRMADO',
-        settlementState: 'ABERTO',
-        originType: 'CONTRATO',
-        originId: contract.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        notes: `Gerado automaticamente via Faturamento de Contratos.`
-      };
+      // 1. Mensalidade Ordinária Recorrente
+      const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+      const existing = titles.find(t => 
+        (t.originType === 'CONTRATO' || t.originType === 'VENDA') && 
+        (t.originId === contract.id || t.contractId === contract.id || t.contractNumber === contract.contractNumber || t.originId === contract.contractNumber) && 
+        t.competence === competence &&
+        (t.titleNumber === titleNumber || !t.titleNumber.startsWith('TB-')) &&
+        t.documentState !== 'CANCELADO'
+      );
 
-      newTitles.push(newTitle);
-      generatedCount++;
-      totalAmountGenerated += contract.monthlyTotal;
-      results.push({ contract, title: newTitle, status: 'GERADO' });
+      if (existing) {
+        alreadyExistingCount++;
+        results.push({ contract, title: existing, status: 'JA_EXISTE' });
+      } else {
+        const saleId = `sale-${contract.id}-${competence}`;
+        const saleNumber = `VEN-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+        const newTitleId = `tit-fat-${Date.now()}-${contract.id}`;
 
-      // Update contract's lastGeneratedCompetence
-      contract.lastGeneratedCompetence = competence;
+        const newTitle: FinancialTitle = {
+          id: newTitleId,
+          companyId: 'comp-1',
+          type: 'RECEBER',
+          titleNumber,
+          counterpartyId: contract.customerId,
+          description: `Mensalidade ${contract.description} - Comp. ${compMonthFormatted}/${compYear}`,
+          accountId: mainAccountId,
+          launchDate: new Date().toISOString().split('T')[0],
+          competence,
+          issueDate: new Date().toISOString().split('T')[0],
+          dueDate,
+          expectedCashDate: dueDate,
+          originalAmount: contract.monthlyTotal,
+          settledPrincipal: 0,
+          balancePrincipal: contract.monthlyTotal,
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: 'CONTRATO',
+          originId: contract.id,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          saleId: saleId,
+          saleNumber: saleNumber,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          notes: `Gerado automaticamente via Faturamento de Contratos (Venda ${saleNumber}).`
+        };
+
+        const newSale: Sale = {
+          id: saleId,
+          saleNumber,
+          customerId: contract.customerId,
+          competence,
+          date: new Date().toISOString().split('T')[0],
+          items: (contract.items && contract.items.length > 0) ? contract.items.map(it => ({
+            id: `item-${newTitleId}-${it.id}`,
+            serviceId: it.serviceId,
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            discount: 0,
+            total: it.total,
+            accountId: it.accountId
+          })) : [
+            {
+              id: `item-${newTitleId}`,
+              serviceId: 'srv-1',
+              description: `Mensalidade ${contract.description}`,
+              quantity: 1,
+              unitPrice: contract.monthlyTotal,
+              discount: 0,
+              total: contract.monthlyTotal,
+              accountId: mainAccountId
+            }
+          ],
+          grossTotal: contract.monthlyTotal,
+          discountTotal: 0,
+          netTotal: contract.monthlyTotal,
+          installmentsCount: 1,
+          notes: `Faturamento recorrente do Contrato ${contract.contractNumber}`,
+          createdAt: new Date().toISOString(),
+          originType: 'CONTRATO',
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          status: 'CONFIRMADA',
+          titleIds: [newTitleId]
+        };
+        storage.addSale(newSale);
+
+        newTitles.push(newTitle);
+        generatedCount++;
+        totalAmountGenerated += contract.monthlyTotal;
+        results.push({ contract, title: newTitle, status: 'GERADO' });
+
+        // Update contract's lastGeneratedCompetence
+        contract.lastGeneratedCompetence = competence;
+      }
+
+      // 2. Taxa de Balanço Anual (13º Honorário Contábil)
+      if (
+        contract.annualBalanceFee && 
+        contract.annualBalanceFee.enabled && 
+        contract.annualBalanceFee.amount > 0 &&
+        Array.isArray(contract.annualBalanceFee.billingMonths) &&
+        contract.annualBalanceFee.billingMonths.includes(compMonth)
+      ) {
+        const totalInstallments = contract.annualBalanceFee.billingMonths.length || 1;
+        const currentInstallmentIndex = contract.annualBalanceFee.billingMonths.indexOf(compMonth) + 1;
+        
+        // Cálculo da parcela com compensação de centavos na última
+        const baseInstallmentAmount = Math.round((contract.annualBalanceFee.amount / totalInstallments) * 100) / 100;
+        const isLastInstallment = currentInstallmentIndex === totalInstallments;
+        const installmentAmount = isLastInstallment 
+          ? Math.round((contract.annualBalanceFee.amount - baseInstallmentAmount * (totalInstallments - 1)) * 100) / 100
+          : baseInstallmentAmount;
+
+        const balanceFeeTitleNumber = `TB-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+        const existingBalanceFee = titles.find(t => 
+          t.originType === 'CONTRATO' && 
+          t.originId === contract.id && 
+          t.competence === competence &&
+          (t.titleNumber === balanceFeeTitleNumber || t.titleNumber.startsWith(`TB-${competence}`)) &&
+          t.documentState !== 'CANCELADO'
+        );
+
+        if (!existingBalanceFee) {
+          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay;
+          const actualFeeDueDay = Math.min(feeDueDay, lastDayOfMonth);
+          const feeDueDayFormatted = actualFeeDueDay.toString().padStart(2, '0');
+          const feeDueDate = `${dueYear}-${dueMonthFormatted}-${feeDueDayFormatted}`;
+
+          const newBalanceFeeTitle: FinancialTitle = {
+            id: `tit-tb-${Date.now()}-${contract.id}-${compMonth}`,
+            companyId: 'comp-1',
+            type: 'RECEBER',
+            titleNumber: balanceFeeTitleNumber,
+            counterpartyId: contract.customerId,
+            description: `Taxa de Balanço Anual (Parc. ${currentInstallmentIndex}/${totalInstallments}) - Contrato ${contract.contractNumber}`,
+            accountId: mainAccountId,
+            launchDate: new Date().toISOString().split('T')[0],
+            competence,
+            issueDate: new Date().toISOString().split('T')[0],
+            dueDate: feeDueDate,
+            expectedCashDate: feeDueDate,
+            originalAmount: installmentAmount,
+            settledPrincipal: 0,
+            balancePrincipal: installmentAmount,
+            accruedInterest: 0,
+            accruedFine: 0,
+            documentState: 'CONFIRMADO',
+            settlementState: 'ABERTO',
+            originType: 'CONTRATO',
+            originId: contract.id,
+            installmentIndex: currentInstallmentIndex,
+            totalInstallments: totalInstallments,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            notes: `Gerado automaticamente referente à Taxa de Balanço Anual (${currentInstallmentIndex}ª parcela de ${totalInstallments}).`
+          };
+
+          newTitles.push(newBalanceFeeTitle);
+          generatedCount++;
+          totalAmountGenerated += installmentAmount;
+          results.push({ contract, title: newBalanceFeeTitle, status: 'GERADO' });
+        }
+      }
     }
 
     if (newTitles.length > 0) {
@@ -616,13 +811,302 @@ export class FinancialEngine {
   }
 
   /**
+   * FATURAMENTO AUTOMÁTICO DE PRÓXIMOS MESES DO CONTRATO
+   * Gera antecipadamente todos os títulos a receber futuros para a vigência do contrato
+   */
+  public static generateContractFutureInstallments(
+    contractOrId: Contract | string,
+    numberOfMonths: number = 12,
+    startFromCompetence?: string
+  ): {
+    generatedCount: number;
+    alreadyExistingCount: number;
+    totalAmountGenerated: number;
+    competences: string[];
+    titles: FinancialTitle[];
+  } {
+    const contracts = storage.getContracts();
+    const contract = typeof contractOrId === 'string'
+      ? contracts.find(c => c.id === contractOrId)
+      : contractOrId;
+
+    if (!contract || contract.status !== 'ATIVO') {
+      return {
+        generatedCount: 0,
+        alreadyExistingCount: 0,
+        totalAmountGenerated: 0,
+        competences: [],
+        titles: []
+      };
+    }
+
+    const currentTitles = storage.getTitles();
+    const mainAccountId = contract.items?.[0]?.accountId || 'acc-1.1.01';
+
+    // Determinar competência inicial
+    const today = new Date();
+    const currentCompStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const startComp = startFromCompetence || currentCompStr;
+
+    const [startYear, startMonth] = startComp.split('-').map(Number);
+    
+    let generatedCount = 0;
+    let alreadyExistingCount = 0;
+    let totalAmountGenerated = 0;
+    const competencesGenerated: string[] = [];
+    const newTitles: FinancialTitle[] = [];
+    const newSales: Sale[] = [];
+
+    const nowIso = new Date().toISOString();
+    const todayYmd = nowIso.split('T')[0];
+
+    for (let i = 0; i < numberOfMonths; i++) {
+      // Calcular ano e mês da competência
+      const targetDate = new Date(startYear, startMonth - 1 + i, 1);
+      const cYear = targetDate.getFullYear();
+      const cMonth = targetDate.getMonth() + 1;
+      const cMonthFormatted = String(cMonth).padStart(2, '0');
+      const competence = `${cYear}-${cMonthFormatted}`;
+
+      // Se o contrato tem data de término e a competência ultrapassa o término, interromper
+      if (contract.endDate && competence > contract.endDate.substring(0, 7)) {
+        break;
+      }
+
+      // Se o contrato possui data de cancelamento/inativação a partir de tal data, interromper
+      if (contract.cancellationDate && competence >= contract.cancellationDate.substring(0, 7)) {
+        break;
+      }
+
+      competencesGenerated.push(competence);
+
+      // Calcular vencimento conforme regra (SAME_MONTH ou NEXT_MONTH)
+      let dueYear = cYear;
+      let dueMonth = cMonth;
+      if (contract.dueRule === 'NEXT_MONTH') {
+        dueMonth += 1;
+        if (dueMonth > 12) {
+          dueMonth = 1;
+          dueYear += 1;
+        }
+      }
+
+      const lastDayOfMonth = new Date(dueYear, dueMonth, 0).getDate();
+      const actualDueDay = Math.min(contract.dueDay, lastDayOfMonth);
+      const dueDayFormatted = String(actualDueDay).padStart(2, '0');
+      const dueMonthFormatted = String(dueMonth).padStart(2, '0');
+      const dueDate = `${dueYear}-${dueMonthFormatted}-${dueDayFormatted}`;
+
+      const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+      // Verificar se já existe título ativo para este contrato nesta competência
+      const existing = currentTitles.find(t => 
+        (t.originType === 'CONTRATO' || t.originType === 'VENDA') && 
+        (t.originId === contract.id || t.contractId === contract.id || t.contractNumber === contract.contractNumber || t.originId === contract.contractNumber) && 
+        t.competence === competence &&
+        (t.titleNumber === titleNumber || !t.titleNumber.startsWith('TB-')) &&
+        t.documentState !== 'CANCELADO'
+      );
+
+      if (existing) {
+        alreadyExistingCount++;
+      } else {
+        const saleId = `sale-${contract.id}-${competence}`;
+        const saleNumber = `VEN-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+        const newTitleId = `tit-fat-${Date.now()}-${contract.id}-${competence}`;
+
+        const newTitle: FinancialTitle = {
+          id: newTitleId,
+          companyId: 'comp-1',
+          type: 'RECEBER',
+          titleNumber,
+          counterpartyId: contract.customerId,
+          description: `Mensalidade ${contract.description} - Comp. ${cMonthFormatted}/${cYear}`,
+          accountId: mainAccountId,
+          launchDate: todayYmd,
+          competence,
+          issueDate: todayYmd,
+          dueDate,
+          expectedCashDate: dueDate,
+          originalAmount: contract.monthlyTotal,
+          settledPrincipal: 0,
+          balancePrincipal: contract.monthlyTotal,
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: 'CONTRATO',
+          originId: contract.id,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          saleId: saleId,
+          saleNumber: saleNumber,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          notes: `Faturamento recorrente automático programado (Contrato ${contract.contractNumber} • Venda ${saleNumber}).`
+        };
+
+        const newSale: Sale = {
+          id: saleId,
+          saleNumber,
+          customerId: contract.customerId,
+          competence,
+          date: todayYmd,
+          items: (contract.items && contract.items.length > 0) ? contract.items.map(it => ({
+            id: `item-${newTitleId}-${it.id}`,
+            serviceId: it.serviceId,
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            discount: 0,
+            total: it.total,
+            accountId: it.accountId
+          })) : [
+            {
+              id: `item-${newTitleId}`,
+              serviceId: 'srv-1',
+              description: `Mensalidade ${contract.description}`,
+              quantity: 1,
+              unitPrice: contract.monthlyTotal,
+              discount: 0,
+              total: contract.monthlyTotal,
+              accountId: mainAccountId
+            }
+          ],
+          grossTotal: contract.monthlyTotal,
+          discountTotal: 0,
+          netTotal: contract.monthlyTotal,
+          installmentsCount: 1,
+          notes: `Faturamento recorrente do Contrato ${contract.contractNumber}`,
+          createdAt: nowIso,
+          originType: 'CONTRATO',
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          status: 'CONFIRMADA',
+          titleIds: [newTitleId]
+        };
+
+        newTitles.push(newTitle);
+        newSales.push(newSale);
+        generatedCount++;
+        totalAmountGenerated += contract.monthlyTotal;
+      }
+
+      // Taxa de Balanço Anual (se configurada e incluir este mês)
+      if (
+        contract.annualBalanceFee && 
+        contract.annualBalanceFee.enabled && 
+        contract.annualBalanceFee.amount > 0 &&
+        Array.isArray(contract.annualBalanceFee.billingMonths) &&
+        contract.annualBalanceFee.billingMonths.includes(cMonth)
+      ) {
+        const totalInstallments = contract.annualBalanceFee.billingMonths.length || 1;
+        const currentInstallmentIndex = contract.annualBalanceFee.billingMonths.indexOf(cMonth) + 1;
+        
+        const baseInstallmentAmount = Math.round((contract.annualBalanceFee.amount / totalInstallments) * 100) / 100;
+        const isLastInstallment = currentInstallmentIndex === totalInstallments;
+        const installmentAmount = isLastInstallment 
+          ? Math.round((contract.annualBalanceFee.amount - baseInstallmentAmount * (totalInstallments - 1)) * 100) / 100
+          : baseInstallmentAmount;
+
+        const balanceFeeTitleNumber = `TB-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+        const existingBalanceFee = currentTitles.find(t => 
+          t.originType === 'CONTRATO' && 
+          t.originId === contract.id && 
+          t.competence === competence &&
+          (t.titleNumber === balanceFeeTitleNumber || t.titleNumber.startsWith(`TB-${competence}`)) &&
+          t.documentState !== 'CANCELADO'
+        );
+
+        if (!existingBalanceFee) {
+          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay;
+          const actualFeeDueDay = Math.min(feeDueDay, lastDayOfMonth);
+          const feeDueDayFormatted = String(actualFeeDueDay).padStart(2, '0');
+          const feeDueDate = `${dueYear}-${dueMonthFormatted}-${feeDueDayFormatted}`;
+
+          const newBalanceFeeTitle: FinancialTitle = {
+            id: `tit-tb-${Date.now()}-${contract.id}-${cMonth}`,
+            companyId: 'comp-1',
+            type: 'RECEBER',
+            titleNumber: balanceFeeTitleNumber,
+            counterpartyId: contract.customerId,
+            description: `Taxa de Balanço Anual (Parc. ${currentInstallmentIndex}/${totalInstallments}) - Contrato ${contract.contractNumber}`,
+            accountId: mainAccountId,
+            launchDate: todayYmd,
+            competence,
+            issueDate: todayYmd,
+            dueDate: feeDueDate,
+            expectedCashDate: feeDueDate,
+            originalAmount: installmentAmount,
+            settledPrincipal: 0,
+            balancePrincipal: installmentAmount,
+            accruedInterest: 0,
+            accruedFine: 0,
+            documentState: 'CONFIRMADO',
+            settlementState: 'ABERTO',
+            originType: 'CONTRATO',
+            originId: contract.id,
+            installmentIndex: currentInstallmentIndex,
+            totalInstallments: totalInstallments,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            notes: `Taxa de Balanço Anual gerada automaticamente no faturamento do contrato.`
+          };
+
+          newTitles.push(newBalanceFeeTitle);
+          generatedCount++;
+          totalAmountGenerated += installmentAmount;
+        }
+      }
+    }
+
+    if (newTitles.length > 0) {
+      storage.saveTitles([...newTitles, ...currentTitles]);
+      if (newSales.length > 0) {
+        const existingSales = storage.getSales();
+        storage.saveSales([...newSales, ...existingSales]);
+      }
+
+      // Atualizar lastGeneratedCompetence no contrato
+      const lastComp = competencesGenerated[competencesGenerated.length - 1];
+      const updatedContracts = contracts.map(c => 
+        c.id === contract.id ? { ...c, lastGeneratedCompetence: lastComp } : c
+      );
+      storage.saveContracts(updatedContracts);
+
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'GERACAO_FATURAMENTO_FUTURO',
+        module: 'Contratos Recorrentes',
+        recordId: contract.id,
+        details: `Faturamento automático programado para o contrato ${contract.contractNumber}: ${generatedCount} títulos gerados cobrindo ${competencesGenerated.length} competências (${competencesGenerated[0]} até ${lastComp}) totalizando ${formatBRL(totalAmountGenerated)}.`
+      });
+    }
+
+    return {
+      generatedCount,
+      alreadyExistingCount,
+      totalAmountGenerated,
+      competences: competencesGenerated,
+      titles: newTitles
+    };
+  }
+
+  /**
    * CALCULATE MRR (MONTHLY RECURRING REVENUE)
    * Defined strictly in Prompt Item 16:
    * Normalized monthly value of active recurring contracts on the reference date.
    * Excludes one-off sales and installments. Overdue does not reduce MRR.
    */
   public static calculateMRR(): number {
-    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    const contracts = storage.getContracts().filter(c => 
+      c.status === 'ATIVO' && 
+      c.isRecurring !== false && 
+      c.contractType !== 'AVULSO'
+    );
     return contracts.reduce((acc, c) => acc + (c.monthlyTotal || 0), 0);
   }
 
@@ -1022,3 +1506,123 @@ export class FinancialEngine {
     return { success: true };
   }
 }
+
+/**
+ * Determina se uma conta contábil pertence ao grupo de RECEITAS (Vendas / Contas a Receber)
+ */
+export const isRevenueAccount = (account: ChartAccount): boolean => {
+  if (!account) return false;
+  
+  // Naturezas explícitas de receita
+  if (
+    account.nature === 'RECEITA_SERVICO' ||
+    account.nature === 'RECEITA_FINANCEIRA' ||
+    account.nature === 'OUTRA_RECEITA'
+  ) {
+    return true;
+  }
+  
+  if (account.nature && account.nature.startsWith('RECEITA')) {
+    return true;
+  }
+  
+  // Se estiver mapeado para linha de receitas na DRE
+  if (
+    account.dremap?.line === 'RECEITA_BRUTA' ||
+    account.dremap?.line === 'RECEITAS_FINANCEIRAS' ||
+    account.dremap?.line === 'OUTRAS_RECEITAS_OPERACIONAIS'
+  ) {
+    return true;
+  }
+  
+  // Código contábil iniciando com 1, excluindo deduções (1.2)
+  if (account.code && account.code.startsWith('1')) {
+    if (account.code.startsWith('1.2') || account.nature === 'DEDUCAO_RECEITA') {
+      return false; // Deduções são redutoras / custos
+    }
+    return true;
+  }
+  
+  return false;
+};
+
+/**
+ * Determina se uma conta contábil pertence ao grupo de CUSTOS E DESPESAS (Contas a Pagar)
+ */
+export const isCostOrExpenseAccount = (account: ChartAccount): boolean => {
+  if (!account) return false;
+  
+  // Se for explicitamente receita, não é custo/despesa
+  if (isRevenueAccount(account)) {
+    return false;
+  }
+  
+  // Naturezas explícitas de custos, despesas, tributos e investimentos
+  if (
+    account.nature === 'CUSTO_SERVICO' ||
+    account.nature === 'DESPESA_PESSOAL' ||
+    account.nature === 'DESPESA_ADMINISTRATIVA' ||
+    account.nature === 'DESPESA_COMERCIAL' ||
+    account.nature === 'DESPESA_OPERACIONAL' ||
+    account.nature === 'DESPESA_FINANCEIRA' ||
+    account.nature === 'DEDUCAO_RECEITA' ||
+    account.nature === 'TRIBUTO_LUCRO' ||
+    account.nature === 'INVESTIMENTO_ATIVO' ||
+    account.nature === 'RESULTADO_FINANCEIRO' ||
+    account.nature === 'FINANCIAMENTO_SOCIO' ||
+    account.nature === 'CONTROLE_ESPECIFICO'
+  ) {
+    return true;
+  }
+  
+  if (account.nature && (account.nature.startsWith('DESPESA') || account.nature.startsWith('CUSTO'))) {
+    return true;
+  }
+  
+  // Mapeamento DRE de custos e despesas
+  if (
+    account.dremap?.line === 'CUSTO_SERVICOS' ||
+    account.dremap?.line === 'DESPESAS_OPERACIONAIS' ||
+    account.dremap?.line === 'DESPESAS_FINANCEIRAS' ||
+    account.dremap?.line === 'TRIBUTOS_SOBRE_LUCRO' ||
+    account.dremap?.line === 'DEDUCOES_RECEITA'
+  ) {
+    return true;
+  }
+  
+  // Códigos 2 (Custos), 3, 4, 5 (Despesas), 6 (Tributos) ou 1.2 (Deduções)
+  if (
+    account.code &&
+    (account.code.startsWith('2') ||
+     account.code.startsWith('3') ||
+     account.code.startsWith('4') ||
+     account.code.startsWith('5') ||
+     account.code.startsWith('6') ||
+     account.code.startsWith('1.2'))
+  ) {
+    return true;
+  }
+  
+  // Por padrão em um lançamento a pagar, qualquer conta que não seja receita pode ser selecionada
+  return true;
+};
+
+/**
+ * Filtra as contas do plano de contas analítico conforme o tipo de título:
+ * - 'PAGAR': apenas Custos e Despesas
+ * - 'RECEBER': apenas Receitas
+ */
+export const getFilteredChartAccounts = (
+  accounts: ChartAccount[],
+  titleType: 'PAGAR' | 'RECEBER'
+): ChartAccount[] => {
+  return accounts.filter(a => {
+    if (!a.isAnalytical || !a.isActive) return false;
+    if (titleType === 'RECEBER') {
+      return isRevenueAccount(a);
+    } else {
+      return isCostOrExpenseAccount(a);
+    }
+  });
+};
+
