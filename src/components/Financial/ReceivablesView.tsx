@@ -2041,18 +2041,20 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       />
 
       {/* Spreadsheet Import Modal */}
-      <ImportSpreadsheetModal
-        isOpen={isImportModalOpen}
-        defaultType="RECEBER"
-        onClose={() => setIsImportModalOpen(false)}
-        onImportCompleted={() => {
-          setIsImportModalOpen(false);
-          setStatusFilter('TODOS');
-          setQuickDateFilter('ALL');
-          setSearchTerm('');
-          setRefreshKey(k => k + 1);
-        }}
-      />
+      {isImportModalOpen && (
+        <ImportSpreadsheetModal
+          isOpen={isImportModalOpen}
+          defaultType="RECEBER"
+          onClose={() => setIsImportModalOpen(false)}
+          onImportCompleted={() => {
+            setIsImportModalOpen(false);
+            setStatusFilter('TODOS');
+            setQuickDateFilter('ALL');
+            setSearchTerm('');
+            setRefreshKey(k => k + 1);
+          }}
+        />
+      )}
 
       {/* Modal de Baixa em Lote (Melhoria 5) */}
       <BatchSettlementModal

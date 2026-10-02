@@ -1950,18 +1950,20 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       />
 
       {/* Spreadsheet Import Modal */}
-      <ImportSpreadsheetModal
-        isOpen={isImportModalOpen}
-        defaultType="PAGAR"
-        onClose={() => setIsImportModalOpen(false)}
-        onImportCompleted={() => {
-          setIsImportModalOpen(false);
-          setStatusFilter('TODOS');
-          setQuickDateFilter('ALL');
-          setSearchTerm('');
-          setRefreshKey(k => k + 1);
-        }}
-      />
+      {isImportModalOpen && (
+        <ImportSpreadsheetModal
+          isOpen={isImportModalOpen}
+          defaultType="PAGAR"
+          onClose={() => setIsImportModalOpen(false)}
+          onImportCompleted={() => {
+            setIsImportModalOpen(false);
+            setStatusFilter('TODOS');
+            setQuickDateFilter('ALL');
+            setSearchTerm('');
+            setRefreshKey(k => k + 1);
+          }}
+        />
+      )}
 
       {/* Modal de Baixa em Lote (Melhoria 5) */}
       <BatchSettlementModal

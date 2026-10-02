@@ -37,36 +37,36 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
   extraColumns,
   onSaveRow
 }) => {
-  const [tipo, setTipo] = useState<TitleType>(row?.normalized.tipo || 'PAGAR');
-  const [titulo, setTitulo] = useState<string>(row?.normalized.titulo || '');
-  const [fornecedor, setFornecedor] = useState<string>(row?.normalized.fornecedor || '');
-  const [descricao, setDescricao] = useState<string>(row?.normalized.descricao || '');
-  const [competencia, setCompetencia] = useState<string>(row?.normalized.competencia || '');
-  const [emissao, setEmissao] = useState<string>(row?.normalized.emissao || '');
-  const [vencimento, setVencimento] = useState<string>(row?.normalized.vencimento || '');
-  const [previsaoCaixa, setPrevisaoCaixa] = useState<string>(row?.normalized.previsaoCaixa || '');
-  const [valorOriginal, setValorOriginal] = useState<number>(row?.normalized.valorOriginal || 0);
-  const [principalBaixado, setPrincipalBaixado] = useState<number>(row?.normalized.principalBaixado || 0);
-  const [situacao, setSituacao] = useState<'ABERTO' | 'PARCIAL' | 'LIQUIDADO' | 'ATRASADO' | 'CANCELADO'>(row?.normalized.situacao || 'ABERTO');
+  const [tipo, setTipo] = useState<TitleType>(row?.normalized?.tipo || 'PAGAR');
+  const [titulo, setTitulo] = useState<string>(row?.normalized?.titulo || '');
+  const [fornecedor, setFornecedor] = useState<string>(row?.normalized?.fornecedor || '');
+  const [descricao, setDescricao] = useState<string>(row?.normalized?.descricao || '');
+  const [competencia, setCompetencia] = useState<string>(row?.normalized?.competencia || '');
+  const [emissao, setEmissao] = useState<string>(row?.normalized?.emissao || '');
+  const [vencimento, setVencimento] = useState<string>(row?.normalized?.vencimento || '');
+  const [previsaoCaixa, setPrevisaoCaixa] = useState<string>(row?.normalized?.previsaoCaixa || '');
+  const [valorOriginal, setValorOriginal] = useState<number>(row?.normalized?.valorOriginal || 0);
+  const [principalBaixado, setPrincipalBaixado] = useState<number>(row?.normalized?.principalBaixado || 0);
+  const [situacao, setSituacao] = useState<'ABERTO' | 'PARCIAL' | 'LIQUIDADO' | 'ATRASADO' | 'CANCELADO'>(row?.normalized?.situacao || 'ABERTO');
   const [selectedPartyId, setSelectedPartyId] = useState<string>(row?.matchedCounterpartyId || row?.suggestedCounterpartyId || '');
   const [selectedAccountId, setSelectedAccountId] = useState<string>(row?.matchedChartAccountId || '');
-  const [centroCusto, setCentroCusto] = useState<string>(row?.normalized.centroCusto || '');
-  const [customFields, setCustomFields] = useState<Record<string, any>>(row?.normalized.customFields || {});
+  const [centroCusto, setCentroCusto] = useState<string>(row?.normalized?.centroCusto || '');
+  const [customFields, setCustomFields] = useState<Record<string, any>>(row?.normalized?.customFields || {});
 
   // Reset form when row changes
   useEffect(() => {
-    if (row) {
-      setTipo(row.normalized.tipo);
-      setTitulo(row.normalized.titulo);
-      setFornecedor(row.normalized.fornecedor);
-      setDescricao(row.normalized.descricao);
-      setCompetencia(row.normalized.competencia);
-      setEmissao(row.normalized.emissao);
-      setVencimento(row.normalized.vencimento);
-      setPrevisaoCaixa(row.normalized.previsaoCaixa);
-      setValorOriginal(row.normalized.valorOriginal);
-      setPrincipalBaixado(row.normalized.principalBaixado);
-      setSituacao(row.normalized.situacao);
+    if (row && row.normalized) {
+      setTipo(row.normalized.tipo || 'PAGAR');
+      setTitulo(row.normalized.titulo || '');
+      setFornecedor(row.normalized.fornecedor || '');
+      setDescricao(row.normalized.descricao || '');
+      setCompetencia(row.normalized.competencia || '');
+      setEmissao(row.normalized.emissao || '');
+      setVencimento(row.normalized.vencimento || '');
+      setPrevisaoCaixa(row.normalized.previsaoCaixa || '');
+      setValorOriginal(row.normalized.valorOriginal || 0);
+      setPrincipalBaixado(row.normalized.principalBaixado || 0);
+      setSituacao(row.normalized.situacao || 'ABERTO');
       setSelectedPartyId(row.matchedCounterpartyId || row.suggestedCounterpartyId || '');
       setSelectedAccountId(row.matchedChartAccountId || '');
       setCentroCusto(row.normalized.centroCusto || '');

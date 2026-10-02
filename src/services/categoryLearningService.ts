@@ -174,17 +174,20 @@ class CategoryLearningService {
     chartAccounts: ChartAccount[],
     existingTitles: FinancialTitle[] = []
   ): PredictionResult | null {
-    const normParty = normalizeText(counterparty);
-    const normDesc = normalizeText(description);
-    const rules = this.getLearnedRules();
+    const normParty = normalizeText(counterparty || '');
+    const normDesc = normalizeText(description || '');
+    const rawRules = this.getLearnedRules();
+    const rules = Array.isArray(rawRules) ? rawRules : [];
+    const safeAccounts = (Array.isArray(chartAccounts) ? chartAccounts : []).filter(Boolean);
+    const safeTitles = (Array.isArray(existingTitles) ? existingTitles : []).filter(Boolean);
 
     // 1. Busca nas regras explícitas aprendidas por Contraparte
     if (normParty) {
       const matchByParty = rules.find(
-        r => r.type === type && r.counterpartyNormalized === normParty
+        r => r && r.type === type && r.counterpartyNormalized === normParty
       );
       if (matchByParty) {
-        const account = chartAccounts.find(a => a.id === matchByParty.chartAccountId);
+        const account = safeAccounts.find(a => a.id === matchByParty.chartAccountId);
         if (account) {
           return {
             chartAccountId: account.id,
@@ -200,12 +203,12 @@ class CategoryLearningService {
 
       // Busca por similaridade parcial na contraparte
       const partialMatch = rules.find(
-        r => r.type === type && r.counterpartyNormalized && (
+        r => r && r.type === type && r.counterpartyNormalized && (
           normParty.includes(r.counterpartyNormalized) || r.counterpartyNormalized.includes(normParty)
         )
       );
       if (partialMatch) {
-        const account = chartAccounts.find(a => a.id === partialMatch.chartAccountId);
+        const account = safeAccounts.find(a => a.id === partialMatch.chartAccountId);
         if (account) {
           return {
             chartAccountId: account.id,
@@ -221,13 +224,13 @@ class CategoryLearningService {
     }
 
     // 2. Busca no histórico de títulos anteriores do sistema
-    if (existingTitles.length > 0 && normParty) {
-      const matchingTitles = existingTitles.filter(t => {
-        if (t.type !== type || !t.chartAccountId) return false;
+    if (safeTitles.length > 0 && normParty) {
+      const matchingTitles = safeTitles.filter(t => {
+        if (!t || t.type !== type || !t.chartAccountId) return false;
         // Verifica se a contraparte ou o título bate
-        const tParty = normalizeText(t.counterpartyId);
-        const tDesc = normalizeText(t.description);
-        return tParty.includes(normParty) || normParty.includes(tParty) || (normDesc && tDesc.includes(normDesc));
+        const tParty = normalizeText(t.counterpartyId || '');
+        const tDesc = normalizeText(t.description || '');
+        return (tParty && (tParty.includes(normParty) || normParty.includes(tParty))) || (normDesc && tDesc && tDesc.includes(normDesc));
       });
 
       if (matchingTitles.length > 0) {
@@ -268,7 +271,7 @@ class CategoryLearningService {
       for (const kw of keywords) {
         const kwRule = rules.find(r => r.type === type && r.term === kw);
         if (kwRule) {
-          const account = chartAccounts.find(a => a.id === kwRule.chartAccountId);
+          const account = safeAccounts.find(a => a.id === kwRule.chartAccountId);
           if (account) {
             return {
               chartAccountId: account.id,

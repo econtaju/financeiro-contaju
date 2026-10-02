@@ -524,6 +524,8 @@ export function getRowMonthKey(norm?: Partial<BaseSpreadsheetRow> | null): strin
 
 // Calcula resumos consolidados por mês para auditoria e aprovação
 export function calculateMonthlySummaries(rows: AnalyzedImportRow[]): MonthSummary[] {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
   const map: Record<string, {
     totalTitles: number;
     receivablesCount: number;
@@ -537,8 +539,10 @@ export function calculateMonthlySummaries(rows: AnalyzedImportRow[]): MonthSumma
   }> = {};
 
   for (const row of rows) {
+    if (!row || !row.normalized) continue;
+
     // Agrupa preferencialmente por competência; se não houver, usa mês do vencimento via getRowMonthKey seguro
-    const mKey = getRowMonthKey(row?.normalized);
+    const mKey = getRowMonthKey(row.normalized);
 
     if (!map[mKey]) {
       map[mKey] = {
@@ -705,6 +709,10 @@ export function analyzeContaAzulSpreadsheet(
   fallbackDefaultType: TitleType = 'PAGAR'
 ): AnalyzedImportRow[] {
   const result: AnalyzedImportRow[] = [];
+
+  const safeExistingTitles = (Array.isArray(existingTitles) ? existingTitles : []).filter(Boolean);
+  const safeCounterparties = (Array.isArray(existingCounterparties) ? existingCounterparties : []).filter(Boolean);
+  const safeChartAccounts = (Array.isArray(existingChartAccounts) ? existingChartAccounts : []).filter(Boolean);
 
   rows.forEach((raw, idx) => {
     const rowNum = idx + 2; // Cabeçalho na linha 1
@@ -910,9 +918,9 @@ export function analyzeContaAzulSpreadsheet(
       const normParty = normalizeText(contraparteName);
       
       // Busca match exato
-      const exactMatch = existingCounterparties.find(c => 
-        normalizeText(c.name) === normParty || 
-        (c.tradeName && normalizeText(c.tradeName) === normParty)
+      const exactMatch = safeCounterparties.find(c => 
+        (c?.name && normalizeText(c.name) === normParty) || 
+        (c?.tradeName && normalizeText(c.tradeName) === normParty)
       );
 
       if (exactMatch) {
@@ -920,9 +928,9 @@ export function analyzeContaAzulSpreadsheet(
         counterpartyResolution = 'MATCH_EXATO';
       } else {
         // Busca similar/parcial
-        const partialMatch = existingCounterparties.find(c => {
-          const cName = normalizeText(c.name);
-          return cName.includes(normParty) || normParty.includes(cName);
+        const partialMatch = safeCounterparties.find(c => {
+          const cName = normalizeText(c?.name || '');
+          return (cName && normParty && (cName.includes(normParty) || normParty.includes(cName)));
         });
 
         if (partialMatch) {
@@ -950,8 +958,8 @@ export function analyzeContaAzulSpreadsheet(
     // 12.1. Primeiro verifica se a planilha trouxe uma categoria que casa com o Plano de Contas
     if (rawCategoryName) {
       const normCat = normalizeText(rawCategoryName);
-      const exactAccount = existingChartAccounts.find(a => 
-        a.isAnalytical && normalizeText(a.name) === normCat
+      const exactAccount = safeChartAccounts.find(a => 
+        a && a.isAnalytical && normalizeText(a.name || '') === normCat
       );
 
       if (exactAccount) {
@@ -959,8 +967,8 @@ export function analyzeContaAzulSpreadsheet(
         matchedChartAccountName = exactAccount.name;
         categoryResolution = 'MATCH_PLANO';
       } else {
-        const partialAccount = existingChartAccounts.find(a => 
-          a.isAnalytical && (normalizeText(a.name).includes(normCat) || normCat.includes(normalizeText(a.name)))
+        const partialAccount = safeChartAccounts.find(a => 
+          a && a.isAnalytical && (normalizeText(a.name || '').includes(normCat) || normCat.includes(normalizeText(a.name || '')))
         );
         if (partialAccount) {
           suggestedChartAccountId = partialAccount.id;
@@ -977,8 +985,8 @@ export function analyzeContaAzulSpreadsheet(
         contraparteName,
         descricao,
         tipo,
-        existingChartAccounts,
-        existingTitles
+        safeChartAccounts,
+        safeExistingTitles
       );
 
       if (prediction) {
@@ -995,14 +1003,14 @@ export function analyzeContaAzulSpreadsheet(
     if (!matchedChartAccountId) {
       const fallbackId = tipo === 'RECEBER' ? defaultRevenueAccountId : defaultExpenseAccountId;
       matchedChartAccountId = suggestedChartAccountId || fallbackId;
-      const fallbackAcc = existingChartAccounts.find(a => a.id === matchedChartAccountId);
+      const fallbackAcc = safeChartAccounts.find(a => a && a.id === matchedChartAccountId);
       matchedChartAccountName = fallbackAcc?.name || (tipo === 'RECEBER' ? 'Receita de Serviços' : 'Despesas Gerais');
       if (rawCategoryName && !suggestedChartAccountId) {
         categoryResolution = 'CRIAR_NOVO_PLANO';
         warnings.push(`Categoria "${rawCategoryName}" não encontrada no Plano de Contas. Será criada automaticamente ou associada ao padrão.`);
       }
     } else if (!matchedChartAccountName) {
-      const acc = existingChartAccounts.find(a => a.id === matchedChartAccountId);
+      const acc = safeChartAccounts.find(a => a && a.id === matchedChartAccountId);
       matchedChartAccountName = acc?.name || rawCategoryName;
     }
 
@@ -1045,10 +1053,12 @@ export function analyzeContaAzulSpreadsheet(
     let existingTitle: FinancialTitle | undefined;
     const diffs: RowDiffField[] = [];
 
-    existingTitle = existingTitles.find(t => 
-      (t.externalId && externalId && t.externalId === externalId) ||
-      (t.fingerprint && fingerprint && t.fingerprint === fingerprint) ||
-      (rawTit && t.titleNumber === titulo && t.type === tipo && (matchedCounterpartyId ? t.counterpartyId === matchedCounterpartyId : true))
+    existingTitle = safeExistingTitles.find(t => 
+      t && (
+        (t.externalId && externalId && t.externalId === externalId) ||
+        (t.fingerprint && fingerprint && t.fingerprint === fingerprint) ||
+        (rawTit && t.titleNumber === titulo && t.type === tipo && (matchedCounterpartyId ? t.counterpartyId === matchedCounterpartyId : true))
+      )
     );
 
     if (errors.length > 0) {
