@@ -578,6 +578,32 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
 
+                {/* Atalho Gestor Geral (Leonardo) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('leonardoricardoarantes@gmail.com');
+                    setPassword('contaju123');
+                    setErrorMessage(null);
+                  }}
+                  className="w-full p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-left flex items-center justify-between text-xs transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-base shrink-0">👑</span>
+                    <div className="min-w-0">
+                      <span className="font-bold text-[var(--text-primary)] block group-hover:text-amber-500 transition-colors truncate">
+                        Preencher Credencial do Gestor Geral
+                      </span>
+                      <span className="text-[10px] text-[var(--text-secondary)] block truncate">
+                        leonardoricardoarantes@gmail.com • Senha: contaju123
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md shrink-0">
+                    Preencher
+                  </span>
+                </button>
+
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -907,12 +933,66 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div>
                 <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-amber-500" />
-                  <span>Acesso Rápido neste Dispositivo</span>
+                  <span>Acesso ao Sistema</span>
                 </h2>
                 <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                  Contas autenticadas anteriormente salvas neste navegador:
+                  Acesso rápido para o Gestor Geral e contas salvas neste dispositivo:
                 </p>
               </div>
+            </div>
+
+            {/* Cartão de Destaque Master: Gestor Geral */}
+            <div className="mb-4 p-3.5 rounded-2xl border-2 border-amber-500/60 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent flex items-center justify-between gap-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('leonardoricardoarantes@gmail.com');
+                  setPassword('contaju123');
+                  setErrorMessage(null);
+                }}
+                className="flex items-center gap-3 text-left flex-1 cursor-pointer min-w-0"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm shadow-md shrink-0">
+                  👑
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-amber-500 truncate">
+                      Leonardo Ricardo Arantes
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[var(--text-secondary)] block truncate">
+                    leonardoricardoarantes@gmail.com
+                  </span>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="inline-block text-[9px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/60 font-black">
+                      👑 GESTOR GERAL (TOTAL)
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Senha: <strong className="text-amber-400">contaju123</strong>
+                    </span>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setEmail('leonardoricardoarantes@gmail.com');
+                  setPassword('contaju123');
+                  setIsLoading(true);
+                  const res = await storage.login('leonardoricardoarantes@gmail.com', 'contaju123');
+                  setIsLoading(false);
+                  if (res.success && res.user) {
+                    onLoginSuccess(res.user);
+                  }
+                }}
+                title="Entrar direto como Gestor Geral"
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-md flex items-center gap-1 shrink-0"
+              >
+                <span>Entrar</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {rememberedUsers.length > 0 ? (

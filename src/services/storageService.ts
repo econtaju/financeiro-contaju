@@ -464,25 +464,65 @@ class StorageService {
     const cleanEmail = email.trim().toLowerCase();
     const user = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
 
+    const MASTER_EMAIL = 'leonardoricardoarantes@gmail.com';
+    const isMaster = cleanEmail === MASTER_EMAIL;
+
     if (!user) {
+      if (isMaster) {
+        // Criar o master caso por algum motivo raro não estivesse na lista
+        const masterUser: User = {
+          id: 'usr-master-1',
+          name: 'Leonardo Ricardo Arantes',
+          email: MASTER_EMAIL,
+          role: 'SUPER_ADMIN',
+          status: 'ATIVO',
+          password: 'contaju123',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+          createdAt: new Date().toISOString()
+        };
+        const updated = [masterUser, ...users];
+        this.saveUsers(updated);
+        this.rememberUser(masterUser);
+        localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
+          userId: masterUser.id,
+          email: masterUser.email,
+          name: masterUser.name,
+          role: masterUser.role,
+          loggedAt: new Date().toISOString()
+        }));
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, masterUser.id);
+        this.notify();
+        return { success: true, user: masterUser };
+      }
       return { success: false, error: 'Usuário não cadastrado com este e-mail corporativo.' };
     }
 
-    if (user.status === 'PENDENTE') {
+    if (isMaster) {
+      user.role = 'SUPER_ADMIN';
+      user.status = 'ATIVO';
+    }
+
+    if (user.status === 'PENDENTE' && !isMaster) {
       return { 
         success: false, 
         error: 'Sua solicitação de cadastro foi recebida com sucesso e aguarda aprovação do administrador (leonardoricardoarantes@gmail.com). Você poderá acessar o sistema assim que for aprovado.' 
       };
     }
 
-    if (user.status === 'INATIVO') {
+    if (user.status === 'INATIVO' && !isMaster) {
       return { success: false, error: 'Este usuário está inativo. Solicite liberação ao administrador.' };
     }
 
     const expectedPass = user.password || 'contaju123';
     // Aceita a senha do usuário ou padrão contaju123
-    if (password && password.trim() !== expectedPass && password.trim() !== 'contaju123') {
-      return { success: false, error: 'Senha incorreta. Verifique e tente novamente.' };
+    const isPasswordValid = 
+      !password || 
+      password.trim() === expectedPass || 
+      password.trim() === 'contaju123' ||
+      (isMaster && (password.trim() === 'contaju123' || password.trim() === expectedPass));
+
+    if (!isPasswordValid) {
+      return { success: false, error: 'Senha incorreta. A senha padrão do Gestor Geral é "contaju123".' };
     }
 
     // Se o usuário estiver com 2FA habilitado, dispara código e solicita verificação
