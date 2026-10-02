@@ -1378,45 +1378,11 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                   </div>
                 </div>
 
-                {/* Contas Padrão para Receitas e Despesas */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[var(--border-subtle)]">
-                  <div>
-                    <label className="text-[11px] font-semibold text-emerald-400 block mb-1">
-                      Plano de Contas Padrão (Receitas):
-                    </label>
-                    <select
-                      value={fallbackRevenueAccountId}
-                      onChange={e => setFallbackRevenueAccountId(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[var(--surface-elevated)] border border-emerald-500/30 rounded-lg text-xs font-medium text-[var(--text-primary)] focus:outline-hidden"
-                    >
-                      {chartAccounts.filter(a => a.isAnalytical).map(acc => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.code} - {acc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-semibold text-rose-400 block mb-1">
-                      Plano de Contas Padrão (Despesas):
-                    </label>
-                    <select
-                      value={fallbackExpenseAccountId}
-                      onChange={e => setFallbackExpenseAccountId(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[var(--surface-elevated)] border border-rose-500/30 rounded-lg text-xs font-medium text-[var(--text-primary)] focus:outline-hidden"
-                    >
-                      {chartAccounts.filter(a => a.isAnalytical).map(acc => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.code} - {acc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
+                {/* Conta Bancária para Quitações */}
+                <div className="pt-2 border-t border-[var(--border-subtle)]">
+                  <div className="max-w-xs">
                     <label className="text-[11px] font-semibold text-[var(--text-secondary)] block mb-1">
-                      Conta Bancária Padrão (Baixas):
+                      Conta Bancária Padrão (para baixas de liquidação):
                     </label>
                     <select
                       value={fallbackBankAccountId}
