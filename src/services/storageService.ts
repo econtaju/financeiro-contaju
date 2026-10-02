@@ -1,6 +1,7 @@
 import { 
   CompanyProfile, 
   User, 
+  UserRole,
   Counterparty, 
   ServiceItem, 
   Contract, 
@@ -349,7 +350,7 @@ class StorageService {
     const MASTER_EMAIL = 'leonardoricardoarantes@gmail.com';
 
     let hasMaster = false;
-    const mapped = rawUsers.map(u => {
+    const mapped: User[] = rawUsers.map(u => {
       if (u.email.trim().toLowerCase() === MASTER_EMAIL) {
         hasMaster = true;
         return {

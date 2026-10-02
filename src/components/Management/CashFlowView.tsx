@@ -45,6 +45,9 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
   const [mode, setMode] = useState<'REALIZADO' | 'PROJETADO' | 'COMBINADO'>('REALIZADO');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
 
+  // Filtro de Segregação: Todos os Fluxos / Apenas Atividades de Caixa da Empresa / Apenas Distribuição de Lucros
+  const [flowFilter, setFlowFilter] = useState<'TODOS' | 'ATIVIDADES_REAIS' | 'DISTRIBUICAO_LUCROS'>('TODOS');
+
   // Filtros de prazo solicitados: Ano (12 meses), Semestre ou Trimestre
   const [timeHorizon, setTimeHorizon] = useState<CashFlowTimeHorizon>('ANO');
   const [selectedSemester, setSelectedSemester] = useState<1 | 2>(1);
@@ -102,7 +105,37 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
   };
 
-  // KPIs executivos do período selecionado
+  // Linhas filtradas de acordo com a visão selecionada pelo gestor
+  const displayedLines = useMemo(() => {
+    if (flowFilter === 'TODOS') return cashData.lines;
+
+    if (flowFilter === 'ATIVIDADES_REAIS') {
+      // Oculta linhas de distribuição de lucros aos sócios
+      return cashData.lines.filter(l => 
+        l.id !== 'cf-fin-out-profit' && 
+        l.id !== 'cf-profit-distribution'
+      );
+    }
+
+    if (flowFilter === 'DISTRIBUICAO_LUCROS') {
+      // Foco estrito na remuneração dos sócios e capacidade de caixa
+      return cashData.lines.filter(l => 
+        l.id === 'cf-initial' ||
+        l.id === 'cf-op-net' ||
+        l.id === 'cf-fin-out-loans' ||
+        l.id === 'cf-fin-out-profit' ||
+        l.id === 'cf-real-activities-outflows' ||
+        l.id === 'cf-cash-before-profit' ||
+        l.id === 'cf-profit-distribution' ||
+        l.id === 'cf-net-variation' ||
+        l.id === 'cf-final'
+      );
+    }
+
+    return cashData.lines;
+  }, [cashData.lines, flowFilter]);
+
+  // KPIs executivos do período selecionado com segregação precisa
   const periodKPIs = useMemo(() => {
     const initialLine = cashData.lines.find(l => l.id === 'cf-initial');
     const finalLine = cashData.lines.find(l => l.id === 'cf-final');
@@ -111,8 +144,8 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     const invInLine = cashData.lines.find(l => l.id === 'cf-inv-in');
     const invOutLine = cashData.lines.find(l => l.id === 'cf-inv-out');
     const finInLine = cashData.lines.find(l => l.id === 'cf-fin-in');
-    const finOutLine = cashData.lines.find(l => l.id === 'cf-fin-out');
-    const netVarLine = cashData.lines.find(l => l.id === 'cf-net-variation');
+    const finLoanOutLine = cashData.lines.find(l => l.id === 'cf-fin-out-loans');
+    const finProfitOutLine = cashData.lines.find(l => l.id === 'cf-fin-out-profit');
 
     const firstMonthIdx = activeMonthIndices[0];
     const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
@@ -126,40 +159,68 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     };
 
     const totalInflows = sumMonths(opInLine) + sumMonths(invInLine) + sumMonths(finInLine);
-    const totalOutflows = sumMonths(opOutLine) + sumMonths(invOutLine) + sumMonths(finOutLine);
+    const opOutflows = sumMonths(opOutLine);
+    const invOutflows = sumMonths(invOutLine);
+    const loanOutflows = sumMonths(finLoanOutLine);
+
+    // Pagamentos Reais das Atividades (Operação + Investimentos + Amortização de Dívidas)
+    const realActivitiesOutflows = opOutflows + invOutflows + loanOutflows;
+
+    // Pagamentos de Distribuição de Lucros aos Sócios
+    const profitDistributionOutflows = sumMonths(finProfitOutLine);
+
+    // Total Geral de Saídas
+    const totalOutflows = realActivitiesOutflows + profitDistributionOutflows;
+
+    // Geração de Caixa Antes da Distribuição de Lucros
+    const netCashBeforeProfit = totalInflows - realActivitiesOutflows;
+
+    // Geração Líquida Final (após distribuição de lucros)
     const netCashGeneration = totalInflows - totalOutflows;
+
+    // Percentual de Lucro Distribuído sobre a Geração Líquida Pré-Lucros
+    const profitPayoutRatio = netCashBeforeProfit > 0 
+      ? (profitDistributionOutflows / netCashBeforeProfit) * 100 
+      : 0;
 
     return {
       initialBalance,
       finalBalance,
       totalInflows,
+      opOutflows,
+      invOutflows,
+      loanOutflows,
+      realActivitiesOutflows,
+      profitDistributionOutflows,
       totalOutflows,
-      netCashGeneration
+      netCashBeforeProfit,
+      netCashGeneration,
+      profitPayoutRatio
     };
   }, [cashData, activeMonthIndices]);
 
   const handleExportExcel = () => {
     const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
     const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
-    const rows = cashData.lines.map(l => [
+    const rows = displayedLines.map(l => [
       l.code || '-',
       l.name,
       ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
       getLinePeriodTotal(l)
     ]);
-    exportToExcel(`Fluxo-Caixa-${timeHorizon}-${mode}-${effectiveYear}`, `Fluxo Caixa ${timeHorizon}`, headers, rows);
+    exportToExcel(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, `Fluxo Caixa ${timeHorizon}`, headers, rows);
   };
 
   const handleExportCSV = () => {
     const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
     const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
-    const rows = cashData.lines.map(l => [
+    const rows = displayedLines.map(l => [
       l.code || '-',
       l.name,
       ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
       getLinePeriodTotal(l)
     ]);
-    exportToCSV(`Fluxo-Caixa-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
+    exportToCSV(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
   };
 
   const handleExportPDF = () => {
@@ -170,20 +231,20 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       exportCashFlowToPDF(
         {
           months: cashData.months,
-          lines: cashData.lines,
+          lines: displayedLines,
           finalBalances: cashData.lines.find(l => l.id === 'cf-final')?.valuesByMonth
         },
         effectiveYear,
         {
           mode,
           companyName,
-          timeHorizonLabel: horizonLabel,
+          timeHorizonLabel: `${horizonLabel}${flowFilter !== 'TODOS' ? ` • ${flowFilter === 'ATIVIDADES_REAIS' ? 'Atividades Reais de Caixa' : 'Distribuição de Lucros'}` : ''}`,
           activeMonthIndices,
           totalColLabel
         }
       );
 
-      setPdfToast(`PDF Executivo do Fluxo de Caixa (${mode} • ${effectiveYear} • ${horizonLabel}) gerado em formato A4 Paisagem com sucesso!`);
+      setPdfToast(`PDF Executivo do Fluxo de Caixa (${mode} • ${effectiveYear} • ${horizonLabel}) gerado com sucesso!`);
       setTimeout(() => setPdfToast(null), 4500);
     } catch (err: any) {
       console.error('Erro ao gerar PDF do Fluxo de Caixa:', err);
@@ -598,7 +659,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
         {/* 2. Total Entradas */}
         <div className="bg-emerald-500/[0.08] dark:bg-emerald-950/20 p-3.5 rounded-xl border border-emerald-500/30 shadow-xs">
           <div className="flex items-center justify-between text-[11px] text-emerald-800 dark:text-emerald-400 uppercase font-semibold">
-            <span>(+) Entradas</span>
+            <span>(+) Total Entradas</span>
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
           </div>
           <div className="mt-2 text-lg font-mono font-bold text-emerald-700 dark:text-emerald-300">
@@ -609,31 +670,31 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
           </span>
         </div>
 
-        {/* 3. Total Saídas */}
-        <div className="bg-rose-500/[0.08] dark:bg-rose-950/20 p-3.5 rounded-xl border border-rose-500/30 shadow-xs">
-          <div className="flex items-center justify-between text-[11px] text-rose-800 dark:text-rose-400 uppercase font-semibold">
-            <span>(-) Saídas</span>
-            <ArrowDownRight className="w-3.5 h-3.5 text-rose-700 dark:text-rose-400" />
+        {/* 3. Desembolsos Reais das Atividades (Operação + Inv + Dívidas) */}
+        <div className="bg-amber-500/[0.08] dark:bg-amber-950/20 p-3.5 rounded-xl border border-amber-500/30 shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-amber-900 dark:text-amber-400 uppercase font-semibold">
+            <span>(-) Pagamento Real Atividades</span>
+            <ArrowDownRight className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
           </div>
-          <div className="mt-2 text-lg font-mono font-bold text-rose-700 dark:text-rose-300">
-            {formatBRL(periodKPIs.totalOutflows)}
+          <div className="mt-2 text-lg font-mono font-bold text-amber-800 dark:text-amber-300">
+            {formatBRL(periodKPIs.realActivitiesOutflows)}
           </div>
           <span className="text-[10px] text-[var(--text-secondary)]">
-            Desembolsos no período
+            Operacional + Imobilizado + Bancos
           </span>
         </div>
 
-        {/* 4. Geração Líquida */}
-        <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
-          <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
-            <span>(=) Geração Líquida</span>
-            <Scale className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+        {/* 4. Distribuição de Lucros aos Sócios */}
+        <div className="bg-purple-500/[0.08] dark:bg-purple-950/20 p-3.5 rounded-xl border border-purple-500/30 shadow-xs">
+          <div className="flex items-center justify-between text-[11px] text-purple-900 dark:text-purple-300 uppercase font-semibold">
+            <span>(-) Distribuição de Lucros</span>
+            <ArrowDownRight className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
           </div>
-          <div className={`mt-2 text-lg font-mono font-bold ${periodKPIs.netCashGeneration >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
-            {periodKPIs.netCashGeneration >= 0 ? '+' : ''}{formatBRL(periodKPIs.netCashGeneration)}
+          <div className="mt-2 text-lg font-mono font-bold text-purple-800 dark:text-purple-200">
+            {formatBRL(periodKPIs.profitDistributionOutflows)}
           </div>
           <span className="text-[10px] text-[var(--text-secondary)]">
-            {periodKPIs.netCashGeneration >= 0 ? 'Superávit financeiro' : 'Déficit financeiro'}
+            Retiradas dos Sócios no Período
           </span>
         </div>
 
@@ -652,13 +713,77 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
         </div>
       </div>
 
+      {/* Destaque Gerencial: Geração Pré-Sócios vs Retiradas */}
+      <div className="bg-[var(--surface-card)] p-4 rounded-2xl border border-[var(--border-subtle)] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
+            <Scale className="w-5 h-5 stroke-[2.5]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
+                Caixa Antes da Distribuição de Lucros:
+              </span>
+              <span className={`font-mono font-extrabold text-sm ${periodKPIs.netCashBeforeProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {periodKPIs.netCashBeforeProfit >= 0 ? '+' : ''}{formatBRL(periodKPIs.netCashBeforeProfit)}
+              </span>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+              Superávit de caixa puro gerado pelo negócio (Entradas menos Desembolsos Reais).
+              {periodKPIs.profitDistributionOutflows > 0 ? (
+                <> Foram retirados <strong>{formatBRL(periodKPIs.profitDistributionOutflows)}</strong> em lucros ({periodKPIs.profitPayoutRatio > 0 ? `${periodKPIs.profitPayoutRatio.toFixed(1)}% do caixa gerado` : 'consumindo reservas'}).</>
+              ) : (
+                <> Nenhuma distribuição de lucros realizada no período selecionado.</>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* Seletor de Visão de Segregação de Fluxos */}
+        <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs font-medium self-stretch md:self-auto shrink-0">
+          <button
+            onClick={() => setFlowFilter('TODOS')}
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-xs ${
+              flowFilter === 'TODOS'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            title="Exibir todas as rubricas contábeis e financeiras"
+          >
+            Todos os Fluxos
+          </button>
+          <button
+            onClick={() => setFlowFilter('ATIVIDADES_REAIS')}
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-xs ${
+              flowFilter === 'ATIVIDADES_REAIS'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            title="Excluir retiradas de lucros e focar no caixa das atividades da empresa"
+          >
+            Apenas Atividades Reais
+          </button>
+          <button
+            onClick={() => setFlowFilter('DISTRIBUICAO_LUCROS')}
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-xs ${
+              flowFilter === 'DISTRIBUICAO_LUCROS'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            title="Focar estritamente na remuneração dos sócios e capacidade de distribuição"
+          >
+            Apenas Lucros aos Sócios
+          </button>
+        </div>
+      </div>
+
       {/* Tabela Estruturada do Fluxo de Caixa Direto */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
         <div className="p-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center space-x-2">
             <span className="font-bold text-[var(--text-primary)]">Matriz do Fluxo de Caixa</span>
             <span className="text-[11px] text-[var(--text-secondary)]">
-              • Exibindo {activeMonthIndices.length} meses ({horizonLabel})
+              • Exibindo {displayedLines.length} rubricas em {activeMonthIndices.length} meses ({horizonLabel})
             </span>
           </div>
           <span className="text-[11px] text-[var(--text-secondary)] font-medium">
@@ -670,7 +795,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
           <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
             <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 shadow-xs">
               <tr className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                <th className="py-3 px-4 min-w-[280px] sticky left-0 bg-slate-100 dark:bg-slate-800 z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold">
+                <th className="py-3 px-4 min-w-[320px] sticky left-0 bg-slate-100 dark:bg-slate-800 z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold">
                   Rubrica Financeira / Estrutura
                 </th>
 
@@ -695,13 +820,16 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
             </thead>
 
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {cashData.lines.map(line => {
+              {displayedLines.map(line => {
                 const isSummary = line.isSummary;
                 const isHeader = line.isHeader;
                 const isFinalBalance = line.id === 'cf-final' || line.name.includes('SALDO FINAL');
                 const isInitialBalance = line.id === 'cf-initial' || line.name.includes('SALDO INICIAL');
                 const isOutflow = line.name.startsWith('(-)');
                 const isNetLine = line.id === 'cf-net-variation' || line.id === 'cf-op-net';
+                const isCashBeforeProfit = line.id === 'cf-cash-before-profit';
+                const isProfitLine = line.id === 'cf-profit-distribution' || line.id === 'cf-fin-out-profit';
+                const isRealOutflowLine = line.id === 'cf-real-activities-outflows';
                 const periodTotal = getLinePeriodTotal(line);
 
                 let rowBg = 'hover:bg-slate-100/70 dark:hover:bg-slate-800/40 text-slate-900 dark:text-slate-100';
@@ -710,6 +838,15 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                 if (isFinalBalance) {
                   rowBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs border-y-2 border-slate-400 dark:border-slate-600';
                   stickyBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold';
+                } else if (isCashBeforeProfit) {
+                  rowBg = 'bg-emerald-500/15 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-extrabold text-xs border-y-2 border-emerald-500/40';
+                  stickyBg = 'bg-emerald-500/20 dark:bg-emerald-950/60 text-emerald-950 dark:text-emerald-100 font-extrabold';
+                } else if (isProfitLine) {
+                  rowBg = 'bg-purple-500/10 dark:bg-purple-950/30 font-bold text-slate-900 dark:text-slate-100 border-l-4 border-l-purple-500';
+                  stickyBg = 'bg-purple-500/15 dark:bg-purple-950/40 text-slate-900 dark:text-slate-100 font-bold';
+                } else if (isRealOutflowLine) {
+                  rowBg = 'bg-amber-500/10 dark:bg-amber-950/20 font-bold text-slate-900 dark:text-slate-100 border-t border-b border-amber-500/30';
+                  stickyBg = 'bg-amber-500/15 dark:bg-amber-950/30 text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isInitialBalance) {
                   rowBg = 'bg-slate-50 dark:bg-slate-800/40 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700';
                   stickyBg = 'bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-slate-100 font-semibold';
@@ -753,6 +890,12 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                         cellColor = 'text-slate-400 dark:text-slate-500 font-normal';
                       } else if (isFinalBalance) {
                         cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                      } else if (isCashBeforeProfit) {
+                        cellColor = val >= 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black';
+                      } else if (isProfitLine) {
+                        cellColor = 'text-purple-800 dark:text-purple-300 font-bold';
+                      } else if (isRealOutflowLine) {
+                        cellColor = 'text-amber-800 dark:text-amber-300 font-bold';
                       } else if (isInitialBalance) {
                         cellColor = 'text-slate-900 dark:text-slate-100 font-bold';
                       } else if (isOutflow && val > 0) {
@@ -763,7 +906,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                         cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
                       }
 
-                      const cellBg = (isFinalBalance || isHeader || isSummary || isNetLine) 
+                      const cellBg = (isFinalBalance || isHeader || isSummary || isNetLine || isCashBeforeProfit || isProfitLine || isRealOutflowLine) 
                         ? '' 
                         : (isEven ? 'bg-slate-50/40 dark:bg-white/[0.02]' : '');
 
@@ -781,6 +924,12 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                     <td className={`py-2 px-3 text-right font-bold font-mono border-l-2 ${
                       isFinalBalance
                         ? 'bg-slate-200 dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-sm ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                        : isCashBeforeProfit
+                        ? 'bg-emerald-500/20 dark:bg-emerald-950/60 border-emerald-500/40 text-sm ' + (periodTotal >= 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black')
+                        : isProfitLine
+                        ? 'bg-purple-500/15 dark:bg-purple-950/40 border-purple-500/30 text-purple-800 dark:text-purple-200 font-bold'
+                        : isRealOutflowLine
+                        ? 'bg-amber-500/15 dark:bg-amber-950/30 border-amber-500/30 text-amber-800 dark:text-amber-200 font-bold'
                         : isSummary
                         ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold'
                         : isNetLine

@@ -423,17 +423,82 @@ export class ReportingEngine {
   }
 
   /**
+   * Helper contábil para identificar se um item ou conta pertence à Distribuição de Lucros / Dividendos
+   */
+  public static isProfitDistribution(item: {
+    accountId?: string;
+    description?: string;
+    notes?: string;
+    categoryName?: string;
+  }, accounts?: ChartAccount[]): boolean {
+    if (item.accountId) {
+      if (item.accountId === 'acc-7.1.04') return true;
+      if (accounts) {
+        const acc = accounts.find(a => a.id === item.accountId || a.code === item.accountId);
+        if (acc) {
+          if (acc.code === '7.1.04') return true;
+          if (acc.nature === 'FINANCIAMENTO_SOCIO' && acc.name.toLowerCase().includes('lucro')) return true;
+        }
+      }
+    }
+
+    const text = `${item.description || ''} ${item.notes || ''} ${item.categoryName || ''}`.toLowerCase();
+    const profitKeywords = [
+      'distribuicao de lucro',
+      'distribuição de lucro',
+      'distribuicao de lucros',
+      'distribuição de lucros',
+      'distribuicao lucro',
+      'distribuição lucro',
+      'distrib. lucro',
+      'distrib. lucros',
+      'distrib lucros',
+      'distrib lucro',
+      'retirada de lucro',
+      'retirada de lucros',
+      'lucro distribuido',
+      'lucros distribuidos',
+      'dividendos',
+      'dividendo'
+    ];
+
+    return profitKeywords.some(kw => text.includes(kw));
+  }
+
+  /**
    * GENERATE DIRECT CASH FLOW (FLUXO DE CAIXA DIRETO - CPC 03)
-   * Realized + Projected support across 12 months
+   * Segrega rigorosamente pagamentos de Atividades Reais da Empresa e Distribuição de Lucros aos Sócios.
+   * Realized + Projected support across 12 months.
    */
   public static generateCashFlow(year: number, mode: 'REALIZADO' | 'PROJETADO' | 'CONSOLIDADO' = 'REALIZADO'): {
     months: string[];
     lines: CashFlowLineItem[];
     finalBalances: number[];
+    summary: {
+      totalInflows: number;
+      totalOperationalOutflows: number;
+      totalInvestmentOutflows: number;
+      totalLoanOutflows: number;
+      totalRealActivitiesOutflows: number;
+      totalProfitDistribution: number;
+      totalOutflows: number;
+      netCashBeforeProfit: number;
+      netCashFinal: number;
+    };
   } {
     const movements = storage.getMovements().filter(m => !m.isReversed);
     const titles = storage.getTitles().filter(t => t.documentState === 'CONFIRMADO' && t.balancePrincipal > 0);
+    const settlements = storage.getSettlements();
+    const accounts = storage.getChartAccounts();
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+    // Map para lookup rápido de títulos por settlement
+    const allTitles = storage.getTitles();
+    const settlementToTitleMap = new Map<string, FinancialTitle>();
+    for (const s of settlements) {
+      const t = allTitles.find(title => title.id === s.titleId);
+      if (t) settlementToTitleMap.set(s.id, t);
+    }
 
     // Initial balance at Jan 1st of the year
     const initialBalanceJan = FinancialEngine.getConsolidatedCashBalance(`${year}-01-01`);
@@ -443,31 +508,45 @@ export class ReportingEngine {
     const invInflows = new Array(12).fill(0);
     const invOutflows = new Array(12).fill(0);
     const finInflows = new Array(12).fill(0);
-    const finOutflows = new Array(12).fill(0);
+    const finLoanOutflows = new Array(12).fill(0);   // Amortização de Empréstimos e Financiamentos
+    const finProfitOutflows = new Array(12).fill(0); // Distribuição de Lucros aos Sócios
 
     // 1. Realized movements
     if (mode === 'REALIZADO' || mode === 'CONSOLIDADO') {
       for (const mov of movements) {
         if (!mov.date.startsWith(`${year}-`)) continue;
-        if (mov.cashFlowCategory === 'TRANSFERENCIA_INTERNA') continue; // Internal transfer has zero consolidated cash effect
+        if (mov.cashFlowCategory === 'TRANSFERENCIA_INTERNA') continue; // Transferência interna tem efeito nulo
 
         const monthIdx = parseInt(mov.date.substring(5, 7), 10) - 1;
         if (monthIdx < 0 || monthIdx > 11) continue;
 
-        if (mov.cashFlowCategory === 'OPERACIONAL') {
+        const linkedTitle = mov.originReferenceId ? settlementToTitleMap.get(mov.originReferenceId) : undefined;
+        const isProfit = ReportingEngine.isProfitDistribution({
+          accountId: mov.accountId || linkedTitle?.accountId,
+          description: `${mov.description || ''} ${linkedTitle?.description || ''}`,
+          categoryName: linkedTitle?.categoryName
+        }, accounts);
+
+        // Se for saída de distribuição de lucros, segregar independente da categoria original
+        if (isProfit && mov.direction === 'SAIDA') {
+          finProfitOutflows[monthIdx] += mov.amount;
+        } else if (mov.cashFlowCategory === 'OPERACIONAL') {
           if (mov.direction === 'ENTRADA') opInflows[monthIdx] += mov.amount;
           else opOutflows[monthIdx] += mov.amount;
         } else if (mov.cashFlowCategory === 'INVESTIMENTO') {
           if (mov.direction === 'ENTRADA') invInflows[monthIdx] += mov.amount;
           else invOutflows[monthIdx] += mov.amount;
         } else if (mov.cashFlowCategory === 'FINANCIAMENTO') {
-          if (mov.direction === 'ENTRADA') finInflows[monthIdx] += mov.amount;
-          else finOutflows[monthIdx] += mov.amount;
+          if (mov.direction === 'ENTRADA') {
+            finInflows[monthIdx] += mov.amount;
+          } else {
+            finLoanOutflows[monthIdx] += mov.amount;
+          }
         }
       }
     }
 
-    // 2. Projected (remaining balance of open titles based on expectedCashDate)
+    // 2. Projected (saldo em aberto dos títulos pela data prevista de caixa)
     if (mode === 'PROJETADO' || mode === 'CONSOLIDADO') {
       for (const title of titles) {
         const targetDate = title.expectedCashDate || title.dueDate;
@@ -476,17 +555,26 @@ export class ReportingEngine {
         const monthIdx = parseInt(targetDate.substring(5, 7), 10) - 1;
         if (monthIdx < 0 || monthIdx > 11) continue;
 
-        // Determine category: default is OPERACIONAL, unless account is Investment/Financing
-        const accounts = storage.getChartAccounts();
         const acc = accounts.find(a => a.id === title.accountId);
         const cat = acc ? acc.cashFlowCategory : 'OPERACIONAL';
 
-        if (cat === 'INVESTIMENTO') {
+        const isProfit = ReportingEngine.isProfitDistribution({
+          accountId: title.accountId,
+          description: title.description,
+          categoryName: title.categoryName
+        }, accounts);
+
+        if (isProfit && title.type === 'PAGAR') {
+          finProfitOutflows[monthIdx] += title.balancePrincipal;
+        } else if (cat === 'INVESTIMENTO') {
           if (title.type === 'RECEBER') invInflows[monthIdx] += title.balancePrincipal;
           else invOutflows[monthIdx] += title.balancePrincipal;
         } else if (cat === 'FINANCIAMENTO') {
-          if (title.type === 'RECEBER') finInflows[monthIdx] += title.balancePrincipal;
-          else finOutflows[monthIdx] += title.balancePrincipal;
+          if (title.type === 'RECEBER') {
+            finInflows[monthIdx] += title.balancePrincipal;
+          } else {
+            finLoanOutflows[monthIdx] += title.balancePrincipal;
+          }
         } else {
           if (title.type === 'RECEBER') opInflows[monthIdx] += title.balancePrincipal;
           else opOutflows[monthIdx] += title.balancePrincipal;
@@ -494,12 +582,25 @@ export class ReportingEngine {
       }
     }
 
-    // Calculations
+    // Soma das saídas de financiamento (Empréstimos + Lucros)
+    const finTotalOutflows = finLoanOutflows.map((loan, i) => Math.round((loan + finProfitOutflows[i]) * 100) / 100);
+
+    // Pagamentos Reais das Atividades da Empresa (Operacional + Investimentos + Amortização de Dívidas)
+    const realActivitiesOutflows = opOutflows.map((op, i) => 
+      Math.round((op + invOutflows[i] + finLoanOutflows[i]) * 100) / 100
+    );
+
+    // Resultados Líquidos por Atividade
     const netOp = opInflows.map((v, i) => Math.round((v - opOutflows[i]) * 100) / 100);
     const netInv = invInflows.map((v, i) => Math.round((v - invOutflows[i]) * 100) / 100);
-    const netFin = finInflows.map((v, i) => Math.round((v - finOutflows[i]) * 100) / 100);
+    const netFin = finInflows.map((v, i) => Math.round((v - finTotalOutflows[i]) * 100) / 100);
 
-    const netVariations = netOp.map((v, i) => Math.round((v + netInv[i] + netFin[i]) * 100) / 100);
+    // Fluxo de Caixa Antes da Distribuição de Lucros
+    const totalMonthlyInflows = opInflows.map((opIn, i) => Math.round((opIn + invInflows[i] + finInflows[i]) * 100) / 100);
+    const netCashBeforeProfit = totalMonthlyInflows.map((inflow, i) => Math.round((inflow - realActivitiesOutflows[i]) * 100) / 100);
+
+    // Variação Líquida Final de Caixa (Net Real - Lucros)
+    const netVariations = netCashBeforeProfit.map((before, i) => Math.round((before - finProfitOutflows[i]) * 100) / 100);
 
     // Initial balances roll-over month by month
     const initialBalances = new Array(12).fill(0);
@@ -602,11 +703,25 @@ export class ReportingEngine {
         totalYear: finInflows.reduce((a, b) => a + b, 0)
       },
       {
-        id: 'cf-fin-out',
-        name: '(-) Amortização de Empréstimos / Distribuição de Lucros',
+        id: 'cf-fin-out-loans',
+        name: '(-) Amortização de Empréstimos e Financiamentos',
         level: 1,
-        valuesByMonth: finOutflows,
-        totalYear: finOutflows.reduce((a, b) => a + b, 0)
+        valuesByMonth: finLoanOutflows,
+        totalYear: finLoanOutflows.reduce((a, b) => a + b, 0)
+      },
+      {
+        id: 'cf-fin-out-profit',
+        name: '(-) Distribuição de Lucros e Dividendos aos Sócios',
+        level: 1,
+        valuesByMonth: finProfitOutflows,
+        totalYear: finProfitOutflows.reduce((a, b) => a + b, 0)
+      },
+      {
+        id: 'cf-fin-out',
+        name: '(-) Total de Saídas de Financiamento',
+        level: 1,
+        valuesByMonth: finTotalOutflows,
+        totalYear: finTotalOutflows.reduce((a, b) => a + b, 0)
       },
       {
         id: 'cf-fin-net',
@@ -617,7 +732,33 @@ export class ReportingEngine {
         totalYear: netFin.reduce((a, b) => a + b, 0)
       },
 
-      // 4. Variação Líquida e Saldo Final
+      // 4. Subtotal Gerencial de Demonstração (Segregação de Atividades Reais vs Retiradas de Lucro)
+      {
+        id: 'cf-real-activities-outflows',
+        name: '(-) Pagamentos Reais das Atividades (Operação + Investimentos + Empréstimos)',
+        level: 0,
+        isSummary: true,
+        valuesByMonth: realActivitiesOutflows,
+        totalYear: realActivitiesOutflows.reduce((a, b) => a + b, 0)
+      },
+      {
+        id: 'cf-cash-before-profit',
+        name: '(=) FLUXO DE CAIXA ANTES DA DISTRIBUIÇÃO DE LUCROS',
+        level: 0,
+        isSummary: true,
+        valuesByMonth: netCashBeforeProfit,
+        totalYear: netCashBeforeProfit.reduce((a, b) => a + b, 0)
+      },
+      {
+        id: 'cf-profit-distribution',
+        name: '(-) Distribuição de Lucros aos Sócios no Período',
+        level: 0,
+        isSummary: true,
+        valuesByMonth: finProfitOutflows,
+        totalYear: finProfitOutflows.reduce((a, b) => a + b, 0)
+      },
+
+      // 5. Variação Líquida e Saldo Final
       {
         id: 'cf-net-variation',
         name: '(=) VARIAÇÃO LÍQUIDA DE CAIXA NO PERÍODO',
@@ -627,19 +768,44 @@ export class ReportingEngine {
         totalYear: netVariations.reduce((a, b) => a + b, 0)
       },
       {
-        id: 'cf-final-balance',
+        id: 'cf-final',
         name: '(=) SALDO FINAL DE CAIXA E EQUIVALENTES',
         level: 0,
         isSummary: true,
         valuesByMonth: finalBalances,
-        totalYear: finalBalances[11] // In year-end, final balance is the closing balance, not a sum!
+        totalYear: finalBalances[11] // No fechamento anual, o saldo final é a posição de fechamento de Dezembro
       }
     ];
+
+    const totalInflowsSum = opInflows.reduce((a, b) => a + b, 0) +
+                            invInflows.reduce((a, b) => a + b, 0) +
+                            finInflows.reduce((a, b) => a + b, 0);
+
+    const totalOperationalOutflowsSum = opOutflows.reduce((a, b) => a + b, 0);
+    const totalInvestmentOutflowsSum = invOutflows.reduce((a, b) => a + b, 0);
+    const totalLoanOutflowsSum = finLoanOutflows.reduce((a, b) => a + b, 0);
+    const totalRealActivitiesOutflowsSum = realActivitiesOutflows.reduce((a, b) => a + b, 0);
+    const totalProfitDistributionSum = finProfitOutflows.reduce((a, b) => a + b, 0);
+    const totalOutflowsSum = totalRealActivitiesOutflowsSum + totalProfitDistributionSum;
+    const netCashBeforeProfitSum = netCashBeforeProfit.reduce((a, b) => a + b, 0);
+    const netCashFinalSum = netVariations.reduce((a, b) => a + b, 0);
 
     return {
       months,
       lines,
-      finalBalances
+      finalBalances,
+      summary: {
+        totalInflows: totalInflowsSum,
+        totalOperationalOutflows: totalOperationalOutflowsSum,
+        totalInvestmentOutflows: totalInvestmentOutflowsSum,
+        totalLoanOutflows: totalLoanOutflowsSum,
+        totalRealActivitiesOutflows: totalRealActivitiesOutflowsSum,
+        totalProfitDistribution: totalProfitDistributionSum,
+        totalOutflows: totalOutflowsSum,
+        netCashBeforeProfit: netCashBeforeProfitSum,
+        netCashFinal: netCashFinalSum
+      }
     };
   }
 }
+

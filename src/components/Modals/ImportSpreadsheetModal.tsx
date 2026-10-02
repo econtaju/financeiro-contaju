@@ -107,11 +107,13 @@ interface ImportErrorBoundaryState {
   error?: Error;
 }
 
-class ImportErrorBoundary extends Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
+class ImportErrorBoundary extends React.Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
   public state: ImportErrorBoundaryState = { hasError: false };
+  public override props: ImportErrorBoundaryProps;
 
   constructor(props: ImportErrorBoundaryProps) {
     super(props);
+    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ImportErrorBoundaryState {
@@ -140,7 +142,7 @@ class ImportErrorBoundary extends Component<ImportErrorBoundaryProps, ImportErro
               <button
                 type="button"
                 onClick={() => {
-                  this.setState({ hasError: false, error: undefined });
+                  (this as any).setState({ hasError: false, error: undefined });
                   if (this.props.onReset) this.props.onReset();
                 }}
                 className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"

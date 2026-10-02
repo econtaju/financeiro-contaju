@@ -92,7 +92,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
   isOpenMobile,
-  onCloseMobile
+  onCloseMobile,
+  onLogout
 }) => {
   const [isMinimized, setIsMinimized] = useState<boolean>(() => {
     return localStorage.getItem('contaju_sidebar_minimized') === 'true';

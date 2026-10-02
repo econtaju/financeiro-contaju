@@ -313,6 +313,10 @@ export function exportCashFlowToPDF(
       totalCol = activeIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
     }
 
+    const isCashBeforeProfit = line.id === 'cf-cash-before-profit';
+    const isProfitDistribution = line.id === 'cf-profit-distribution' || line.id === 'cf-fin-out-profit';
+    const isRealActivitiesOutflows = line.id === 'cf-real-activities-outflows';
+
     return {
       id: line.id,
       code: line.code || line.id || '-',
@@ -327,6 +331,9 @@ export function exportCashFlowToPDF(
       isInitialBalance,
       isFinalBalance,
       isNetVariation: line.id === 'cf-net-variation' || line.id === 'cf-op-net',
+      isCashBeforeProfit,
+      isProfitDistribution,
+      isRealActivitiesOutflows,
       isHeader: line.isHeader,
       isSummary: line.isSummary,
       totalAmount: totalCol
@@ -379,6 +386,20 @@ export function exportCashFlowToPDF(
           data.cell.styles.textColor = rowMeta.totalAmount >= 0
             ? (isDark ? [52, 211, 153] : [6, 78, 59])
             : (isDark ? [248, 113, 113] : [185, 28, 28]);
+          data.cell.styles.fontStyle = 'bold';
+        } else if (rowMeta.isCashBeforeProfit) {
+          data.cell.styles.fillColor = isDark ? [16, 40, 32] : [209, 250, 229];
+          data.cell.styles.textColor = rowMeta.totalAmount >= 0
+            ? (isDark ? [52, 211, 153] : [6, 78, 59])
+            : (isDark ? [248, 113, 113] : [185, 28, 28]);
+          data.cell.styles.fontStyle = 'bold';
+        } else if (rowMeta.isProfitDistribution) {
+          data.cell.styles.fillColor = isDark ? [35, 20, 48] : [243, 232, 255];
+          data.cell.styles.textColor = isDark ? [216, 180, 254] : [107, 33, 168];
+          data.cell.styles.fontStyle = 'bold';
+        } else if (rowMeta.isRealActivitiesOutflows) {
+          data.cell.styles.fillColor = isDark ? [38, 28, 16] : [254, 243, 199];
+          data.cell.styles.textColor = isDark ? [251, 191, 36] : [146, 64, 14];
           data.cell.styles.fontStyle = 'bold';
         } else if (rowMeta.isNetVariation) {
           data.cell.styles.fillColor = isDark ? [24, 28, 48] : [238, 242, 255];
