@@ -114,7 +114,7 @@ export function normalizeText(val: any): string {
 
 // Converte datas em diversos formatos para AAAA-MM-DD
 export function normalizeToISODate(val: any, fallbackDate?: string): string {
-  if (!val) return fallbackDate || '';
+  if (!val && val !== 0) return fallbackDate || '';
 
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return fallbackDate || '';
@@ -137,6 +137,19 @@ export function normalizeToISODate(val: any, fallbackDate?: string): string {
 
   const str = String(val).trim();
   if (!str) return fallbackDate || '';
+
+  // Número serial Excel vindo como string numérica (ex: "46054")
+  if (/^\d{5}$/.test(str)) {
+    const num = Number(str);
+    const utcDays = Math.floor(num - 25569);
+    const dateInfo = new Date(utcDays * 86400 * 1000);
+    if (!isNaN(dateInfo.getTime())) {
+      const y = dateInfo.getUTCFullYear();
+      const m = String(dateInfo.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(dateInfo.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
 
   // Isola a parte da data caso contenha hora (ex: "15/01/2026 00:00:00" ou "2026-01-15T03:00:00.000Z")
   const datePart = str.split(' ')[0].split('T')[0];
@@ -169,22 +182,103 @@ export function normalizeToISODate(val: any, fallbackDate?: string): string {
   return fallbackDate || '';
 }
 
-// Converte competência para AAAA-MM
+// Mapeamento de meses em português para conversão de competência
+const PT_MONTHS_MAP: Record<string, string> = {
+  jan: '01', janeiro: '01',
+  fev: '02', fevereiro: '02',
+  mar: '03', marco: '03', março: '03',
+  abr: '04', abril: '04',
+  mai: '05', maio: '05',
+  jun: '06', junho: '06',
+  jul: '07', julho: '07',
+  ago: '08', agosto: '08',
+  set: '09', setembro: '09',
+  out: '10', outubro: '10',
+  nov: '11', novembro: '11',
+  dez: '12', dezembro: '12'
+};
+
+// Converte competência para AAAA-MM com suporte abrangente a formatos brasileiros e Excel
 export function normalizeToCompetence(val: any, fallbackDate?: string): string {
-  if (val) {
-    const str = String(val).trim();
-    // AAAA-MM
-    if (/^\d{4}-\d{2}$/.test(str)) return str;
-    // MM/AAAA
-    if (/^\d{1,2}\/\d{4}$/.test(str)) {
-      const [m, y] = str.split('/');
-      return `${y}-${m.padStart(2, '0')}`;
+  if (val !== undefined && val !== null) {
+    if (val instanceof Date) {
+      if (!isNaN(val.getTime())) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      }
     }
-    // AAAA-MM-DD
-    const iso = normalizeToISODate(val);
-    if (iso && iso.length >= 7) return iso.substring(0, 7);
+
+    if (typeof val === 'number') {
+      const iso = normalizeToISODate(val);
+      if (iso && iso.length >= 7) return iso.substring(0, 7);
+    }
+
+    const str = String(val).trim();
+    if (str) {
+      // AAAA-MM
+      if (/^\d{4}-\d{2}$/.test(str)) return str;
+
+      // MM/AAAA ou M/AAAA
+      if (/^\d{1,2}\/\d{4}$/.test(str)) {
+        const [m, y] = str.split('/');
+        return `${y}-${m.padStart(2, '0')}`;
+      }
+
+      // MM-AAAA ou M-AAAA
+      if (/^\d{1,2}-\d{4}$/.test(str)) {
+        const [m, y] = str.split('-');
+        return `${y}-${m.padStart(2, '0')}`;
+      }
+
+      // AAAA/MM ou AAAA.MM
+      if (/^\d{4}[\/\.]\d{1,2}$/.test(str)) {
+        const parts = str.split(/[\/\.]/);
+        return `${parts[0]}-${parts[1].padStart(2, '0')}`;
+      }
+
+      // MM/AA (ex: 02/26 -> 2026-02)
+      if (/^\d{1,2}\/\d{2}$/.test(str)) {
+        const [m, y] = str.split('/');
+        const fullYear = Number(y) < 50 ? `20${y}` : `19${y}`;
+        return `${fullYear}-${m.padStart(2, '0')}`;
+      }
+
+      // Suporte a texto em português: "fev/2026", "fevereiro/2026", "fev/26", "fev 2026", "fevereiro 2026", etc.
+      const lower = normalizeText(str);
+      for (const [monthKey, monthNum] of Object.entries(PT_MONTHS_MAP)) {
+        if (lower.includes(monthKey)) {
+          const matchYear = lower.match(/\b(20\d{2}|19\d{2})\b/);
+          if (matchYear) {
+            return `${matchYear[1]}-${monthNum}`;
+          }
+          const matchShortYear = lower.match(/[\/\-\s](\d{2})\b/);
+          if (matchShortYear) {
+            const y = Number(matchShortYear[1]);
+            const fullYear = y < 50 ? `20${y}` : `19${y}`;
+            return `${fullYear}-${monthNum}`;
+          }
+          // Se só tem o nome do mês sem ano, utiliza o ano do vencimento/fallback ou do ano atual
+          const refYear = fallbackDate && fallbackDate.length >= 4 ? fallbackDate.substring(0, 4) : new Date().getFullYear().toString();
+          return `${refYear}-${monthNum}`;
+        }
+      }
+
+      // Número serial Excel como string (ex: "46054")
+      if (/^\d{5}$/.test(str)) {
+        const iso = normalizeToISODate(Number(str));
+        if (iso && iso.length >= 7) return iso.substring(0, 7);
+      }
+
+      // Data completa (ex: DD/MM/AAAA ou AAAA-MM-DD)
+      const iso = normalizeToISODate(val);
+      if (iso && iso.length >= 7) {
+        return iso.substring(0, 7);
+      }
+    }
   }
 
+  // Fallback contábil canônico: utiliza a data de vencimento informada
   if (fallbackDate && fallbackDate.length >= 7) {
     return fallbackDate.substring(0, 7);
   }
@@ -525,8 +619,20 @@ export const CONTA_AZUL_COLUMN_PATTERNS = {
   titulo: ['código de referência', 'codigo de referencia', 'código', 'codigo', 'número do documento', 'numero do documento', 'número', 'numero', 'título', 'titulo', 'documento', 'doc', 'nº documento', 'no documento', 'ref', 'identificador', 'nosso número'],
   fornecedor: ['nome do fornecedor', 'fornecedor', 'cliente', 'nome do cliente', 'cliente/fornecedor', 'fornecedor / cliente', 'cliente / fornecedor', 'contato', 'favorecido', 'sacado', 'contraparte', 'pagador', 'recebedor', 'beneficiário', 'beneficiario', 'razão social', 'razao social'],
   descricao: ['descrição da despesa', 'descricao da despesa', 'descrição da receita', 'descricao da receita', 'descrição', 'descricao', 'histórico', 'historico', 'detalhes', 'detalhe', 'item', 'serviço', 'servico', 'observação', 'observacao', 'obs'],
-  competencia: ['competência da despesa', 'competência da receita', 'competência', 'competencia', 'mês/ano', 'mes/ano', 'mês ref', 'mes ref', 'mês de referência', 'mes de referencia', 'mês', 'mes', 'período', 'periodo'],
-  emissao: ['data de emissão', 'data de emissao', 'data emissão', 'data emissao', 'dt emissão', 'dt emissao', 'dt. emissão', 'dt. emissao', 'emissão', 'emissao', 'criado em', 'data do documento', 'data documento'],
+  competencia: [
+    'competência da despesa', 'competência da receita',
+    'data da competência', 'data de competência', 'data da competencia', 'data de competencia',
+    'data competência', 'data competencia', 'dt competência', 'dt competencia', 'dt. competência', 'dt. competencia',
+    'mês da competência', 'mes da competencia', 'mês competência', 'mes competencia',
+    'competência', 'competencia', 'mês/ano', 'mes/ano', 'mês ref', 'mes ref',
+    'mês de referência', 'mes de referencia', 'mês', 'mes', 'período', 'periodo',
+    'competência (mês/ano)', 'competencia (mes/ano)', 'competencia ref', 'competência ref'
+  ],
+  emissao: [
+    'data de emissão', 'data de emissao', 'data emissão', 'data emissao',
+    'dt emissão', 'dt emissao', 'dt. emissão', 'dt. emissao',
+    'emissão', 'emissao', 'data do documento', 'data documento'
+  ],
   vencimento: ['data de vencimento', 'data vencimento', 'dt vencimento', 'dt. vencimento', 'dt venc', 'dt. venc', 'vencimento', 'vcto', 'vcto.', 'dt vcto', 'dt. vcto', 'data do vencimento', 'data limite'],
   dataPagamento: ['data de pagamento', 'data do pagamento', 'data pagamento', 'dt pagamento', 'dt. pagamento', 'data pagto', 'dt pagto', 'dt. pagto', 'data da baixa', 'data baixa', 'dt baixa', 'dt. baixa', 'data de liquidação', 'data liquidação', 'data de quitação', 'data quitação', 'data de recebimento', 'data do recebimento', 'data recebimento', 'dt recebimento', 'pago em', 'recebido em'],
   previsaoCaixa: ['data prevista de pagamento', 'data prevista de recebimento', 'data prevista', 'dt prevista', 'previsão de pagamento', 'previsao de pagamento', 'previsão de recebimento', 'previsao de recebimento', 'previsão caixa', 'previsao caixa', 'previsão', 'previsao'],
@@ -633,8 +739,11 @@ export function analyzeContaAzulSpreadsheet(
     }
 
     // 3. Competência (mês/ano)
+    // Regra canônica: usa estritamente a coluna da planilha se mapeada/preenchida.
+    // Se não houver competência na linha, o fallback contábil de despesas repetidas/parcelas
+    // é o mês de VENCIMENTO da obrigação, e NUNCA a data de cadastro ou lançamento inicial!
     const rawComp = getVal('competencia');
-    const competencia = normalizeToCompetence(rawComp, emissao || vencimento);
+    const competencia = normalizeToCompetence(rawComp, vencimento || emissao);
 
     // 4. Previsão de Caixa
     const rawPrev = getVal('previsaoCaixa');

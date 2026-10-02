@@ -60,7 +60,9 @@ import {
   ImportDiffAction,
   MonthSummary,
   generateTitleFingerprint,
-  normalizeText
+  normalizeText,
+  normalizeToCompetence,
+  normalizeToISODate
 } from '../../services/contaAzulMappingEngine';
 import { ImportMonthlySummaryBar } from './ImportMonthlySummaryBar';
 import { ImportExtraColumnModal } from './ImportExtraColumnModal';
@@ -212,9 +214,9 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         titulo: findMatch(['Título', 'Titulo']),
         fornecedor: findMatch(['Fornecedor', 'Fornecedor / Cliente', 'Cliente/Fornecedor', 'Cliente']),
         descricao: findMatch(['Descrição', 'Descricao']),
-        competencia: findMatch(['Competência', 'Competencia']),
-        emissao: findMatch(['Emissão', 'Emissao']),
-        vencimento: findMatch(['Vencimento', 'Data Vencimento']),
+        competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
+        emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
+        vencimento: findMatch(CONTA_AZUL_COLUMN_PATTERNS.vencimento),
         dataPagamento: findMatch(['Data Pagamento', 'Data da Baixa', 'Data Quitação', 'Pago em']),
         previsaoCaixa: findMatch(['Previsão Caixa', 'Previsao Caixa', 'Previsão']),
         valorOriginal: findMatch(['Valor Original', 'Valor']),
@@ -251,9 +253,9 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         titulo: findMatch(['documento', 'número', 'título']),
         fornecedor: findMatch(['fornecedor', 'cliente', 'contraparte']),
         descricao: findMatch(['descrição', 'descricao', 'historico']),
-        competencia: findMatch(['competência', 'competencia']),
-        emissao: findMatch(['emissão', 'emissao']),
-        vencimento: findMatch(['vencimento', 'data de vencimento']),
+        competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
+        emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
+        vencimento: findMatch(CONTA_AZUL_COLUMN_PATTERNS.vencimento),
         dataPagamento: findMatch(['data de pagamento', 'data pagamento', 'data da baixa']),
         previsaoCaixa: findMatch(['previsão', 'previsao caixa']),
         valorOriginal: findMatch(['valor original', 'valor']),
@@ -548,6 +550,21 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   const [filterCategoryMode, setFilterCategoryMode] = useState<'TODOS' | 'MEMORIA' | 'MANUAL' | 'FILTRADOS_SINAL'>('TODOS');
   const [batchCategoryId, setBatchCategoryId] = useState<string>('');
 
+  // -------------------------------------------------------------
+  // Edição em Massa por Coluna (Step 3)
+  // -------------------------------------------------------------
+  type BulkField = 'categoria' | 'competencia' | 'vencimento' | 'fornecedor' | 'descricao' | 'titulo' | 'valorOriginal' | 'tipo' | 'situacao';
+  const [bulkField, setBulkField] = useState<BulkField>('categoria');
+  const [bulkCompetencia, setBulkCompetencia] = useState<string>('');
+  const [bulkVencimento, setBulkVencimento] = useState<string>('');
+  const [bulkFornecedor, setBulkFornecedor] = useState<string>('');
+  const [bulkDescricao, setBulkDescricao] = useState<string>('');
+  const [bulkTitulo, setBulkTitulo] = useState<string>('');
+  const [bulkValor, setBulkValor] = useState<string>('');
+  const [bulkTipo, setBulkTipo] = useState<TitleType>('PAGAR');
+  const [bulkSituacao, setBulkSituacao] = useState<'ABERTO' | 'LIQUIDADO'>('ABERTO');
+  const [bulkFeedbackMsg, setBulkFeedbackMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+
   const handleChangeRowCategory = (rowNumber: number, newAccountId: string) => {
     const targetAccount = chartAccounts.find(a => a.id === newAccountId);
     if (!targetAccount) return;
@@ -594,6 +611,280 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         categoryResolution: 'MATCH_PLANO',
         isFromMemory: false,
         memoryReason: `Atribuído em lote para "${targetAccount.name}"`
+      };
+    }));
+    setBulkFeedbackMsg({ text: `Categoria "${targetAccount.name}" aplicada a ${count} lançamentos!`, type: 'success' });
+    setTimeout(() => setBulkFeedbackMsg(null), 5000);
+  };
+
+  // Aplicação da alteração em massa para a coluna selecionada
+  const handleApplyBulkEdit = () => {
+    const selectedActiveCount = analyzedRows.filter(r => r.isSelected && r.action !== 'ERRO' && !r.isTypeFilteredOut).length;
+    if (selectedActiveCount === 0) {
+      alert('Nenhum lançamento ativo selecionado. Marque as caixas de seleção das linhas que deseja alterar em massa.');
+      return;
+    }
+
+    let summaryText = '';
+
+    if (bulkField === 'categoria') {
+      const catId = bulkCategoryId || batchCategoryId;
+      if (!catId) {
+        alert('Por favor, selecione uma categoria do Plano de Contas para aplicar.');
+        return;
+      }
+      const targetAccount = chartAccounts.find(a => a.id === catId);
+      if (!targetAccount) return;
+
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        return {
+          ...r,
+          matchedChartAccountId: targetAccount.id,
+          matchedChartAccountName: targetAccount.name,
+          normalized: {
+            ...r.normalized,
+            categoria: targetAccount.name,
+            isManuallyEdited: true
+          },
+          categoryResolution: 'MATCH_PLANO',
+          isFromMemory: false,
+          memoryReason: `Atribuído em lote para "${targetAccount.name}"`
+        };
+      }));
+      summaryText = `Categoria alterada para "${targetAccount.name}" em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'competencia') {
+      const cleanComp = bulkCompetencia.trim();
+      const normComp = normalizeToCompetence(cleanComp);
+      if (!normComp || !/^\d{4}-\d{2}$/.test(normComp)) {
+        alert('Informe a competência no formato AAAA-MM (Ex: 2026-02) ou mês/ano.');
+        return;
+      }
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        return {
+          ...r,
+          normalized: {
+            ...r.normalized,
+            competencia: normComp,
+            isManuallyEdited: true
+          }
+        };
+      }));
+      summaryText = `Competência alterada para ${normComp} em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'vencimento') {
+      if (!bulkVencimento) {
+        alert('Informe uma data de vencimento válida.');
+        return;
+      }
+      const isoVenc = normalizeToISODate(bulkVencimento);
+      if (!isoVenc) {
+        alert('Data de vencimento inválida.');
+        return;
+      }
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          vencimento: isoVenc,
+          previsaoCaixa: r.normalized.dataPagamento || isoVenc,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp
+        };
+      }));
+      summaryText = `Vencimento alterado para ${formatDateBR(isoVenc)} em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'fornecedor') {
+      if (!bulkFornecedor.trim()) {
+        alert('Informe o nome do fornecedor ou cliente.');
+        return;
+      }
+      const newPartyName = bulkFornecedor.trim();
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          fornecedor: newPartyName,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+
+        const matched = existingCounterparties.find(cp => 
+          normalizeText(cp.name) === normalizeText(newPartyName) ||
+          normalizeText(cp.tradeName || '') === normalizeText(newPartyName)
+        );
+
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp,
+          matchedCounterpartyId: matched ? matched.id : undefined,
+          counterpartyResolution: matched ? 'MATCH_EXATO' : 'NOVO_SOLICITADO'
+        };
+      }));
+      summaryText = `Fornecedor/Cliente alterado para "${newPartyName}" em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'descricao') {
+      if (!bulkDescricao.trim()) {
+        alert('Informe a descrição para aplicar.');
+        return;
+      }
+      const descVal = bulkDescricao.trim();
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        return {
+          ...r,
+          normalized: {
+            ...r.normalized,
+            descricao: descVal,
+            isManuallyEdited: true
+          }
+        };
+      }));
+      summaryText = `Descrição atualizada em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'titulo') {
+      if (!bulkTitulo.trim()) {
+        alert('Informe o título / referência para aplicar.');
+        return;
+      }
+      const titVal = bulkTitulo.trim();
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          titulo: titVal,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp
+        };
+      }));
+      summaryText = `Título alterado para "${titVal}" em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'valorOriginal') {
+      const numVal = parseFloat(bulkValor.replace(',', '.'));
+      if (isNaN(numVal) || numVal <= 0) {
+        alert('Informe um valor numérico válido e maior que zero.');
+        return;
+      }
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const isPaid = r.normalized.situacao === 'LIQUIDADO';
+        const principalBaixado = isPaid ? numVal : Math.min(r.normalized.principalBaixado, numVal);
+        const saldoAtual = Math.max(0, Math.round((numVal - principalBaixado) * 100) / 100);
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          valorOriginal: numVal,
+          principalBaixado,
+          saldoAtual,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp
+        };
+      }));
+      summaryText = `Valor original alterado para ${formatBRL(numVal)} em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'tipo') {
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          tipo: bulkTipo,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp
+        };
+      }));
+      summaryText = `Tipo alterado para ${bulkTipo === 'RECEBER' ? 'Receita' : 'Despesa'} em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'situacao') {
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const isPaid = bulkSituacao === 'LIQUIDADO';
+        const val = r.normalized.valorOriginal;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          situacao: bulkSituacao,
+          principalBaixado: isPaid ? val : 0,
+          saldoAtual: isPaid ? 0 : val,
+          isManuallyEdited: true
+        };
+        return {
+          ...r,
+          normalized: norm
+        };
+      }));
+      summaryText = `Situação alterada para ${bulkSituacao} em ${selectedActiveCount} lançamento(s)!`;
+    }
+
+    setBulkFeedbackMsg({ text: summaryText, type: 'success' });
+    setTimeout(() => setBulkFeedbackMsg(null), 5000);
+  };
+
+  // Edição rápida de célula inline na tabela
+  const handleInlineUpdate = (rowNumber: number, field: keyof BaseSpreadsheetRow, value: any) => {
+    setAnalyzedRows(prev => prev.map(r => {
+      if (r.rowNumber !== rowNumber) return r;
+
+      const norm: BaseSpreadsheetRow = {
+        ...r.normalized,
+        [field]: value,
+        isManuallyEdited: true
+      };
+
+      if (field === 'valorOriginal') {
+        const numVal = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.')) || 0;
+        norm.valorOriginal = numVal;
+        const isPaid = norm.situacao === 'LIQUIDADO';
+        norm.principalBaixado = isPaid ? numVal : Math.min(norm.principalBaixado, numVal);
+        norm.saldoAtual = Math.max(0, Math.round((numVal - norm.principalBaixado) * 100) / 100);
+      }
+
+      if (field === 'competencia') {
+        norm.competencia = normalizeToCompetence(value, norm.vencimento);
+      }
+
+      if (field === 'vencimento') {
+        const iso = normalizeToISODate(value);
+        if (iso) {
+          norm.vencimento = iso;
+          if (!norm.dataPagamento) {
+            norm.previsaoCaixa = iso;
+          }
+        }
+      }
+
+      const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+
+      const errors: string[] = [];
+      if (!norm.vencimento) errors.push('Data de vencimento ausente ou inválida');
+      if (norm.valorOriginal <= 0) errors.push('Valor original deve ser superior a R$ 0,00');
+      if (!norm.fornecedor) errors.push('Contraparte não informada');
+
+      const action: ImportDiffAction = errors.length > 0 
+        ? 'ERRO' 
+        : (r.action === 'ERRO' || r.action === 'IGNORAR_IDENTICO')
+          ? (r.existingTitle ? 'ATUALIZAR' : 'CRIAR')
+          : r.action;
+
+      return {
+        ...r,
+        normalized: norm,
+        fingerprint: fp,
+        errors,
+        action,
+        isSelected: action !== 'ERRO' ? r.isSelected : false
       };
     }));
   };
@@ -1086,8 +1377,10 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in">
-      <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xl max-w-6xl w-full flex flex-col max-h-[95vh] overflow-hidden text-[var(--text-primary)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-1 sm:p-2 md:p-3 overflow-y-auto animate-in fade-in">
+      <div className={`bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xl w-full flex flex-col max-h-[96vh] h-[95vh] overflow-hidden text-[var(--text-primary)] transition-all duration-200 ${
+        step === 3 ? 'max-w-[98vw] 2xl:max-w-[1780px]' : 'max-w-6xl'
+      }`}>
         
         {/* Modal Top Header */}
         <div className="p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center shrink-0">
@@ -1568,7 +1861,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
             <div className="space-y-4">
               
               {/* Banner de Conferência de Categorias & Memória IA */}
-              <div className="p-4 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-[var(--surface-card)] to-amber-500/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+              <div className="p-4 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-[var(--surface-card)] to-amber-500/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 shadow-xs">
                     <Brain className="w-5 h-5" />
@@ -1576,7 +1869,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                        Conferência de Categorias & Memória de IA
+                        Conferência de Dados, Categorias & Memória de IA
                       </h3>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1584,33 +1877,204 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                      Verifique e ajuste em qual categoria do Plano de Contas cada lançamento está sendo encaixado. As confirmações e correções feitas aqui são memorizadas para as próximas importações!
+                      Verifique e ajuste títulos, datas, valores e categorias antes de importar. Você pode editar diretamente nas células da tabela ou usar a barra de alteração em massa por coluna abaixo!
                     </p>
                   </div>
                 </div>
 
-                {/* Atribuição de Categoria em Lote */}
-                <div className="flex items-center gap-2 w-full md:w-auto shrink-0 bg-[var(--surface-elevated)] p-1.5 rounded-xl border border-[var(--border-subtle)]">
-                  <select
-                    value={batchCategoryId}
-                    onChange={(e) => setBatchCategoryId(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] text-xs font-medium text-[var(--text-primary)] focus:outline-hidden max-w-[210px]"
-                  >
-                    <option value="">Aplicar categoria em lote...</option>
-                    {chartAccounts.filter(a => a.isAnalytical).map(acc => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                      </option>
-                    ))}
-                  </select>
+                {bulkFeedbackMsg && (
+                  <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-in fade-in flex items-center gap-1.5 shrink-0">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{bulkFeedbackMsg.text}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* SUPER BARRA DE EDIÇÃO EM MASSA POR COLUNA */}
+              <div className="bg-[var(--surface-card)] p-3.5 rounded-2xl border border-amber-500/30 shadow-xs space-y-2.5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-black">
+                      ⚡
+                    </span>
+                    <h4 className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-2">
+                      Edição em Massa por Coluna
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {analyzedRows.filter(r => r.isSelected && r.action !== 'ERRO' && !r.isTypeFilteredOut).length} selecionadas
+                      </span>
+                    </h4>
+                  </div>
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    Marque os lançamentos e escolha qual coluna deseja alterar para todos simultaneamente.
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Seletor da Coluna Alvo */}
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-[var(--text-secondary)]">Alterar Coluna:</span>
+                    <select
+                      value={bulkField}
+                      onChange={(e) => setBulkField(e.target.value as any)}
+                      aria-label="Coluna para alteração em massa"
+                      className="px-3 py-1.5 rounded-xl border border-amber-500/40 bg-[var(--surface-elevated)] text-xs font-bold text-amber-400 focus:outline-hidden"
+                    >
+                      <option value="categoria">📁 Categoria (Plano de Contas)</option>
+                      <option value="competencia">📅 Competência (Mês/Ano)</option>
+                      <option value="vencimento">🗓️ Data de Vencimento</option>
+                      <option value="fornecedor">🏢 Fornecedor / Cliente</option>
+                      <option value="descricao">📝 Descrição / Histórico</option>
+                      <option value="titulo">🏷️ Título / Referência</option>
+                      <option value="valorOriginal">💰 Valor Original (R$)</option>
+                      <option value="tipo">🔄 Tipo (Receita vs Despesa)</option>
+                      <option value="situacao">✅ Situação (Aberto / Pago)</option>
+                    </select>
+                  </div>
+
+                  {/* Input do Novo Valor com base na Coluna */}
+                  <div className="flex-1 min-w-[260px]">
+                    {bulkField === 'categoria' && (
+                      <select
+                        value={bulkCategoryId || batchCategoryId}
+                        onChange={(e) => {
+                          setBulkCategoryId(e.target.value);
+                          setBatchCategoryId(e.target.value);
+                        }}
+                        aria-label="Nova categoria para aplicar em lote"
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-medium text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      >
+                        <option value="">Selecione a categoria analítica para aplicar...</option>
+                        {chartAccounts.filter(a => a.isAnalytical).map(acc => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {bulkField === 'competencia' && (
+                      <input
+                        type="text"
+                        placeholder="Informe a competência (Ex: 2026-02 ou 02/2026)"
+                        value={bulkCompetencia}
+                        onChange={(e) => setBulkCompetencia(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono font-semibold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'vencimento' && (
+                      <input
+                        type="date"
+                        value={bulkVencimento}
+                        onChange={(e) => setBulkVencimento(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono font-semibold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'fornecedor' && (
+                      <input
+                        type="text"
+                        placeholder="Nome do Fornecedor ou Cliente para as selecionadas..."
+                        value={bulkFornecedor}
+                        onChange={(e) => setBulkFornecedor(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-semibold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'descricao' && (
+                      <input
+                        type="text"
+                        placeholder="Nova descrição para os lançamentos selecionados..."
+                        value={bulkDescricao}
+                        onChange={(e) => setBulkDescricao(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'titulo' && (
+                      <input
+                        type="text"
+                        placeholder="Novo título / número de documento para os selecionados..."
+                        value={bulkTitulo}
+                        onChange={(e) => setBulkTitulo(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-bold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'valorOriginal' && (
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Valor em R$ (Ex: 1250.50)"
+                        value={bulkValor}
+                        onChange={(e) => setBulkValor(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono font-bold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'tipo' && (
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setBulkTipo('RECEBER')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                            bulkTipo === 'RECEBER'
+                              ? 'bg-emerald-500 text-white border-emerald-400 shadow-xs'
+                              : 'bg-[var(--surface-elevated)] text-emerald-400 border-[var(--border-subtle)]'
+                          }`}
+                        >
+                          Definir todas como Receita
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkTipo('PAGAR')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                            bulkTipo === 'PAGAR'
+                              ? 'bg-rose-500 text-white border-rose-400 shadow-xs'
+                              : 'bg-[var(--surface-elevated)] text-rose-400 border-[var(--border-subtle)]'
+                          }`}
+                        >
+                          Definir todas como Despesa
+                        </button>
+                      </div>
+                    )}
+
+                    {bulkField === 'situacao' && (
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setBulkSituacao('LIQUIDADO')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                            bulkSituacao === 'LIQUIDADO'
+                              ? 'bg-emerald-500 text-white border-emerald-400 shadow-xs'
+                              : 'bg-[var(--surface-elevated)] text-emerald-400 border-[var(--border-subtle)]'
+                          }`}
+                        >
+                          Definir como LIQUIDADO (Pago)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkSituacao('ABERTO')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                            bulkSituacao === 'ABERTO'
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-xs'
+                              : 'bg-[var(--surface-elevated)] text-amber-400 border-[var(--border-subtle)]'
+                          }`}
+                        >
+                          Definir como EM ABERTO
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botão de Aplicar em Massa */}
                   <button
                     type="button"
-                    onClick={handleApplyBatchCategory}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Aplica a categoria escolhida a todos os lançamentos marcados"
+                    onClick={handleApplyBulkEdit}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
-                    <CheckCheck className="w-3.5 h-3.5" />
-                    <span>Aplicar Marcados</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Aplicar nas Selecionadas</span>
                   </button>
                 </div>
               </div>
@@ -1832,37 +2296,54 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                 </div>
               </div>
 
-              {/* Tabela de Validação Canônica com Edição Inline */}
-              <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden max-h-[380px] overflow-y-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[1100px]">
-                  <thead className="sticky top-0 bg-[var(--surface-elevated)] z-10 border-b border-[var(--border-subtle)]">
+              {/* Tabela de Validação Canônica com Edição Inline e Ampla Visibilidade */}
+              <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] overflow-hidden flex-1 min-h-[460px] max-h-[calc(92vh-380px)] overflow-y-auto overflow-x-auto shadow-inner">
+                <table className="w-full text-left border-collapse text-xs min-w-[1300px]">
+                  <thead className="sticky top-0 bg-[var(--surface-elevated)] z-10 border-b border-[var(--border-subtle)] shadow-xs">
                     <tr className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                      <th className="py-2.5 px-3 w-10 text-center">Sel.</th>
-                      <th className="py-2.5 px-2.5 w-20">Ação</th>
-                      <th className="py-2.5 px-2.5 w-28 text-center">Tipo</th>
-                      <th className="py-2.5 px-3">Título</th>
-                      <th className="py-2.5 px-3">Contraparte</th>
-                      <th className="py-2.5 px-3">Descrição</th>
-                      <th className="py-2.5 px-2 text-center w-20">Comp.</th>
-                      <th className="py-2.5 px-2 text-center w-24">Vencimento</th>
-                      <th className="py-2.5 px-3 text-right w-24">Original</th>
+                      <th className="py-2.5 px-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label="Marcar ou desmarcar todas as linhas visíveis"
+                          checked={displayedRows.length > 0 && displayedRows.every(r => r.isSelected)}
+                          onChange={(e) => {
+                            const shouldSelect = e.target.checked;
+                            const visibleNumbers = new Set(displayedRows.map(r => r.rowNumber));
+                            setAnalyzedRows(prev => prev.map(r => {
+                              if (visibleNumbers.has(r.rowNumber) && r.action !== 'ERRO' && !r.isTypeFilteredOut) {
+                                return { ...r, isSelected: shouldSelect };
+                              }
+                              return r;
+                            }));
+                          }}
+                          className="rounded border-[var(--border-subtle)] text-amber-400 focus:ring-0 cursor-pointer"
+                        />
+                      </th>
+                      <th className="py-2.5 px-2.5 w-16 text-center">Ação</th>
+                      <th className="py-2.5 px-2.5 w-24 text-center">Tipo</th>
+                      <th className="py-2.5 px-3 min-w-[150px] max-w-[220px]">Título / Doc</th>
+                      <th className="py-2.5 px-3 min-w-[180px] max-w-[240px]">Fornecedor / Cliente</th>
+                      <th className="py-2.5 px-3 min-w-[220px] max-w-[320px]">Descrição</th>
+                      <th className="py-2.5 px-2 text-center w-24">Competência</th>
+                      <th className="py-2.5 px-2 text-center w-32">Vencimento</th>
+                      <th className="py-2.5 px-3 text-right w-28">Valor Original</th>
                       <th className="py-2.5 px-3 text-right w-24">Baixado</th>
                       <th className="py-2.5 px-3 text-right w-24">Saldo</th>
                       <th className="py-2.5 px-2.5 text-center w-24">Situação</th>
-                      <th className="py-2.5 px-3 min-w-[240px]">Plano de Contas & Memória IA</th>
+                      <th className="py-2.5 px-3 min-w-[260px]">Plano de Contas & Memória IA</th>
                       {extraColumns.map(col => (
                         <th key={col.id} className="py-2.5 px-3 text-[var(--text-secondary)]">
                           {col.label}
                         </th>
                       ))}
-                      <th className="py-2.5 px-2.5 text-center w-20">Ações</th>
+                      <th className="py-2.5 px-2.5 text-center w-16">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--border-subtle)] font-mono text-[11px]">
+                  <tbody className="divide-y divide-[var(--border-subtle)] text-xs">
                     {displayedRows.length === 0 ? (
                       <tr>
-                        <td colSpan={13 + extraColumns.length} className="py-8 text-center text-xs text-[var(--text-secondary)] font-sans">
-                          Nenhum registro encontrado para os filtros selecionados.
+                        <td colSpan={13 + extraColumns.length} className="py-12 text-center text-xs text-[var(--text-secondary)] font-sans">
+                          Nenhum lançamento encontrado para os filtros selecionados.
                         </td>
                       </tr>
                     ) : (
@@ -1879,8 +2360,8 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               !row.isSelected ? 'opacity-40' : ''
                             }`}
                           >
-                            {/* Checkbox de Seleção para Aprovação */}
-                            <td className="py-2 px-3 text-center font-sans">
+                            {/* Checkbox de Seleção */}
+                            <td className="py-2 px-3 text-center">
                               <input
                                 type="checkbox"
                                 checked={row.isSelected}
@@ -1892,7 +2373,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                             </td>
 
                             {/* Badge de Ação */}
-                            <td className="py-2 px-2.5 font-sans">
+                            <td className="py-2 px-2.5 text-center">
                               {row.action === 'CRIAR' && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                                   Novo
@@ -1902,7 +2383,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setSelectedDiffRow(row)}
-                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 flex items-center space-x-1"
+                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 flex items-center justify-center space-x-1 mx-auto"
                                 >
                                   <span>Diff</span>
                                   <Eye className="w-2.5 h-2.5" />
@@ -1920,13 +2401,13 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               )}
                             </td>
 
-                            {/* Seletor/Toggle Rápido de Tipo: Receita vs Despesa */}
-                            <td className="py-2 px-2.5 text-center font-sans">
+                            {/* Tipo: Receita vs Despesa */}
+                            <td className="py-2 px-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => handleSetRowType(row.rowNumber, isRevenue ? 'PAGAR' : 'RECEBER')}
                                 title="Clique para alternar entre Receita e Despesa"
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center justify-center space-x-1 mx-auto transition-all ${
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center space-x-1 mx-auto transition-all ${
                                   isRevenue
                                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
                                     : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
@@ -1946,63 +2427,105 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               </button>
                             </td>
 
-                            {/* Título */}
-                            <td className="py-2 px-3 font-sans font-bold text-[var(--text-primary)] truncate max-w-[130px]">
-                              {row.normalized.titulo}
+                            {/* Título / Documento (Editável Inline com Quebra de Linha) */}
+                            <td className="py-2 px-3 min-w-[150px] max-w-[220px]">
+                              <input
+                                type="text"
+                                value={row.normalized.titulo}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'titulo', e.target.value)}
+                                title="Editar título / documento"
+                                className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-bold text-[var(--text-primary)] transition-colors focus:outline-hidden"
+                              />
                             </td>
 
-                            {/* Contraparte */}
-                            <td className="py-2 px-3 font-sans font-medium text-[var(--text-primary)] truncate max-w-[160px]">
-                              <div>{row.normalized.fornecedor}</div>
-                              {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
-                                <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20">
-                                  Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
-                                </span>
-                              )}
-                              {row.counterpartyResolution === 'SUGESTAO' && (
-                                <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1 py-0.2 rounded border border-blue-500/20">
-                                  Sugerido
-                                </span>
-                              )}
+                            {/* Fornecedor / Cliente (Editável Inline) */}
+                            <td className="py-2 px-3 min-w-[180px] max-w-[240px]">
+                              <div className="space-y-1">
+                                <input
+                                  type="text"
+                                  value={row.normalized.fornecedor}
+                                  onChange={(e) => handleInlineUpdate(row.rowNumber, 'fornecedor', e.target.value)}
+                                  title="Editar fornecedor ou cliente"
+                                  className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-semibold text-[var(--text-primary)] transition-colors focus:outline-hidden"
+                                />
+                                {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
+                                  <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 inline-block">
+                                    Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
+                                  </span>
+                                )}
+                                {row.counterpartyResolution === 'SUGESTAO' && (
+                                  <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
+                                    Sugerido
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
-                            {/* Descrição */}
-                            <td className="py-2 px-3 font-sans text-[var(--text-secondary)] truncate max-w-[180px]">
-                              {row.normalized.descricao}
+                            {/* Descrição (Editável Inline com Textarea e Quebra de Linha) */}
+                            <td className="py-2 px-3 min-w-[220px] max-w-[320px]">
+                              <textarea
+                                rows={2}
+                                value={row.normalized.descricao}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'descricao', e.target.value)}
+                                title="Editar descrição"
+                                className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal transition-colors focus:outline-hidden resize-none"
+                              />
                             </td>
 
-                            {/* Competência */}
-                            <td className="py-2 px-2 text-center text-[var(--text-secondary)]">
-                              {row.normalized.competencia}
+                            {/* Competência (Editável Inline) */}
+                            <td className="py-2 px-2 text-center w-24">
+                              <input
+                                type="text"
+                                placeholder="AAAA-MM"
+                                value={row.normalized.competencia}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'competencia', e.target.value)}
+                                title="Editar competência (AAAA-MM)"
+                                className="w-20 px-1.5 py-1 text-center font-mono font-bold text-xs text-amber-300 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden"
+                              />
                             </td>
 
-                            {/* Vencimento */}
-                            <td className="py-2 px-2 text-center font-bold text-[var(--text-primary)]">
-                              {formatDateBR(row.normalized.vencimento)}
+                            {/* Vencimento (Editável Inline) */}
+                            <td className="py-2 px-2 text-center w-32">
+                              <input
+                                type="date"
+                                value={row.normalized.vencimento}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'vencimento', e.target.value)}
+                                title="Editar data de vencimento"
+                                className="w-28 px-1.5 py-1 text-center font-mono font-bold text-xs text-[var(--text-primary)] bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden"
+                              />
                             </td>
 
-                            {/* Valor Original */}
-                            <td className={`py-2 px-3 text-right font-bold ${isRevenue ? 'text-emerald-400' : 'text-[var(--text-primary)]'}`}>
-                              {formatBRL(row.normalized.valorOriginal)}
+                            {/* Valor Original (Editável Inline) */}
+                            <td className="py-2 px-3 text-right w-28">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={row.normalized.valorOriginal}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'valorOriginal', parseFloat(e.target.value) || 0)}
+                                title="Editar valor original"
+                                className={`w-24 px-1.5 py-1 text-right font-mono font-bold text-xs bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden ${
+                                  isRevenue ? 'text-emerald-400' : 'text-[var(--text-primary)]'
+                                }`}
+                              />
                             </td>
 
                             {/* Principal Baixado */}
-                            <td className="py-2 px-3 text-right text-blue-400">
+                            <td className="py-2 px-3 text-right text-blue-400 font-mono">
                               {row.normalized.principalBaixado > 0 ? formatBRL(row.normalized.principalBaixado) : '-'}
                             </td>
 
                             {/* Saldo Restante */}
-                            <td className="py-2 px-3 text-right font-bold text-[var(--text-primary)]">
+                            <td className="py-2 px-3 text-right font-bold text-[var(--text-primary)] font-mono">
                               {formatBRL(row.normalized.saldoAtual)}
                             </td>
 
-                            {/* Situação (Clique para alternar) */}
-                            <td className="py-2 px-2.5 text-center font-sans">
+                            {/* Situação (Alternar Status com 1 Clique) */}
+                            <td className="py-2 px-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => handleToggleRowStatus(row.rowNumber)}
                                 title="Clique para alternar entre LIQUIDADO (Pago) e ABERTO"
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold transition-all hover:scale-105 active:scale-95 border cursor-pointer ${
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all hover:scale-105 active:scale-95 border cursor-pointer ${
                                   row.normalized.situacao === 'LIQUIDADO' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30' :
                                   row.normalized.situacao === 'PARCIAL' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30' :
                                   row.normalized.situacao === 'ATRASADO' ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30' :
@@ -2014,7 +2537,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                             </td>
 
                             {/* Plano de Contas & Memória IA */}
-                            <td className="py-2 px-3 font-sans min-w-[240px]">
+                            <td className="py-2 px-3 min-w-[260px]">
                               {row.isTypeFilteredOut ? (
                                 <span 
                                   className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 block truncate"
@@ -2024,7 +2547,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                                 </span>
                               ) : (
                                 <div className="flex items-center gap-2">
-                                  {/* Circulozinho Indicador de Memória / IA */}
+                                  {/* Indicador de Memória / IA */}
                                   {row.isFromMemory ? (
                                     <span 
                                       title={`🧠 Enquadrado pela Memória de IA do Sistema!\nMotivo: ${row.memoryReason || 'Padrão anterior similar'}\nConfiança: ${Math.round((row.memoryConfidence || 0.9) * 100)}%`}
@@ -2071,20 +2594,20 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
                             {/* Colunas Extras */}
                             {extraColumns.map(col => (
-                              <td key={col.id} className="py-2 px-3 text-[var(--text-secondary)] truncate max-w-[120px]">
+                              <td key={col.id} className="py-2 px-3 text-[var(--text-secondary)] min-w-[120px] break-words whitespace-normal">
                                 {row.normalized.customFields?.[col.id] !== undefined 
                                   ? String(row.normalized.customFields[col.id]) 
                                   : '-'}
                               </td>
                             ))}
 
-                            {/* Botão de Edição */}
-                            <td className="py-2 px-2.5 text-center font-sans">
+                            {/* Botão de Edição Completa */}
+                            <td className="py-2 px-2 text-center">
                               <button
                                 type="button"
                                 onClick={() => setEditingRow(row)}
-                                className="p-1 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-amber-400 border border-amber-500/30 hover:border-amber-400 transition-colors"
-                                title="Editar campos e valores desta linha antes da importação"
+                                className="p-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-amber-400 border border-amber-500/30 hover:border-amber-400 transition-colors cursor-pointer"
+                                title="Editar todos os campos e rateios desta linha em modal detalhado"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
