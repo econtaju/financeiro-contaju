@@ -66,6 +66,19 @@ export const UsersPermissionsView: React.FC = () => {
     }
   };
 
+  const handleToggle2FA = (user: User) => {
+    const res = storage.toggleTwoFactor(user.id);
+    if (res.success) {
+      setUsers(storage.getUsers());
+      setToastMessage(
+        res.user?.twoFactorEnabled
+          ? `Autenticação em duas etapas (2FA) ATIVADA para ${user.name}!`
+          : `2FA DESATIVADO para ${user.name}.`
+      );
+      setTimeout(() => setToastMessage(null), 3500);
+    }
+  };
+
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) return;
@@ -77,6 +90,7 @@ export const UsersPermissionsView: React.FC = () => {
       role: (formData.role as UserRole) || 'OPERADOR',
       status: 'ATIVO',
       password: formData.password || 'contaju123',
+      twoFactorEnabled: !!formData.twoFactorEnabled,
       createdAt: new Date().toISOString()
     };
 
@@ -90,11 +104,11 @@ export const UsersPermissionsView: React.FC = () => {
       action: 'CRIACAO_USUARIO',
       module: 'Usuários e Permissões',
       recordId: newUser.id,
-      details: `Criação do usuário ${newUser.name} com perfil ${newUser.role} e credencial de acesso.`
+      details: `Criação do usuário ${newUser.name} com perfil ${newUser.role} (2FA: ${newUser.twoFactorEnabled ? 'Ativo' : 'Desativado'}).`
     });
 
     setIsModalOpen(false);
-    setFormData({ name: '', email: '', role: 'OPERADOR', status: 'ATIVO', password: 'contaju123' });
+    setFormData({ name: '', email: '', role: 'OPERADOR', status: 'ATIVO', password: 'contaju123', twoFactorEnabled: false });
     setToastMessage(`Usuário ${newUser.name} cadastrado com sucesso!`);
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -251,6 +265,7 @@ export const UsersPermissionsView: React.FC = () => {
                 <th className="py-3 px-4 text-center">Perfil / Papel</th>
                 <th className="py-3 px-4 text-center">Credencial</th>
                 <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-center">2FA (E-mail)</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -298,6 +313,21 @@ export const UsersPermissionsView: React.FC = () => {
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
                       ✓ {u.status || 'ATIVO'}
                     </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleToggle2FA(u)}
+                      title={u.twoFactorEnabled ? 'Clique para desativar 2FA' : 'Clique para ativar 2FA por e-mail'}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 border ${
+                        u.twoFactorEnabled
+                          ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
+                          : 'bg-slate-500/10 text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-amber-500/50 hover:text-amber-500'
+                      }`}
+                    >
+                      <ShieldCheck className={`w-3 h-3 ${u.twoFactorEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                      <span>{u.twoFactorEnabled ? '2FA Ativo' : 'Desativado'}</span>
+                    </button>
                   </td>
                   <td className="py-3.5 px-4 text-right">
                     <button
@@ -432,6 +462,20 @@ export const UsersPermissionsView: React.FC = () => {
                   <option value="OPERADOR">OPERADOR — Operador (Emissão de Títulos e Baixas)</option>
                   <option value="CONSULTA">CONSULTA — Somente Leitura / Auditor</option>
                 </select>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="enable2fa-check"
+                  checked={!!formData.twoFactorEnabled}
+                  onChange={e => setFormData({ ...formData, twoFactorEnabled: e.target.checked })}
+                  className="mt-0.5 rounded border-[var(--border-subtle)] text-amber-500 focus:ring-amber-500 cursor-pointer"
+                />
+                <label htmlFor="enable2fa-check" className="text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                  <span className="font-bold text-[var(--text-primary)] block">Exigir Autenticação em Duas Etapas (2FA)</span>
+                  <span className="text-[11px] block mt-0.5">Envia código numérico para o e-mail cadastrado a cada tentativa de login.</span>
+                </label>
               </div>
 
               <div className="flex justify-between items-center pt-3 border-t border-[var(--border-subtle)]">

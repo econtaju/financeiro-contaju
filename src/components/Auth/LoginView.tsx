@@ -16,7 +16,11 @@ import {
   UserPlus, 
   Clock, 
   Send,
-  Sparkles
+  Sparkles,
+  KeyRound,
+  RotateCw,
+  ArrowLeft,
+  ShieldAlert
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { User, UserRole } from '../../types';
@@ -26,12 +30,26 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [authMode, setAuthMode] = useState<
+    'LOGIN' | 'REGISTER' | 'TWO_FACTOR' | 'FORGOT_PASSWORD_REQUEST' | 'FORGOT_PASSWORD_VERIFY'
+  >('LOGIN');
   const [users, setUsers] = useState<User[]>(storage.getUsers());
 
   // Campos de Login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Campos de 2FA
+  const [twoFactorUserId, setTwoFactorUserId] = useState<string | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Campos de Recuperação de Senha
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   // Campos de Cadastro
   const [regName, setRegName] = useState('');
@@ -45,6 +63,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>(storage.getTheme());
+
+  // Contador regressivo para reenvio de código
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   // Verificar se há link de aprovação direta vindo do e-mail (?approve_user=ID)
   useEffect(() => {
@@ -75,7 +101,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     document.documentElement.classList.toggle('dark', nextTheme === 'dark');
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessNotice(null);
@@ -87,16 +113,136 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const result = storage.login(email, password);
+    try {
+      const result = await storage.login(email, password);
       setIsLoading(false);
+
+      if (result.requiresTwoFactor && result.twoFactorUserId) {
+        // Redireciona para tela de 2FA
+        setTwoFactorUserId(result.twoFactorUserId);
+        setMaskedEmail(result.maskedEmail || email);
+        setTwoFactorCode('');
+        setResendCooldown(60);
+        setAuthMode('TWO_FACTOR');
+        setSuccessNotice('Um código de verificação de 6 dígitos foi enviado para o seu e-mail cadastrado.');
+        return;
+      }
 
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
         setErrorMessage(result.error || 'Credenciais inválidas. Verifique seu e-mail e senha.');
       }
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('Erro ao tentar autenticar. Tente novamente.');
+    }
+  };
+
+  const handleTwoFactorSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorUserId) return;
+
+    setErrorMessage(null);
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const result = storage.verifyTwoFactorAndLogin(twoFactorUserId, twoFactorCode);
+      setIsLoading(false);
+
+      if (result.success && result.user) {
+        onLoginSuccess(result.user);
+      } else {
+        setErrorMessage(result.error || 'Código de verificação incorreto ou expirado.');
+      }
     }, 300);
+  };
+
+  const handleResendTwoFactor = async () => {
+    if (!twoFactorUserId || resendCooldown > 0) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const res = await storage.resendTwoFactorCode(twoFactorUserId);
+      setIsLoading(false);
+      if (res.success) {
+        setResendCooldown(60);
+        setSuccessNotice('Novo código de verificação 2FA enviado para o seu e-mail!');
+      } else {
+        setErrorMessage(res.error || 'Erro ao reenviar código.');
+      }
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('Falha ao reenviar código 2FA.');
+    }
+  };
+
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setSuccessNotice(null);
+
+    if (!resetEmail.trim()) {
+      setErrorMessage('Informe seu e-mail corporativo cadastrado.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const res = await storage.requestPasswordReset(resetEmail.trim());
+      setIsLoading(false);
+
+      if (res.success) {
+        setAuthMode('FORGOT_PASSWORD_VERIFY');
+        setResetCode('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setSuccessNotice('Enviamos um código de verificação de 6 dígitos para o seu e-mail.');
+      } else {
+        setErrorMessage(res.error || 'Não foi possível solicitar redefinição para este e-mail.');
+      }
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('Erro ao solicitar código de recuperação.');
+    }
+  };
+
+  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setSuccessNotice(null);
+
+    if (!resetCode.trim()) {
+      setErrorMessage('Informe o código de 6 dígitos recebido por e-mail.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setErrorMessage('A nova senha deve possuir pelo menos 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setErrorMessage('As senhas digitadas não conferem.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const res = storage.resetPasswordWithCode(resetEmail, resetCode, newPassword);
+      setIsLoading(false);
+
+      if (res.success) {
+        setUsers(storage.getUsers());
+        setEmail(resetEmail);
+        setPassword('');
+        setAuthMode('LOGIN');
+        setSuccessNotice('Sua senha foi redefinida com sucesso! Você já pode entrar com sua nova senha.');
+      } else {
+        setErrorMessage(res.error || 'Falha ao redefinir a senha.');
+      }
+    }, 400);
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -155,19 +301,31 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setSuccessNotice(null);
   };
 
-  const handleDirectQuickLogin = (user: User) => {
+  const handleDirectQuickLogin = async (user: User) => {
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessNotice(null);
-    setTimeout(() => {
-      const result = storage.login(user.email, user.password || 'contaju123');
+    try {
+      const result = await storage.login(user.email, user.password || 'contaju123');
       setIsLoading(false);
+      if (result.requiresTwoFactor && result.twoFactorUserId) {
+        setTwoFactorUserId(result.twoFactorUserId);
+        setMaskedEmail(result.maskedEmail || user.email);
+        setTwoFactorCode('');
+        setResendCooldown(60);
+        setAuthMode('TWO_FACTOR');
+        setSuccessNotice('Este usuário possui 2FA ativado. Digite o código de 6 dígitos enviado para o e-mail corporativo.');
+        return;
+      }
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
         setErrorMessage(result.error || 'Erro ao realizar login.');
       }
-    }, 200);
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('Erro ao realizar login.');
+    }
   };
 
   const getRoleBadge = (role: UserRole) => {
@@ -244,52 +402,84 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         <div className="w-full lg:w-1/2 max-w-md mx-auto bg-[var(--surface-card)] p-6 sm:p-8 rounded-3xl border border-[var(--border-subtle)] shadow-xl flex flex-col justify-between">
           <div>
             
-            {/* Alternador de Abas: Entrar vs Cadastre-se */}
-            <div className="flex p-1 bg-[var(--surface-elevated)] rounded-2xl border border-[var(--border-subtle)] mb-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('LOGIN');
-                  setErrorMessage(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  authMode === 'LOGIN'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                Entrar na Conta
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('REGISTER');
-                  setErrorMessage(null);
-                  setSuccessNotice(null);
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  authMode === 'REGISTER'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                Solicitar Cadastro
-              </button>
-            </div>
+            {/* Alternador de Abas ou Botão Voltar */}
+            {authMode === 'LOGIN' || authMode === 'REGISTER' ? (
+              <div className="flex p-1 bg-[var(--surface-elevated)] rounded-2xl border border-[var(--border-subtle)] mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('LOGIN');
+                    setErrorMessage(null);
+                  }}
+                  className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    authMode === 'LOGIN'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Entrar na Conta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('REGISTER');
+                    setErrorMessage(null);
+                    setSuccessNotice(null);
+                  }}
+                  className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    authMode === 'REGISTER'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Solicitar Cadastro
+                </button>
+              </div>
+            ) : (
+              <div className="mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('LOGIN');
+                    setErrorMessage(null);
+                    setSuccessNotice(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-amber-500 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Voltar para o Login</span>
+                </button>
+              </div>
+            )}
 
             {/* Cabeçalho do Card */}
             <div className="mb-5">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 mb-2.5">
-                {authMode === 'LOGIN' ? <ShieldCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-                {authMode === 'LOGIN' ? 'Acesso Seguro ao Sistema' : 'Aprovação por E-mail (Resend)'}
+                {authMode === 'LOGIN' && <ShieldCheck className="w-3.5 h-3.5" />}
+                {authMode === 'REGISTER' && <UserPlus className="w-3.5 h-3.5" />}
+                {authMode === 'TWO_FACTOR' && <ShieldAlert className="w-3.5 h-3.5 text-emerald-500" />}
+                {authMode === 'FORGOT_PASSWORD_REQUEST' && <KeyRound className="w-3.5 h-3.5 text-amber-500" />}
+                {authMode === 'FORGOT_PASSWORD_VERIFY' && <KeyRound className="w-3.5 h-3.5 text-amber-500" />}
+                
+                {authMode === 'LOGIN' && 'Acesso Seguro ao Sistema'}
+                {authMode === 'REGISTER' && 'Aprovação por E-mail (Resend)'}
+                {authMode === 'TWO_FACTOR' && 'Autenticação em Duas Etapas'}
+                {authMode === 'FORGOT_PASSWORD_REQUEST' && 'Recuperação de Credencial'}
+                {authMode === 'FORGOT_PASSWORD_VERIFY' && 'Redefinição de Senha'}
               </span>
               <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                {authMode === 'LOGIN' ? 'Acessar o Painel' : 'Criar Nova Conta'}
+                {authMode === 'LOGIN' && 'Acessar o Painel'}
+                {authMode === 'REGISTER' && 'Criar Nova Conta'}
+                {authMode === 'TWO_FACTOR' && 'Código de Verificação (2FA)'}
+                {authMode === 'FORGOT_PASSWORD_REQUEST' && 'Esqueceu sua Senha?'}
+                {authMode === 'FORGOT_PASSWORD_VERIFY' && 'Criar Nova Senha'}
               </h1>
               <p className="text-xs text-[var(--text-secondary)] mt-1">
-                {authMode === 'LOGIN'
-                  ? 'Informe seu e-mail e senha cadastrados para acessar a tesouraria.'
-                  : 'Cadastre-se com e-mail e senha. A solicitação será enviada para aprovação do administrador.'}
+                {authMode === 'LOGIN' && 'Informe seu e-mail e senha cadastrados para acessar a tesouraria.'}
+                {authMode === 'REGISTER' && 'Cadastre-se com e-mail e senha. A solicitação será enviada para aprovação do administrador.'}
+                {authMode === 'TWO_FACTOR' && `Digite o código de 6 dígitos enviado para ${maskedEmail}.`}
+                {authMode === 'FORGOT_PASSWORD_REQUEST' && 'Informe o seu e-mail corporativo cadastrado para receber o código de recuperação.'}
+                {authMode === 'FORGOT_PASSWORD_VERIFY' && 'Informe o código de 6 dígitos enviado para o seu e-mail e digite sua nova senha.'}
               </p>
             </div>
 
@@ -298,7 +488,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div className="mb-5 p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-start gap-3 text-emerald-600 dark:text-emerald-300 text-xs animate-in fade-in">
                 <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500 mt-0.5" />
                 <div className="space-y-1">
-                  <p className="font-bold text-[var(--text-primary)]">Solicitação Registrada!</p>
+                  <p className="font-bold text-[var(--text-primary)]">Informação</p>
                   <p className="text-[11px] leading-relaxed text-slate-300">{successNotice}</p>
                 </div>
               </div>
@@ -339,9 +529,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
                       Senha de Acesso
                     </label>
-                    <span className="text-[11px] text-amber-500 font-semibold cursor-help" title="A senha padrão inicial é contaju123">
-                      Padrão: contaju123
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetEmail(email);
+                        setErrorMessage(null);
+                        setSuccessNotice(null);
+                        setAuthMode('FORGOT_PASSWORD_REQUEST');
+                      }}
+                      className="text-[11px] text-amber-500 hover:text-amber-400 font-bold hover:underline cursor-pointer"
+                    >
+                      Esqueceu a senha?
+                    </button>
                   </div>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-secondary)]">
@@ -381,6 +580,167 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
+                </button>
+              </form>
+            )}
+
+            {/* Formulário: TWO_FACTOR (2FA) */}
+            {authMode === 'TWO_FACTOR' && (
+              <form onSubmit={handleTwoFactorSubmit} className="space-y-4 animate-in fade-in">
+                <div className="p-4 rounded-2xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-center space-y-2">
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 flex items-center justify-center">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-[var(--text-primary)]">Verificação de Segurança 2FA</h3>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Enviamos um código de 6 dígitos para o e-mail:
+                    </p>
+                    <p className="font-mono text-xs font-bold text-emerald-500 mt-1">
+                      {maskedEmail}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider text-center mb-2">
+                    Digite o Código de 6 Dígitos
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    autoFocus
+                    required
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full text-center py-3 text-2xl tracking-[12px] font-mono font-black rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/30 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                  />
+                  <span className="text-[10px] text-center block text-[var(--text-secondary)] mt-1.5">
+                    O código expira em 10 minutos.
+                  </span>
+                </div>
+
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleResendTwoFactor}
+                    disabled={isLoading || resendCooldown > 0}
+                    className="flex-1 py-2.5 px-3 rounded-xl border border-[var(--border-subtle)] hover:bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>{resendCooldown > 0 ? `Reenviar (${resendCooldown}s)` : 'Reenviar Código'}</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isLoading || twoFactorCode.length < 6}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    {isLoading ? 'Verificando...' : 'Confirmar'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Formulário: FORGOT_PASSWORD_REQUEST (Digitar e-mail) */}
+            {authMode === 'FORGOT_PASSWORD_REQUEST' && (
+              <form onSubmit={handleRequestPasswordReset} className="space-y-4 animate-in fade-in">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1.5">
+                    Seu E-mail Corporativo
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-secondary)]">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="seu.email@contaju.com.br"
+                      required
+                      autoFocus
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs transition-all font-medium"
+                    />
+                  </div>
+                  <span className="text-[10px] text-[var(--text-secondary)] block mt-1">
+                    Enviaremos um código de verificação para este e-mail via API Resend.
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                      Enviando Código...
+                    </span>
+                  ) : (
+                    <>
+                      <span>Enviar Código por E-mail</span>
+                      <Send className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* Formulário: FORGOT_PASSWORD_VERIFY (Validar código e nova senha) */}
+            {authMode === 'FORGOT_PASSWORD_VERIFY' && (
+              <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5 animate-in fade-in">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+                    Código de 6 Dígitos do E-mail *
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Ex: 482910"
+                    className="w-full text-center py-2.5 text-xl tracking-[8px] font-mono font-bold rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/40 focus:outline-none focus:border-amber-500 text-xs transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+                    Nova Senha *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:border-amber-500 text-xs transition-all font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+                    Confirmar Nova Senha *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Repita a nova senha"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:border-amber-500 text-xs transition-all font-medium"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full mt-2 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isLoading ? 'Redefinindo...' : 'Salvar Nova Senha e Entrar'}
                 </button>
               </form>
             )}

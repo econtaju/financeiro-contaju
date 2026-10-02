@@ -11,6 +11,11 @@ export interface User {
   createdAt?: string;
   approvedAt?: string;
   approvedBy?: string;
+  twoFactorEnabled?: boolean;
+  twoFactorCode?: string;
+  twoFactorExpires?: string;
+  resetPasswordCode?: string;
+  resetPasswordExpires?: string;
 }
 
 export type OperationNature = 

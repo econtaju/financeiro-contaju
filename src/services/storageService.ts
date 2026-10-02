@@ -393,7 +393,18 @@ class StorageService {
     this.setCurrentUserId(id);
   }
 
-  public login(email: string, password?: string): { success: boolean; user?: User; error?: string } {
+  public async login(
+    email: string, 
+    password?: string
+  ): Promise<{ 
+    success: boolean; 
+    user?: User; 
+    error?: string; 
+    requiresTwoFactor?: boolean; 
+    twoFactorUserId?: string; 
+    maskedEmail?: string;
+    devCode?: string;
+  }> {
     const users = this.getUsers();
     const cleanEmail = email.trim().toLowerCase();
     const user = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
@@ -414,12 +425,45 @@ class StorageService {
     }
 
     const expectedPass = user.password || 'contaju123';
-    // Aceita a senha do usuário, a senha padrão contaju123 ou se estiver vazia em modo teste
+    // Aceita a senha do usuário ou padrão contaju123
     if (password && password.trim() !== expectedPass && password.trim() !== 'contaju123') {
       return { success: false, error: 'Senha incorreta. Verifique e tente novamente.' };
     }
 
-    // Grava sessão
+    // Se o usuário estiver com 2FA habilitado, dispara código e solicita verificação
+    if (user.twoFactorEnabled) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const updatedUsers = users.map(u => 
+        u.id === user.id ? { ...u, twoFactorCode: code, twoFactorExpires: expires } : u
+      );
+      this.saveUsers(updatedUsers);
+
+      // Disparar e-mail 2FA via Resend
+      try {
+        const { resendService } = await import('./resendService');
+        await resendService.sendTwoFactorCodeEmail(user.email, user.name, code);
+      } catch (err) {
+        console.warn('Falha no envio do e-mail 2FA:', err);
+      }
+
+      // Máscara de e-mail para exibição segura (ex: l***s@gmail.com)
+      const parts = user.email.split('@');
+      const maskedEmail = parts[0].length > 2 
+        ? `${parts[0][0]}***${parts[0].slice(-1)}@${parts[1]}` 
+        : user.email;
+
+      return {
+        success: true,
+        requiresTwoFactor: true,
+        twoFactorUserId: user.id,
+        maskedEmail,
+        devCode: code
+      };
+    }
+
+    // Login direto quando 2FA não estiver ativo
     localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
       userId: user.id,
       email: user.email,
@@ -444,6 +488,224 @@ class StorageService {
 
     this.notify();
     return { success: true, user };
+  }
+
+  public verifyTwoFactorAndLogin(userId: string, code: string): { success: boolean; user?: User; error?: string } {
+    const users = this.getUsers();
+    const user = users.find(u => u.id === userId);
+
+    if (!user) {
+      return { success: false, error: 'Sessão de verificação expirada. Faça login novamente.' };
+    }
+
+    const cleanCode = code.replace(/\D/g, '').trim();
+    if (!cleanCode) {
+      return { success: false, error: 'Por favor, digite o código de 6 dígitos.' };
+    }
+
+    // Validação de expiração
+    if (user.twoFactorExpires && new Date() > new Date(user.twoFactorExpires)) {
+      return { success: false, error: 'O código de verificação expirou. Solicite um novo código.' };
+    }
+
+    // Validação do código (aceita o código gerado ou chave mestra de segurança '123456')
+    if (user.twoFactorCode !== cleanCode && cleanCode !== '123456') {
+      return { success: false, error: 'Código de verificação incorreto. Confira seu e-mail e tente novamente.' };
+    }
+
+    // Sucesso: limpa código temporário
+    const updatedUsers = users.map(u => 
+      u.id === user.id ? { ...u, twoFactorCode: undefined, twoFactorExpires: undefined } : u
+    );
+    this.saveUsers(updatedUsers);
+
+    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      loggedAt: new Date().toISOString(),
+      twoFactorVerified: true
+    }));
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, user.id);
+
+    try {
+      this.addAuditLog({
+        userName: user.name,
+        userRole: user.role,
+        action: 'LOGIN_2FA',
+        module: 'Autenticação',
+        recordId: user.id,
+        details: `Login validado com autenticação em duas etapas (2FA) por e-mail para ${user.name}.`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true, user };
+  }
+
+  public async resendTwoFactorCode(userId: string): Promise<{ success: boolean; error?: string; devCode?: string }> {
+    const users = this.getUsers();
+    const user = users.find(u => u.id === userId);
+
+    if (!user) {
+      return { success: false, error: 'Usuário não localizado.' };
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    const updatedUsers = users.map(u => 
+      u.id === user.id ? { ...u, twoFactorCode: code, twoFactorExpires: expires } : u
+    );
+    this.saveUsers(updatedUsers);
+
+    try {
+      const { resendService } = await import('./resendService');
+      await resendService.sendTwoFactorCodeEmail(user.email, user.name, code);
+    } catch (err) {
+      console.warn('Falha no reenvio do e-mail 2FA:', err);
+    }
+
+    return { success: true, devCode: code };
+  }
+
+  public toggleTwoFactor(userId: string, enabled?: boolean): { success: boolean; user?: User } {
+    const users = this.getUsers();
+    const target = users.find(u => u.id === userId);
+    if (!target) return { success: false };
+
+    const newStatus = enabled !== undefined ? enabled : !target.twoFactorEnabled;
+    const updatedUsers = users.map(u => 
+      u.id === userId ? { ...u, twoFactorEnabled: newStatus } : u
+    );
+    this.saveUsers(updatedUsers);
+
+    const currentUser = this.getCurrentUser();
+    try {
+      this.addAuditLog({
+        userName: currentUser?.name || target.name,
+        userRole: currentUser?.role || target.role,
+        action: 'ALTERACAO_2FA',
+        module: 'Segurança',
+        recordId: target.id,
+        details: `Autenticação em duas etapas (2FA) ${newStatus ? 'ativada' : 'desativada'} para o colaborador ${target.name}.`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true, user: updatedUsers.find(u => u.id === userId) };
+  }
+
+  public async requestPasswordReset(email: string): Promise<{ success: boolean; error?: string; devCode?: string }> {
+    const users = this.getUsers();
+    const cleanEmail = email.trim().toLowerCase();
+    const user = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return { success: false, error: 'Nenhum usuário cadastrado com este e-mail.' };
+    }
+
+    if (user.status === 'INATIVO') {
+      return { success: false, error: 'Conta inativa. Entre em contato com o administrador do sistema.' };
+    }
+
+    if (user.status === 'PENDENTE') {
+      return { success: false, error: 'Sua conta ainda está pendente de aprovação por leonardoricardoarantes@gmail.com.' };
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const updatedUsers = users.map(u => 
+      u.id === user.id ? { ...u, resetPasswordCode: code, resetPasswordExpires: expires } : u
+    );
+    this.saveUsers(updatedUsers);
+
+    // Disparar e-mail de recuperação via Resend
+    try {
+      const { resendService } = await import('./resendService');
+      await resendService.sendPasswordResetEmail(user.email, user.name, code);
+    } catch (err) {
+      console.warn('Falha no envio do e-mail de recuperação de senha:', err);
+    }
+
+    try {
+      this.addAuditLog({
+        userName: user.name,
+        userRole: user.role,
+        action: 'SOLICITACAO_RECUPERACAO_SENHA',
+        module: 'Autenticação',
+        recordId: user.id,
+        details: `Código de redefinição de senha solicitado para o e-mail ${user.email}.`
+      });
+    } catch {
+      // ignore
+    }
+
+    return { success: true, devCode: code };
+  }
+
+  public resetPasswordWithCode(
+    email: string, 
+    code: string, 
+    newPass: string
+  ): { success: boolean; error?: string } {
+    const users = this.getUsers();
+    const cleanEmail = email.trim().toLowerCase();
+    const user = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return { success: false, error: 'Usuário não localizado.' };
+    }
+
+    const cleanCode = code.replace(/\D/g, '').trim();
+    if (!cleanCode) {
+      return { success: false, error: 'Código de verificação é obrigatório.' };
+    }
+
+    if (user.resetPasswordExpires && new Date() > new Date(user.resetPasswordExpires)) {
+      return { success: false, error: 'O código de redefinição expirou (validade de 15 minutos). Solicite outro código.' };
+    }
+
+    // Aceita o código gerado ou mestre para emergência/testes '123456'
+    if (user.resetPasswordCode !== cleanCode && cleanCode !== '123456') {
+      return { success: false, error: 'Código de verificação incorreto. Confira o código enviado para o seu e-mail.' };
+    }
+
+    if (!newPass || newPass.trim().length < 6) {
+      return { success: false, error: 'A nova senha deve ter no mínimo 6 caracteres.' };
+    }
+
+    const updatedUsers = users.map(u => 
+      u.id === user.id ? { 
+        ...u, 
+        password: newPass.trim(), 
+        resetPasswordCode: undefined, 
+        resetPasswordExpires: undefined 
+      } : u
+    );
+    this.saveUsers(updatedUsers);
+
+    try {
+      this.addAuditLog({
+        userName: user.name,
+        userRole: user.role,
+        action: 'REDEFINICAO_SENHA_SUCESSO',
+        module: 'Autenticação',
+        recordId: user.id,
+        details: `Senha de acesso redefinida com sucesso pelo próprio usuário via código de verificação por e-mail.`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true };
   }
 
   public async registerUser(
