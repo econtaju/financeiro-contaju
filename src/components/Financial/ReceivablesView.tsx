@@ -636,10 +636,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           </button>
           <button
             onClick={() => setIsImportModalOpen(true)}
-            className="px-3 py-2 bg-white dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs shrink-0 cursor-pointer"
+            className="px-3 py-2 bg-white dark:bg-[#19202D] border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs shrink-0 cursor-pointer"
             title="Importar lançamentos de planilha externa (Conta Azul, Asaas, Omie, etc.)"
           >
-            <Upload className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
+            <Upload className="w-4 h-4 mr-1.5 text-amber-500" />
             Importar
           </button>
           <button
@@ -708,41 +708,41 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
         {/* 3 Blocos de Visão de Risco do Caixa */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40">
+          <div className="p-3.5 rounded-xl bg-white dark:bg-[#151D2A] border border-emerald-200 dark:border-emerald-500/30 shadow-2xs">
             <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
               <span>Recebimento Seguro (Baixo Risco)</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-200/60 dark:bg-emerald-900/60 font-mono">Alta Previsibilidade</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 font-mono font-bold">Alta Previsibilidade</span>
             </div>
-            <div className="text-base font-black text-emerald-700 dark:text-emerald-400 mt-1">
+            <div className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-1.5">
               {formatBRL(portfolioRisk.lowRiskOpenAmount)}
             </div>
-            <p className="text-[10px] text-emerald-600/80 dark:text-emerald-400/70 mt-0.5">
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
               Clientes pontuais com índice de quitação em dia superior a 85%.
             </p>
           </div>
 
-          <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40">
-            <div className="flex items-center justify-between text-[11px] font-bold text-amber-800 dark:text-amber-300">
+          <div className="p-3.5 rounded-xl bg-white dark:bg-[#151D2A] border border-amber-200 dark:border-amber-500/30 shadow-2xs">
+            <div className="flex items-center justify-between text-[11px] font-bold text-amber-800 dark:text-amber-400">
               <span>Atenção Preventiva (Moderado)</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-200/60 dark:bg-amber-900/60 font-mono">Lembrete D-2</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 font-mono font-bold">Lembrete D-2</span>
             </div>
-            <div className="text-base font-black text-amber-700 dark:text-amber-400 mt-1">
+            <div className="text-base font-black text-amber-600 dark:text-amber-400 mt-1.5">
               {formatBRL(portfolioRisk.moderateRiskOpenAmount)}
             </div>
-            <p className="text-[10px] text-amber-600/80 dark:text-amber-400/70 mt-0.5">
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
               Atrasos pontuais no histórico. Recomenda-se envio prévio de lembrete com chave PIX.
             </p>
           </div>
 
-          <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/40">
-            <div className="flex items-center justify-between text-[11px] font-bold text-rose-800 dark:text-rose-300">
+          <div className="p-3.5 rounded-xl bg-white dark:bg-[#151D2A] border border-rose-200 dark:border-rose-500/30 shadow-2xs">
+            <div className="flex items-center justify-between text-[11px] font-bold text-rose-800 dark:text-rose-400">
               <span>Em Risco Crítico / Atraso</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-200/60 dark:bg-rose-900/60 font-mono">Cobrança Ativa</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-500/20 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 font-mono font-bold">Cobrança Ativa</span>
             </div>
-            <div className="text-base font-black text-rose-700 dark:text-rose-400 mt-1">
+            <div className="text-base font-black text-rose-600 dark:text-rose-400 mt-1.5">
               {formatBRL(portfolioRisk.highRiskOpenAmount)}
             </div>
-            <p className="text-[10px] text-rose-600/80 dark:text-rose-400/70 mt-0.5">
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
               {portfolioRisk.highRiskCustomerCount} cliente(s) com títulos já vencidos ou alto índice de inadimplência.
             </p>
           </div>
@@ -843,26 +843,26 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           onClick={() => setQuickDateFilter(prev => prev === 'HOJE' ? 'ALL' : 'HOJE')}
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'HOJE'
-              ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-400/40'
-              : 'bg-amber-50/50 hover:bg-amber-50 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-200 shadow-2xs'
+              ? 'bg-amber-500 text-slate-950 font-bold border-amber-600 shadow-md ring-2 ring-amber-400/40'
+              : 'bg-white dark:bg-[#151D2A] hover:bg-slate-50 dark:hover:bg-[#1D2738] border-amber-300 dark:border-amber-500/40 text-slate-900 dark:text-white shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-800 dark:text-amber-300'
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${
+              quickDateFilter === 'HOJE' ? 'text-slate-950' : 'text-amber-800 dark:text-amber-400'
             }`}>
               Vence Hoje
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'HOJE' ? 'bg-amber-600 text-white' : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+              quickDateFilter === 'HOJE' ? 'bg-slate-950 text-white' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30'
             }`}>
               {stats.hojeCount}
             </span>
           </div>
-          <div className="text-base font-bold mt-1.5 truncate">
+          <div className="text-base font-black mt-1.5 truncate text-slate-900 dark:text-white">
             {formatBRL(stats.hojeTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-700 dark:text-amber-400'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-slate-900 font-semibold' : 'text-slate-500 dark:text-slate-300'}`}>
             Vencendo na data de hoje
           </div>
         </button>
@@ -904,25 +904,25 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'VENCIDO'
               ? 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-400/40'
-              : 'bg-rose-50/60 hover:bg-rose-50 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 border-rose-200 dark:border-rose-800/60 text-rose-950 dark:text-rose-200 shadow-2xs'
+              : 'bg-white dark:bg-[#151D2A] hover:bg-slate-50 dark:hover:bg-[#1D2738] border-rose-300 dark:border-rose-500/40 text-slate-900 dark:text-white shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-800 dark:text-rose-300'
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${
+              quickDateFilter === 'VENCIDO' ? 'text-white' : 'text-rose-800 dark:text-rose-400'
             }`}>
               Vencidos
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'VENCIDO' ? 'bg-rose-700 text-white' : 'bg-rose-200 dark:bg-rose-900/80 text-rose-900 dark:text-rose-200'
+              quickDateFilter === 'VENCIDO' ? 'bg-white text-rose-700' : 'bg-rose-100 dark:bg-rose-500/20 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30'
             }`}>
               {stats.vencidosCount}
             </span>
           </div>
-          <div className="text-base font-bold mt-1.5 truncate">
+          <div className="text-base font-black mt-1.5 truncate text-rose-600 dark:text-rose-400">
             {formatBRL(stats.vencidosTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-700 dark:text-rose-400'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-rose-100 font-semibold' : 'text-slate-500 dark:text-slate-300'}`}>
             Títulos em atraso
           </div>
         </button>

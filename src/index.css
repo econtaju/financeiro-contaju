@@ -365,30 +365,73 @@ html.light textarea:focus {
 }
 
 /* ========================================================================= */
-/* REGRA MESTRA 4: BOTÕES E BADGES DOURADOS/AMARELOS TÊM LETRA PRETA OBRIGATÓRIA */
+/* REGRA MESTRA 4: BOTÕES SÓLIDOS DOURADOS (FUNDO AMBER => LETRA ESCURA NO BOTÃO) */
 /* ========================================================================= */
-[class*="bg-amber-4"],
-[class*="bg-amber-5"],
-[class*="bg-yellow-4"],
-[class*="bg-yellow-5"] {
+button[class*="bg-amber-500"]:not([class*="/"]),
+button[class*="bg-amber-400"]:not([class*="/"]),
+button[class*="bg-yellow-500"]:not([class*="/"]),
+button[class*="bg-yellow-400"]:not([class*="/"]),
+.btn-gold {
   color: #0B0E14 !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
 }
 
-[class*="bg-amber-4"] *,
-[class*="bg-amber-5"] *,
-[class*="bg-yellow-4"] *,
-[class*="bg-yellow-5"] * {
+button[class*="bg-amber-500"]:not([class*="/"]) *,
+button[class*="bg-amber-400"]:not([class*="/"]) * {
   color: #0B0E14 !important;
 }
 
 /* ========================================================================= */
-/* REGRA MESTRA 5: EXCLUSIVIDADE FINANCEIRA (VERDE = RECEBER / VERMELHO = PAGAR) */
+/* REGRA MESTRA 5: EXCLUSIVIDADE FINANCEIRA E BLINDAGEM CONTRA FUNDOS MARRONS */
 /* ========================================================================= */
+
+/* Neutralização Absoluta de Fundos Marrons Escuros no Dark Mode */
+html.dark [class*="bg-amber-950"],
+html.dark [class*="bg-yellow-950"] {
+  background-color: #151D2A !important;
+  color: #F8FAFC !important;
+  border-color: rgba(212, 175, 55, 0.4) !important;
+}
+
+html.dark [class*="bg-rose-950"],
+html.dark [class*="bg-red-950"] {
+  background-color: #151D2A !important;
+  color: #F8FAFC !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Blindagem: NUNCA permitir letras escuras (marrom, cinza ou vermelho escuro) no Dark Mode */
+html.dark [class*="text-amber-9"],
+html.dark [class*="text-amber-8"],
+html.dark [class*="text-amber-7"],
+html.dark [class*="text-yellow-9"],
+html.dark [class*="text-yellow-8"],
+html.dark [class*="text-yellow-7"] {
+  color: #FBBF24 !important; /* Dourado / Âmbar claríssimo reluzente */
+}
+
+html.dark [class*="text-rose-9"],
+html.dark [class*="text-rose-8"],
+html.dark [class*="text-rose-7"],
+html.dark [class*="text-red-9"],
+html.dark [class*="text-red-8"],
+html.dark [class*="text-red-7"] {
+  color: #F87171 !important; /* Vermelho claro nítido */
+}
+
+html.dark [class*="text-emerald-9"],
+html.dark [class*="text-emerald-8"],
+html.dark [class*="text-emerald-7"],
+html.dark [class*="text-green-9"],
+html.dark [class*="text-green-8"] {
+  color: #34D399 !important; /* Verde claro nítido */
+}
 
 /* Contas a Receber, Receitas, Entradas (Verde de Alto Contraste) */
-html.dark [class*="text-emerald-"],
-html.dark [class*="text-green-"] {
+html.dark [class*="text-emerald-4"],
+html.dark [class*="text-emerald-5"],
+html.dark [class*="text-green-4"],
+html.dark [class*="text-green-5"] {
   color: #34D399 !important;
 }
 
@@ -398,8 +441,10 @@ html.light [class*="text-green-"] {
 }
 
 /* Contas a Pagar, Despesas, Saídas, Vencidos (Vermelho de Alto Contraste) */
-html.dark [class*="text-rose-"],
-html.dark [class*="text-red-"] {
+html.dark [class*="text-rose-4"],
+html.dark [class*="text-rose-5"],
+html.dark [class*="text-red-4"],
+html.dark [class*="text-red-5"] {
   color: #F87171 !important;
 }
 
