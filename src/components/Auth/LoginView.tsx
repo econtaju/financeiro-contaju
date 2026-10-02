@@ -20,7 +20,9 @@ import {
   KeyRound,
   RotateCw,
   ArrowLeft,
-  ShieldAlert
+  ShieldAlert,
+  X,
+  UserX
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { User, UserRole } from '../../types';
@@ -330,6 +332,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
+      case 'SUPER_ADMIN':
+        return {
+          label: '👑 Gestor Geral (Acesso Total)',
+          badgeClass: 'bg-amber-500/25 text-amber-900 dark:text-amber-300 border border-amber-500/60 font-black shadow-xs'
+        };
       case 'ADMIN':
         return {
           label: 'Administrador Geral',
@@ -353,7 +360,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const activeUsers = users.filter(u => u.status !== 'PENDENTE');
+  const [rememberedUsers, setRememberedUsers] = useState<User[]>(() => storage.getRememberedUsers());
+
+  const handleForgetQuickUser = (e: React.MouseEvent, userId: string) => {
+    e.stopPropagation();
+    storage.forgetUser(userId);
+    setRememberedUsers(storage.getRememberedUsers());
+  };
+
   const pendingUsers = users.filter(u => u.status === 'PENDENTE');
 
   return (
@@ -893,75 +907,99 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div>
                 <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-amber-500" />
-                  <span>Acesso Rápido aos Perfis</span>
+                  <span>Acesso Rápido neste Dispositivo</span>
                 </h2>
                 <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                  Clique para entrar diretamente com as permissões de cada operador:
+                  Contas autenticadas anteriormente salvas neste navegador:
                 </p>
               </div>
             </div>
 
-            <div className="space-y-2.5">
-              {activeUsers.map((u) => {
-                const roleBadge = getRoleBadge(u.role);
-                const isSelected = email.toLowerCase() === u.email.toLowerCase();
+            {rememberedUsers.length > 0 ? (
+              <div className="space-y-2.5">
+                {rememberedUsers.map((u) => {
+                  const roleBadge = getRoleBadge(u.role);
+                  const isSelected = email.toLowerCase() === u.email.toLowerCase();
 
-                return (
-                  <div
-                    key={u.id}
-                    className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                      isSelected
-                        ? 'border-amber-500 bg-amber-500/10 shadow-xs'
-                        : 'border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-amber-500/40 hover:bg-[var(--surface-card)]'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSelectQuickUser(u)}
-                      className="flex items-center gap-3 text-left flex-1 cursor-pointer"
+                  return (
+                    <div
+                      key={u.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-500/10 shadow-xs'
+                          : 'border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-amber-500/40 hover:bg-[var(--surface-card)]'
+                      }`}
                     >
-                      {u.avatar ? (
-                        <img
-                          src={u.avatar}
-                          alt={u.name}
-                          className="w-10 h-10 rounded-xl object-cover border border-[var(--border-subtle)]"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-xl bg-slate-800 text-amber-400 font-bold flex items-center justify-center text-xs border border-[var(--border-subtle)]">
-                          {u.name.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleSelectQuickUser(u)}
+                        className="flex items-center gap-3 text-left flex-1 cursor-pointer min-w-0"
+                      >
+                        {u.avatar ? (
+                          <img
+                            src={u.avatar}
+                            alt={u.name}
+                            className="w-10 h-10 rounded-xl object-cover border border-[var(--border-subtle)] shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 text-amber-400 font-bold flex items-center justify-center text-xs border border-[var(--border-subtle)] shrink-0">
+                            {u.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-[var(--text-primary)]">
-                            {u.name}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-[var(--text-primary)] truncate">
+                              {u.name}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-[var(--text-secondary)] block truncate">
+                            {u.email}
                           </span>
+                          <div className="mt-1">
+                            <span className={`inline-block text-[9px] px-2 py-0.5 rounded-full ${roleBadge.badgeClass}`}>
+                              {roleBadge.label}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-[11px] text-[var(--text-secondary)] block">
-                          {u.email}
-                        </span>
-                        <div className="mt-1">
-                          <span className={`inline-block text-[9px] px-2 py-0.5 rounded-full ${roleBadge.badgeClass}`}>
-                            {roleBadge.label}
-                          </span>
-                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleDirectQuickLogin(u)}
+                          title={`Entrar como ${u.name}`}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                        >
+                          <span>Entrar</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleForgetQuickUser(e, u.id)}
+                          title="Remover este usuário deste navegador"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDirectQuickLogin(u)}
-                      title={`Entrar direto como ${u.name}`}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-all shrink-0 cursor-pointer shadow-2xs flex items-center gap-1"
-                    >
-                      <span>Entrar</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] text-center space-y-2">
+                <div className="w-10 h-10 mx-auto rounded-xl bg-slate-800 text-slate-400 flex items-center justify-center border border-[var(--border-subtle)]">
+                  <UserX className="w-5 h-5 text-amber-500/70" />
+                </div>
+                <h3 className="text-xs font-bold text-[var(--text-primary)]">
+                  Nenhum usuário salvo neste navegador
+                </h3>
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                  Por proteção e privacidade, contas de terceiros não ficam visíveis. Assim que você fizer login com seu e-mail e senha, seu perfil ficará salvo neste dispositivo para acesso facilitado.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="mt-6 p-3.5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] space-y-1">

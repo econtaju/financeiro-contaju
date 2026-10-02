@@ -141,6 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
+      case 'SUPER_ADMIN': return 'Gestor Geral (Acesso Total)';
       case 'ADMIN': return 'Administrador';
       case 'GESTOR_FINANCEIRO': return 'Gestor';
       case 'OPERADOR': return 'Operador';
@@ -150,6 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
+      case 'SUPER_ADMIN': return 'bg-amber-500/25 text-amber-300 border-amber-500/60 font-black shadow-xs';
       case 'ADMIN': return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
       case 'GESTOR_FINANCEIRO': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
       case 'OPERADOR': return 'bg-slate-500/20 text-slate-300 border-slate-500/40';
@@ -413,6 +415,19 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Botão Direto de Logout / Trocar Usuário */}
+            <button
+              onClick={() => {
+                storage.logout();
+                if (onLogout) onLogout();
+              }}
+              className="h-8 sm:h-9 flex items-center justify-center px-2 sm:px-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 transition-all text-xs font-bold shadow-xs shrink-0 cursor-pointer gap-1"
+              title="Encerrar Sessão / Trocar de Usuário"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Sair</span>
+            </button>
 
           </div>
 

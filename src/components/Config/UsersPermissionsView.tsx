@@ -35,16 +35,16 @@ export const UsersPermissionsView: React.FC = () => {
   });
 
   const permissionsMatrix = [
-    { module: 'Dashboard & Indicadores', admin: true, gestor: true, operador: true, consulta: true },
-    { module: 'Visualização de Contratos & Clientes', admin: true, gestor: true, operador: true, consulta: true },
-    { module: 'Cadastro e Edição de Contratos/Vendas', admin: true, gestor: true, operador: true, consulta: false },
-    { module: 'Emissão de Títulos (Pagar / Receber)', admin: true, gestor: true, operador: true, consulta: false },
-    { module: 'Baixa e Liquidação de Títulos', admin: true, gestor: true, operador: true, consulta: false },
-    { module: 'Transferências entre Contas Bancárias', admin: true, gestor: true, operador: false, consulta: false },
-    { module: 'Conciliação Bancária (OFX / Extrato)', admin: true, gestor: true, operador: false, consulta: false },
-    { module: 'DRE & Relatórios Gerenciais', admin: true, gestor: true, operador: false, consulta: true },
-    { module: 'Fechamento e Trava de Competência', admin: true, gestor: true, operador: false, consulta: false },
-    { module: 'Configurações Globais & Auditoria', admin: true, gestor: false, operador: false, consulta: false },
+    { module: 'Dashboard & Indicadores', superAdmin: true, admin: true, gestor: true, operador: true, consulta: true },
+    { module: 'Visualização de Contratos & Clientes', superAdmin: true, admin: true, gestor: true, operador: true, consulta: true },
+    { module: 'Cadastro e Edição de Contratos/Vendas', superAdmin: true, admin: true, gestor: true, operador: true, consulta: false },
+    { module: 'Emissão de Títulos (Pagar / Receber)', superAdmin: true, admin: true, gestor: true, operador: true, consulta: false },
+    { module: 'Baixa e Liquidação de Títulos', superAdmin: true, admin: true, gestor: true, operador: true, consulta: false },
+    { module: 'Transferências entre Contas Bancárias', superAdmin: true, admin: true, gestor: true, operador: false, consulta: false },
+    { module: 'Conciliação Bancária (OFX / Extrato)', superAdmin: true, admin: true, gestor: true, operador: false, consulta: false },
+    { module: 'DRE & Relatórios Gerenciais', superAdmin: true, admin: true, gestor: true, operador: false, consulta: true },
+    { module: 'Fechamento e Trava de Competência', superAdmin: true, admin: true, gestor: true, operador: false, consulta: false },
+    { module: 'Configurações Globais & Auditoria', superAdmin: true, admin: true, gestor: false, operador: false, consulta: false },
   ];
 
   const pendingUsers = users.filter(u => u.status === 'PENDENTE');
@@ -292,7 +292,9 @@ export const UsersPermissionsView: React.FC = () => {
                   </td>
                   <td className="py-3.5 px-4 text-center">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      u.role === 'ADMIN' 
+                      u.role === 'SUPER_ADMIN'
+                        ? 'bg-amber-500/25 text-amber-900 dark:text-amber-300 border border-amber-500/60 font-black shadow-xs'
+                        : u.role === 'ADMIN' 
                         ? 'bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/30'
                         : u.role === 'GESTOR_FINANCEIRO'
                         ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
@@ -300,7 +302,7 @@ export const UsersPermissionsView: React.FC = () => {
                         ? 'bg-blue-500/15 text-blue-800 dark:text-blue-300 border border-blue-500/30'
                         : 'bg-slate-500/15 text-slate-800 dark:text-slate-300 border border-slate-500/30'
                     }`}>
-                      {u.role}
+                      {u.role === 'SUPER_ADMIN' ? '👑 GESTOR GERAL' : u.role}
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-center">
@@ -354,7 +356,7 @@ export const UsersPermissionsView: React.FC = () => {
             <span>Matriz de Permissões de Acesso por Perfil</span>
           </h2>
           <span className="text-[11px] text-[var(--text-secondary)]">
-            Segregação de controle interno
+            Segregação de controle interno & Alçadas
           </span>
         </div>
 
@@ -363,6 +365,7 @@ export const UsersPermissionsView: React.FC = () => {
             <thead className="bg-[var(--surface-elevated)]/60 border-b border-[var(--border-subtle)] text-[var(--text-secondary)] font-semibold uppercase text-[11px]">
               <tr>
                 <th className="py-3 px-4">Módulo Funcional</th>
+                <th className="py-3 px-4 text-center text-amber-500 font-bold">GESTOR GERAL (TOTAL)</th>
                 <th className="py-3 px-4 text-center">ADMIN</th>
                 <th className="py-3 px-4 text-center">GESTOR</th>
                 <th className="py-3 px-4 text-center">OPERADOR</th>
@@ -374,6 +377,9 @@ export const UsersPermissionsView: React.FC = () => {
                 <tr key={idx} className="hover:bg-[var(--surface-elevated)]/40 transition-colors">
                   <td className="py-2.5 px-4 font-semibold text-[var(--text-primary)]">
                     {p.module}
+                  </td>
+                  <td className="py-2.5 px-4 text-center bg-amber-500/5">
+                    <Check className="w-4 h-4 text-amber-500 mx-auto font-bold" />
                   </td>
                   <td className="py-2.5 px-4 text-center">
                     {p.admin ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-rose-500 mx-auto" />}
@@ -457,6 +463,7 @@ export const UsersPermissionsView: React.FC = () => {
                   onChange={e => setFormData({ ...formData, role: e.target.value as any })}
                   className="w-full rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] px-3 py-2 font-bold text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                 >
+                  <option value="SUPER_ADMIN">👑 GESTOR GERAL — Super Admin (Acesso e Edição Total Sem Limites)</option>
                   <option value="ADMIN">ADMIN — Administrador (Controle Total & Fechamentos)</option>
                   <option value="GESTOR_FINANCEIRO">GESTOR — Gestor Financeiro (Sem Config Global)</option>
                   <option value="OPERADOR">OPERADOR — Operador (Emissão de Títulos e Baixas)</option>

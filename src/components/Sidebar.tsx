@@ -30,7 +30,8 @@ import {
   PinOff,
   CreditCard,
   Bell,
-  Database
+  Database,
+  LogOut
 } from 'lucide-react';
 import { storage } from '../services/storageService';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
@@ -70,6 +71,7 @@ interface SidebarProps {
   onNavigate: (screen: NavigationScreen) => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
+  onLogout?: () => void;
 }
 
 interface NavItem {
@@ -397,6 +399,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           ))}
         </nav>
+
+        {/* Botão de Logout no Rodapé */}
+        <div className="p-2 border-t border-[var(--border-subtle)]">
+          <button
+            onClick={() => {
+              storage.logout();
+              if (onLogout) onLogout();
+            }}
+            className={`w-full flex items-center ${isMinimized ? 'justify-center px-1.5' : 'px-3'} py-2 rounded-xl text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer font-bold gap-2`}
+            title="Encerrar Sessão (Sair da Conta)"
+          >
+            <LogOut className="w-4 h-4 shrink-0 text-rose-500" />
+            {!isMinimized && <span>Sair da Conta</span>}
+          </button>
+        </div>
 
         {/* Footer Info / Toggle */}
         <div className={`p-2.5 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] flex items-center ${

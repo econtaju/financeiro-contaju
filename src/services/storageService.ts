@@ -90,7 +90,8 @@ const STORAGE_KEYS = {
   DELETED_TITLE_IDS: 'contaju_deleted_title_ids',
   DELETED_SALE_IDS: 'contaju_deleted_sale_ids',
   BANK_CLOSINGS: 'contaju_bank_closings',
-  AUTH_SESSION: 'contaju_auth_session'
+  AUTH_SESSION: 'contaju_auth_session',
+  REMEMBERED_USERS: 'contaju_remembered_users'
 };
 
 const DEFAULT_GLOBAL_PERIOD_FILTER = {
@@ -345,11 +346,65 @@ class StorageService {
   // Users & Authentication
   public getUsers(): User[] {
     const rawUsers = this.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-    // Assegura que todo usuário tenha senha padrão se for nula
-    return rawUsers.map(u => ({
-      ...u,
-      password: u.password || 'contaju123'
-    }));
+    const MASTER_EMAIL = 'leonardoricardoarantes@gmail.com';
+
+    let hasMaster = false;
+    const mapped = rawUsers.map(u => {
+      if (u.email.trim().toLowerCase() === MASTER_EMAIL) {
+        hasMaster = true;
+        return {
+          ...u,
+          role: 'SUPER_ADMIN' as const,
+          status: 'ATIVO' as const,
+          name: u.name || 'Leonardo Ricardo Arantes',
+          password: u.password || 'contaju123'
+        };
+      }
+      return {
+        ...u,
+        password: u.password || 'contaju123'
+      };
+    });
+
+    // Se o master ainda não existir na lista, insere no topo
+    if (!hasMaster) {
+      const masterUser: User = {
+        id: 'usr-master-1',
+        name: 'Leonardo Ricardo Arantes',
+        email: MASTER_EMAIL,
+        role: 'SUPER_ADMIN',
+        status: 'ATIVO',
+        password: 'contaju123',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+        createdAt: new Date().toISOString()
+      };
+      mapped.unshift(masterUser);
+    }
+
+    return mapped;
+  }
+
+  public getRememberedUsers(): User[] {
+    const remembered = this.get<User[]>(STORAGE_KEYS.REMEMBERED_USERS, []);
+    const allUsers = this.getUsers();
+    // Retorna apenas usuários cadastrados neste navegador que continuam ativos
+    return remembered
+      .map(ru => allUsers.find(u => u.id === ru.id || u.email.toLowerCase() === ru.email.toLowerCase()))
+      .filter((u): u is User => !!u && u.status === 'ATIVO');
+  }
+
+  public rememberUser(user: User): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const current = this.getRememberedUsers();
+    const filtered = current.filter(u => u.id !== user.id && u.email.toLowerCase() !== user.email.toLowerCase());
+    this.set(STORAGE_KEYS.REMEMBERED_USERS, [user, ...filtered]);
+  }
+
+  public forgetUser(userId: string): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const current = this.getRememberedUsers();
+    const updated = current.filter(u => u.id !== userId);
+    this.set(STORAGE_KEYS.REMEMBERED_USERS, updated);
   }
 
   public isAuthenticated(): boolean {
@@ -486,6 +541,7 @@ class StorageService {
       // ignore
     }
 
+    this.rememberUser(user);
     this.notify();
     return { success: true, user };
   }
@@ -542,6 +598,7 @@ class StorageService {
       // ignore
     }
 
+    this.rememberUser(user);
     this.notify();
     return { success: true, user };
   }

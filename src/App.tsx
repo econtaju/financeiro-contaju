@@ -312,6 +312,10 @@ function AppContent() {
           }}
           isOpenMobile={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onLogout={() => {
+            setIsAuthenticated(false);
+            showInfo('Sessão Encerrada', 'Você saiu com segurança.');
+          }}
         />
       )}
 

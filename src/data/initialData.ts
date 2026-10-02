@@ -33,11 +33,20 @@ export const INITIAL_COMPANY: CompanyProfile = {
 
 export const INITIAL_USERS: User[] = [
   {
+    id: 'usr-master-1',
+    name: 'Leonardo Ricardo Arantes',
+    email: 'leonardoricardoarantes@gmail.com',
+    role: 'SUPER_ADMIN',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+    status: 'ATIVO',
+    password: 'contaju123'
+  },
+  {
     id: 'usr-1',
     name: 'Carlos Mendes',
     email: 'carlos@contaju.com.br',
     role: 'ADMIN',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&auto=format&fit=crop&q=80',
     status: 'ATIVO',
     password: 'contaju123'
   },
