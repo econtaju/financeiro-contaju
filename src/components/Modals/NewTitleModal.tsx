@@ -552,7 +552,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 onClick={() => setLaunchMode('UNICO')}
                 className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
                   launchMode === 'UNICO'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                    ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
@@ -565,7 +565,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 onClick={() => setLaunchMode('PARCELADO')}
                 className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
                   launchMode === 'PARCELADO'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                    ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
@@ -578,7 +578,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 onClick={() => setLaunchMode('RECORRENTE')}
                 className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
                   launchMode === 'RECORRENTE'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                    ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
@@ -636,7 +636,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="button"
                         onClick={() => setCounterpartyFilter('TODOS')}
                         className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'TODOS' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          counterpartyFilter === 'TODOS' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
                         }`}
                         title="Exibir todos os fornecedores e clientes cadastrados"
                       >
@@ -646,7 +646,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="button"
                         onClick={() => setCounterpartyFilter('FORNECEDORES')}
                         className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
                         Fornecedores
@@ -655,7 +655,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="button"
                         onClick={() => setCounterpartyFilter('CLIENTES')}
                         className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'CLIENTES' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          counterpartyFilter === 'CLIENTES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
                         }`}
                         title="Permite selecionar clientes cadastrados dos quais você comprou produtos ou serviços"
                       >
@@ -688,7 +688,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                   value={baseTitleNumber}
                   onChange={(e) => setBaseTitleNumber(e.target.value)}
                   placeholder="Ex: NF-12345, BOLETO-99"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   required
                 />
               </div>
@@ -704,7 +704,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Ex: Licença de software Figma, Fatura de Internet Fibra, Aluguel do Escritório, Compra de computadores..."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 required
               />
             </div>
@@ -714,7 +714,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <label className="font-semibold text-slate-800 flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <Building2 className="w-3.5 h-3.5 text-amber-500" />
                     <span>
                       {type === 'RECEBER' 
                         ? 'Classificação de Receitas (Plano de Contas) *' 
@@ -734,10 +734,10 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsQuickAccountModalOpen(true)}
-                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-2xs"
+                  className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-2xs"
                   title="Não encontrou a conta necessária? Clique para criar uma nova categoria ou subcategoria agora"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 text-indigo-600" />
+                  <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
                   <span>+ Criar Categoria / Subcategoria</span>
                 </button>
               </div>
@@ -770,7 +770,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         min="0.01"
                         value={originalAmount || ''}
                         onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                         placeholder="0,00"
                         required
                       />
@@ -804,7 +804,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           type="button"
                           onClick={() => setAmountMode('TOTAL')}
                           className={`flex-1 py-1 text-center font-medium rounded-lg text-[11px] transition-colors ${
-                            amountMode === 'TOTAL' ? 'bg-white text-indigo-700 font-bold shadow-2xs' : 'text-slate-600'
+                            amountMode === 'TOTAL' ? 'bg-white text-amber-600 font-bold shadow-2xs' : 'text-slate-600'
                           }`}
                         >
                           Valor Total da Compra
@@ -813,7 +813,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           type="button"
                           onClick={() => setAmountMode('PARCELA')}
                           className={`flex-1 py-1 text-center font-medium rounded-lg text-[11px] transition-colors ${
-                            amountMode === 'PARCELA' ? 'bg-white text-indigo-700 font-bold shadow-2xs' : 'text-slate-600'
+                            amountMode === 'PARCELA' ? 'bg-white text-amber-600 font-bold shadow-2xs' : 'text-slate-600'
                           }`}
                         >
                           Valor de Cada Parcela
@@ -833,7 +833,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           min="0.01"
                           value={originalAmount || ''}
                           onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
-                          className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                           placeholder="0,00"
                           required
                         />
@@ -848,7 +848,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsCustomInstallments(!isCustomInstallments)}
-                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                          className="text-[11px] font-semibold text-amber-500 hover:text-amber-600 underline flex items-center gap-1"
                         >
                           <Sliders className="w-3 h-3" />
                           <span>{isCustomInstallments ? 'Ver lista' : 'Personalizar'}</span>
@@ -865,7 +865,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                               setInstallmentsCount(parseInt(e.target.value, 10));
                             }
                           }}
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-semibold"
                         >
                           {[2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 18, 24, 36, 48, 60].map(num => (
                             <option key={num} value={num}>{num}x parcelas mensais</option>
@@ -887,7 +887,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             max={120}
                             value={installmentsCount}
                             onChange={(e) => setInstallmentsCount(Math.max(2, Math.min(120, parseInt(e.target.value, 10) || 2)))}
-                            className="w-full rounded-xl border border-indigo-400 px-2.5 py-1.5 text-xs bg-indigo-50/40 font-bold text-center text-indigo-950 focus:ring-2 focus:ring-indigo-500"
+                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
                             placeholder="Qtd (ex: 7, 14, 25...)"
                           />
                           <button
@@ -902,14 +902,14 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="p-2.5 bg-indigo-50/60 border border-indigo-200/80 rounded-xl flex items-center justify-between text-[11px] text-indigo-900">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-[11px] text-slate-900">
                     <div className="flex items-center space-x-2">
-                      <Layers className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                      <Layers className="w-4 h-4 text-amber-500 flex-shrink-0" />
                       <span>
                         Serão geradas <strong>{installmentsCount} parcelas</strong> {isCustomInstallments ? '(quantidade personalizada)' : ''}. Ajuste de centavos automático.
                       </span>
                     </div>
-                    <span className="font-bold text-indigo-950">
+                    <span className="font-bold text-slate-950">
                       Total: {formatBRL(totalCalculatedAmount)}
                     </span>
                   </div>
@@ -932,7 +932,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           min="0.01"
                           value={originalAmount || ''}
                           onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
-                          className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                           placeholder="0,00"
                           required
                         />
@@ -946,7 +946,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                       <select
                         value={recurringDay}
                         onChange={(e) => setRecurringDay(parseInt(e.target.value, 10))}
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-semibold"
                       >
                         {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                           <option key={day} value={day}>Dia {day < 10 ? `0${day}` : day} de cada mês</option>
@@ -962,7 +962,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsCustomRecurring(!isCustomRecurring)}
-                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                          className="text-[11px] font-semibold text-amber-500 hover:text-amber-600 underline flex items-center gap-1"
                         >
                           <Sliders className="w-3 h-3" />
                           <span>{isCustomRecurring ? 'Ver lista' : 'Personalizar'}</span>
@@ -979,7 +979,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                               setRecurringMonths(parseInt(e.target.value, 10));
                             }
                           }}
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-semibold"
                         >
                           <option value={1}>1 mês</option>
                           <option value={2}>2 meses</option>
@@ -1013,7 +1013,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             max={120}
                             value={recurringMonths}
                             onChange={(e) => setRecurringMonths(Math.max(1, Math.min(120, parseInt(e.target.value, 10) || 1)))}
-                            className="w-full rounded-xl border border-indigo-400 px-2.5 py-1.5 text-xs bg-indigo-50/40 font-bold text-center text-indigo-950 focus:ring-2 focus:ring-indigo-500"
+                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
                             placeholder="Qtd de meses (ex: 7, 15...)"
                           />
                           <button
@@ -1067,7 +1067,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                     type="date"
                     value={launchDate}
                     onChange={(e) => setLaunchDate(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     required
                   />
                 </div>
@@ -1081,7 +1081,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                     type="month"
                     value={competence}
                     onChange={(e) => setCompetence(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     required
                   />
                 </div>
@@ -1098,7 +1098,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                       setDueDate(e.target.value);
                       setExpectedCashDate(e.target.value);
                     }}
-                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     required
                   />
                 </div>
@@ -1168,7 +1168,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         max={today}
                         value={settlementDate}
                         onChange={(e) => setSettlementDate(e.target.value)}
-                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                         required={isAlreadySettled}
                       />
                       <span className="text-[10px] text-slate-400">Data efetiva da movimentação</span>
@@ -1182,7 +1182,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                       <select
                         value={settlementBankAccountId}
                         onChange={(e) => setSettlementBankAccountId(e.target.value)}
-                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                         required={isAlreadySettled}
                       >
                         <option value="">Selecione a conta bancária...</option>
@@ -1202,7 +1202,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                       <select
                         value={settlementPaymentMethod}
                         onChange={(e) => setSettlementPaymentMethod(e.target.value as any)}
-                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white font-medium text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                       >
                         <option value="PIX">PIX</option>
                         <option value="BOLETO">Boleto Bancário</option>
@@ -1229,7 +1229,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         value={settlementDiscount || ''}
                         onChange={(e) => setSettlementDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
                         placeholder="0,00"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
 
@@ -1244,7 +1244,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         value={settlementInterest || ''}
                         onChange={(e) => setSettlementInterest(Math.max(0, parseFloat(e.target.value) || 0))}
                         placeholder="0,00"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
 
@@ -1260,7 +1260,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           value={settlementBankFee || ''}
                           onChange={(e) => setSettlementBankFee(Math.max(0, parseFloat(e.target.value) || 0))}
                           placeholder="0,00"
-                          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
+                          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
                         />
                       </div>
                     )}
@@ -1274,7 +1274,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         value={settlementVoucherRef}
                         onChange={(e) => setSettlementVoucherRef(e.target.value)}
                         placeholder="Ex: AUT-987654"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
                   </div>
@@ -1292,7 +1292,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             name="settlementScope"
                             checked={settlementScope === 'FIRST'}
                             onChange={() => setSettlementScope('FIRST')}
-                            className="text-indigo-600"
+                            className="text-amber-500"
                           />
                           <span>Liquidar apenas a 1ª parcela/ocorrência agora</span>
                         </label>
@@ -1302,7 +1302,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             name="settlementScope"
                             checked={settlementScope === 'ALL'}
                             onChange={() => setSettlementScope('ALL')}
-                            className="text-indigo-600"
+                            className="text-amber-500"
                           />
                           <span>Liquidar todas as {calculatedItems.length} ocorrências</span>
                         </label>
@@ -1352,7 +1352,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                   {calculatedItems.map((item) => (
                     <div 
                       key={item.index} 
-                      className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2 text-[11px] space-y-1 hover:border-indigo-500 transition-colors"
+                      className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2 text-[11px] space-y-1 hover:border-amber-500 transition-colors"
                     >
                       <div className="flex items-center justify-between text-slate-400">
                         <span className="font-bold text-white">#{item.index}</span>
@@ -1383,24 +1383,24 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Detalhes opcionais sobre o lançamento, forma de pagamento, etc."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
               />
             </div>
 
             {quickCreatedId && (
-              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <UserPlus className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-                  <span className="text-xs text-indigo-900 font-medium">
+                  <UserPlus className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                  <span className="text-xs text-slate-900 font-medium">
                     Novo parceiro cadastrado rapidamente!
                   </span>
                 </div>
-                <label className="flex items-center space-x-1.5 cursor-pointer text-xs text-indigo-800 font-semibold">
+                <label className="flex items-center space-x-1.5 cursor-pointer text-xs text-amber-600 font-semibold">
                   <input
                     type="checkbox"
                     checked={openCompleteAfterSave}
                     onChange={(e) => setOpenCompleteAfterSave(e.target.checked)}
-                    className="rounded text-indigo-600 focus:ring-indigo-500"
+                    className="rounded text-amber-500 focus:ring-amber-500"
                   />
                   <span>Completar cadastro cadastral após salvar</span>
                 </label>

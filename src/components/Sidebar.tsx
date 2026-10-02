@@ -223,10 +223,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* Mobile backdrop com desfoque refinado */}
       {isOpenMobile && (
         <div 
-          className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 lg:hidden animate-in fade-in duration-200"
           onClick={onCloseMobile}
         />
       )}
@@ -235,10 +235,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onMouseEnter={resetIdleTimer}
         onMouseMove={resetIdleTimer}
         className={`
-          fixed lg:static top-0 bottom-0 left-0 z-40
-          ${isMinimized ? 'w-20' : 'w-64'} 
+          fixed lg:static top-0 bottom-0 left-0 z-50 lg:z-auto
+          ${isMinimized ? 'w-20' : 'w-72 max-w-[85vw]'} 
           bg-[var(--surface-card)] text-[var(--text-primary)] flex flex-col flex-shrink-0
-          transition-all duration-300 ease-in-out border-r border-[var(--border-subtle)] select-none
+          transition-all duration-300 ease-in-out border-r border-[var(--border-subtle)] select-none shadow-2xl lg:shadow-none
           ${isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
@@ -267,7 +267,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex items-center space-x-1">
                 <button
                   onClick={() => setIsPinned(p => !p)}
-                  className={`p-1.5 rounded-md text-xs transition-colors hidden lg:flex items-center justify-center ${
+                  className={`p-1.5 rounded-md text-xs transition-colors hidden lg:flex items-center justify-center cursor-pointer ${
                     isPinned 
                       ? 'text-amber-400 bg-amber-500/10 border border-amber-500/30' 
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
@@ -278,14 +278,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 <button
                   onClick={toggleMinimized}
-                  className="p-1.5 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] transition-colors hidden lg:flex items-center justify-center"
+                  className="p-1.5 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] transition-colors hidden lg:flex items-center justify-center cursor-pointer"
                   title="Recolher menu lateral"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button 
                   onClick={onCloseMobile} 
-                  className="lg:hidden text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1"
+                  className="lg:hidden p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  aria-label="Fechar menu lateral"
                 >
                   ✕
                 </button>
@@ -342,7 +343,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className={`
                           w-full flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all relative group cursor-pointer
                           ${isActive 
-                            ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-950 dark:text-amber-300 font-bold border-l-3 border-amber-600 dark:border-amber-400 shadow-2xs' 
+                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-400 font-extrabold border-l-3 border-amber-600 dark:border-amber-400 shadow-2xs' 
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white border-l-3 border-transparent'
                           }
                         `}
@@ -355,8 +356,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </span>
                           )}
                         </div>
-                        <span className={`text-[10px] leading-tight text-center font-medium mt-1 truncate max-w-[68px] ${
-                          isActive ? 'text-amber-950 dark:text-amber-300 font-bold' : 'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                        <span className={`text-[10px] leading-tight text-center mt-1 truncate max-w-[68px] ${
+                          isActive ? 'text-amber-950 dark:text-amber-400 font-extrabold tracking-wide' : 'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white font-medium'
                         }`}>
                           {item.shortLabel}
                         </span>
@@ -373,16 +374,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onCloseMobile();
                       }}
                       className={`
-                        w-full flex items-center justify-between px-3 py-2 rounded-md font-medium text-xs transition-all cursor-pointer
+                        w-full flex items-center justify-between px-3 py-2 rounded-md text-xs transition-all cursor-pointer
                         ${isActive 
-                          ? 'border-l-3 border-amber-600 dark:border-amber-400 bg-amber-100 dark:bg-amber-500/15 text-amber-950 dark:text-amber-300 font-bold shadow-2xs' 
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white border-l-3 border-transparent'
+                          ? 'border-l-3 border-amber-600 dark:border-amber-400 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-400 font-extrabold tracking-wide shadow-2xs' 
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white font-medium border-l-3 border-transparent'
                         }
                       `}
                     >
                       <div className="flex items-center space-x-2.5 truncate">
                         <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`} />
-                        <span className="truncate">{item.label}</span>
+                        <span className={`truncate ${isActive ? 'text-amber-950 dark:text-amber-400 font-extrabold' : ''}`}>{item.label}</span>
                       </div>
                       {item.badge !== undefined && (
                         <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${item.badgeColor || 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)]'}`}>

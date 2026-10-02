@@ -28,6 +28,7 @@ import { NotificationsConfigView } from './NotificationsConfigView';
 import { ImprovementsView } from './ImprovementsView';
 import { AuditView } from './AuditView';
 import { BackupView } from './BackupView';
+import { SupabaseConfigView } from './SupabaseConfigView';
 
 export type ConfigSubTab =
   | 'EMPRESA'
@@ -37,6 +38,7 @@ export type ConfigSubTab =
   | 'USUARIOS_PERMISSOES'
   | 'FECHAMENTO_PERIODO'
   | 'MODULOS_INTEGRACOES'
+  | 'SUPABASE'
   | 'NOTIFICACOES'
   | 'MELHORIAS'
   | 'AUDITORIA'
@@ -141,6 +143,13 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
       shortLabel: 'Módulos',
       description: 'Ativação de funcionalidades e conexão bancária/APIs',
       icon: Sliders
+    },
+    {
+      id: 'SUPABASE',
+      label: 'Banco Supabase (Cloud)',
+      shortLabel: 'Supabase DB',
+      description: 'Conexão PostgreSQL na nuvem, migrações SQL e sincronização',
+      icon: Database
     },
     {
       id: 'NOTIFICACOES',
@@ -263,6 +272,7 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
           <PeriodClosureView onNavigate={handleInternalNavigate} />
         )}
         {activeTab === 'MODULOS_INTEGRACOES' && <IntegrationsView />}
+        {activeTab === 'SUPABASE' && <SupabaseConfigView />}
         {activeTab === 'NOTIFICACOES' && (
           <NotificationsConfigView onNavigate={handleInternalNavigate} />
         )}

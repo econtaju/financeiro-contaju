@@ -1612,7 +1612,7 @@ export const ReconciliationView: React.FC = () => {
             className="px-3.5 py-2 bg-white dark:bg-[#1B212D] border border-slate-300 dark:border-[#273040] text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-semibold transition-colors flex items-center shadow-2xs cursor-pointer"
             title="Auditar logs detalhados do motor e motivos de não conciliação"
           >
-            <FileText className="w-4 h-4 mr-1.5 text-indigo-500" />
+            <FileText className="w-4 h-4 mr-1.5 text-amber-500" />
             Diagnóstico / Logs
           </button>
 
@@ -1620,10 +1620,10 @@ export const ReconciliationView: React.FC = () => {
           <button
             type="button"
             onClick={handleRunRules}
-            className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-xl text-xs font-bold transition-colors flex items-center shadow-2xs cursor-pointer"
+            className="px-3.5 py-2 bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25 rounded-xl text-xs font-bold transition-colors flex items-center shadow-2xs cursor-pointer"
             title="Executar imediatamente todas as regras De-Para ativas"
           >
-            <Settings2 className="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+            <Settings2 className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
             Aplicar Regras
           </button>
 
@@ -1814,7 +1814,7 @@ export const ReconciliationView: React.FC = () => {
                     {selectedStmt ? `${selectedStmt.description} (${formatBRL(selectedStmt.amount)})` : 'Nenhum extrato marcado'}
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className={selectedTitle ? 'text-blue-300 font-semibold' : 'text-slate-400 italic'}>
+                  <span className={selectedTitle ? 'text-amber-300 font-semibold' : 'text-slate-400 italic'}>
                     {selectedTitle ? `${selectedTitle.titleNumber} (${formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)})` : 'Nenhum título marcado'}
                   </span>
                   {selectedStmt && selectedTitle && (
@@ -1855,7 +1855,7 @@ export const ReconciliationView: React.FC = () => {
               <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedStmt.description}</span>
               <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedStmt.amount)}</span>
               <span className="text-slate-400 mx-1 shrink-0">⇄</span>
-              <span className="font-semibold text-indigo-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedTitle.titleNumber}</span>
+              <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedTitle.titleNumber}</span>
               <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)}</span>
             </div>
 

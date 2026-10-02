@@ -364,7 +364,7 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
               <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] block">
                 Volume Total Projetado
               </span>
-              <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-1 font-mono">
+              <div className="text-lg font-bold text-amber-500 mt-1 font-mono">
                 {formatBRL(stats.totalScheduledAmount)}
               </div>
               <span className="text-[10px] text-[var(--text-secondary)]">Soma das parcelas geradas</span>
@@ -540,7 +540,7 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
                             <div className="flex flex-col">
                               <span className="font-semibold text-[var(--text-primary)]">{t.titleNumber}</span>
                               {saleNumber && (
-                                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-0.5">
+                                <span className="text-[10px] text-amber-500 font-medium flex items-center gap-0.5">
                                   <Tag className="w-2.5 h-2.5" />
                                   {saleNumber}
                                 </span>
@@ -550,7 +550,7 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
                           <td className="py-2.5 px-3 text-[var(--text-primary)]">
                             <div className="flex items-center gap-1.5">
                               {isBalanceFee ? (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shrink-0">
                                   13º Honorário
                                 </span>
                               ) : (

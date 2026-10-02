@@ -245,7 +245,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-xs">
         <div>
           <div className="flex items-center space-x-2">
-            <LineChart className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <LineChart className="w-5 h-5 text-amber-500" />
             <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
               Fluxo de Caixa Direto
             </h1>

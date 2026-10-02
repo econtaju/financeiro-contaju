@@ -123,13 +123,13 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
     <div className="space-y-6">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
-            <Landmark className="w-5 h-5 text-indigo-700" />
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Bancos e Contas de Caixa</h1>
+            <Landmark className="w-5 h-5 text-amber-400" />
+            <h1 className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight">Bancos e Contas de Caixa</h1>
           </div>
-          <p className="text-xs text-slate-700 mt-0.5">
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">
             Gestão de contas correntes, aplicações de liquidez imediata e caixas físicos.
           </p>
         </div>
@@ -140,30 +140,30 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
               setClosingAccount(null);
               setIsClosingModalOpen(true);
             }}
-            className="px-3.5 py-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/25 rounded-lg text-xs font-bold transition-colors flex items-center shadow-2xs cursor-pointer"
+            className="px-3.5 py-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 rounded-lg text-xs font-bold transition-colors flex items-center shadow-2xs cursor-pointer"
             title="Confrontar saldos atuais do sistema com o saldo real que você tem no banco para o fechamento perfeito"
           >
-            <Scale className="w-4 h-4 mr-1.5 text-amber-500" />
+            <Scale className="w-4 h-4 mr-1.5 text-amber-400" />
             Conferência de Saldos (Fechamento)
           </button>
           <button
             id="btn-open-cash-calculator"
             onClick={() => handleOpenCashCalculator()}
-            className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs"
+            className="px-3.5 py-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs cursor-pointer"
           >
-            <Calculator className="w-4 h-4 mr-1.5 text-emerald-700" />
+            <Calculator className="w-4 h-4 mr-1.5 text-emerald-400" />
             Calculadora de Caixa Físico
           </button>
           <button
             onClick={onOpenTransferModal}
-            className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors flex items-center shadow-2xs"
+            className="px-3.5 py-2 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] hover:border-amber-500/40 rounded-lg text-xs font-medium transition-colors flex items-center shadow-2xs cursor-pointer"
           >
-            <ArrowLeftRight className="w-4 h-4 mr-1.5 text-indigo-600" />
+            <ArrowLeftRight className="w-4 h-4 mr-1.5 text-amber-400" />
             Nova Transferência
           </button>
           <button
             onClick={handleOpenNew}
-            className="px-3.5 py-2 bg-indigo-700 text-white rounded-lg text-xs font-semibold hover:bg-indigo-800 transition-colors shadow-2xs flex items-center"
+            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-colors shadow-2xs flex items-center cursor-pointer"
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Cadastrar Conta
@@ -172,25 +172,25 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
       </div>
 
       {/* Consolidated Total Card */}
-      <div className="bg-gradient-to-r from-indigo-900 to-indigo-800 rounded-xl p-6 text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 rounded-2xl p-6 text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-amber-500/30">
         <div>
-          <span className="text-xs text-indigo-200 uppercase font-semibold tracking-wider">
+          <span className="text-xs text-amber-400 uppercase font-bold tracking-wider">
             Disponibilidade Líquida Consolidada
           </span>
-          <div className="text-3xl font-extrabold mt-1 tracking-tight">
+          <div className="text-3xl font-extrabold mt-1 tracking-tight font-mono text-white">
             {formatBRL(consolidated)}
           </div>
-          <p className="text-xs text-indigo-200 mt-1">
+          <p className="text-xs text-slate-300 mt-1">
             Total disponível em todas as contas ativas do escritório
           </p>
         </div>
-        <div className="bg-white/10 px-4 py-2.5 rounded-lg backdrop-blur-xs border border-white/20 text-xs">
-          <span className="text-indigo-200 block">Contas cadastradas:</span>
-          <span className="font-bold text-white text-base">{accounts.length} contas ativas</span>
+        <div className="bg-slate-800/80 px-4 py-2.5 rounded-xl border border-amber-500/30 text-xs">
+          <span className="text-slate-300 block">Contas cadastradas:</span>
+          <span className="font-bold text-amber-400 text-base">{accounts.length} contas ativas</span>
         </div>
       </div>
 
-      {/* Grid of Bank Accounts */}
+      {/* Grid of Bank Accounts com Alto Contraste */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {accounts.map(acc => {
           const balance = FinancialEngine.getAccountBalance(acc.id);
@@ -198,12 +198,12 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
             <div 
               key={acc.id} 
               onDoubleClick={() => handleOpenStatement(acc)}
-              className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-amber-400 hover:shadow-xs transition-all cursor-pointer group"
+              className="bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs flex flex-col justify-between hover:border-amber-400/50 hover:shadow-xs transition-all cursor-pointer group"
               title="Dê dois cliques para abrir o extrato completo e movimentações"
             >
               <div>
                 <div className="flex justify-between items-start">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
                     <Landmark className="w-5 h-5" />
                   </div>
                   <div className="flex items-center space-x-1">
@@ -212,7 +212,7 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
                         e.stopPropagation();
                         handleOpenStatement(acc);
                       }}
-                      className="text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 p-1 rounded"
+                      className="text-[var(--text-muted)] hover:text-amber-400 hover:bg-amber-500/10 p-1 rounded-lg cursor-pointer transition-colors"
                       title="Ver Extrato Bancário Completo"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -222,7 +222,7 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
                         e.stopPropagation();
                         handleEdit(acc);
                       }}
-                      className="text-slate-400 hover:text-slate-700 p-1 rounded"
+                      className="text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] p-1 rounded-lg cursor-pointer transition-colors"
                       title="Editar Conta"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -231,21 +231,21 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
                 </div>
 
                 <div className="flex items-center space-x-1.5 mt-3">
-                  <h3 className="font-bold text-slate-900 text-sm group-hover:text-amber-900">{acc.name}</h3>
-                  <span className="text-[9px] font-medium text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <h3 className="font-bold text-[var(--text-primary)] text-sm group-hover:text-amber-400">{acc.name}</h3>
+                  <span className="text-[9px] font-medium text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity">
                     (2 cliques = extrato)
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-700 space-y-0.5 mt-1 font-mono">
+                <div className="text-[11px] text-[var(--text-secondary)] space-y-0.5 mt-1 font-mono">
                   {acc.agency && <div>Agência: {acc.agency}</div>}
                   {acc.accountNumber && <div>Conta: {acc.accountNumber}</div>}
-                  <div className="uppercase text-[10px] font-sans font-medium text-indigo-700 pt-0.5">{acc.type}</div>
+                  <div className="uppercase text-[10px] font-sans font-bold text-amber-400/80 pt-0.5">{acc.type}</div>
                 </div>
               </div>
 
-              <div className="mt-5 pt-3 border-t border-slate-100">
-                <span className="text-[10px] text-slate-700 block">Saldo Atual em Caixa:</span>
-                <span className={`text-lg font-bold ${balance >= 0 ? 'text-slate-900' : 'text-rose-700'}`}>
+              <div className="mt-5 pt-3 border-t border-[var(--border-subtle)]">
+                <span className="text-[10px] text-[var(--text-secondary)] block">Saldo Atual em Caixa:</span>
+                <span className={`text-lg font-bold font-mono ${balance >= 0 ? 'text-[var(--text-primary)]' : 'text-rose-400'}`}>
                   {formatBRL(balance)}
                 </span>
 
@@ -389,7 +389,7 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm"
+                  className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm"
                 >
                   Salvar Conta
                 </button>

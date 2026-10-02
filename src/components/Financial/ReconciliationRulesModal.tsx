@@ -302,7 +302,7 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
           <div className={`px-5 py-2.5 text-xs font-medium flex items-center justify-between border-b ${
             feedbackBanner.type === 'success' 
               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
-              : 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-200 dark:border-amber-800'
           }`}>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />

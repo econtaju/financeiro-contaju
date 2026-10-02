@@ -5,77 +5,80 @@
 @layer base {
   :root {
     /* ========================================================================= */
-    /* Tema Leão Dourado - Dark Mode (Sóbrio, Nobre, Alto Contraste, Sem Neon)   */
+    /* PALETA INSTITUCIONAL CONTAJU: PRETO, CINZA, DOURADO E BRANCO             */
     /* ========================================================================= */
     --bg-app: #0B0E14;
     --surface-card: #121620;
     --surface-elevated: #19202D;
     --border-subtle: #242D3D;
     --border-highlight: #3A475C;
-    --text-primary: #F8FAFC;
-    --text-secondary: #CBD5E1;
+    --text-primary: #FFFFFF;
+    --text-secondary: #E2E8F0;
     --text-muted: #94A3B8;
 
-    /* Tons Nobres e Sóbrios: Preto, Cinza e Dourado (Zero Fluorescência / Zero Neon) */
+    /* Dourado Nobre Institucional (Leão Dourado) */
     --brand-gold: #D4AF37;
-    --brand-gold-glow: rgba(212, 175, 55, 0.15);
-    --brand-gold-light: #DFC070;
+    --brand-gold-glow: rgba(212, 175, 55, 0.20);
+    --brand-gold-light: #FDE68A;
     --brand-gold-dark: #996515;
-    --brand-cyan: #C59B27;
-    --brand-cyan-glow: rgba(197, 155, 39, 0.15);
     --brand-primary-text: #0B0E14;
-    --brand-secondary: #B8860B;
 
-    /* Status Financeiros: Verde (Entradas/Sucesso), Âmbar (Atenção) e Vermelho (Saídas/Atrasos) */
+    /* Cores Exclusivas para Valores a Receber (Verde) e a Pagar (Vermelho) */
     --status-success: #10B981;
     --status-success-bg: rgba(16, 185, 129, 0.15);
     --status-warning: #F59E0B;
     --status-warning-bg: rgba(245, 158, 11, 0.15);
     --status-danger: #EF4444;
     --status-danger-bg: rgba(239, 68, 68, 0.15);
+
+    color-scheme: dark;
   }
 
   html.light {
     /* ========================================================================= */
-    /* Tema Leão Dourado - Light Mode (Clean, Executivo, Nítido, Alto Contraste) */
+    /* PALETA CLARA CONTAJU: BRANCO, CINZA GELO, GRAFITE E DOURADO              */
     /* ========================================================================= */
     --bg-app: #F8FAFC;
     --surface-card: #FFFFFF;
     --surface-elevated: #F1F5F9;
-    --border-subtle: #E2E8F0;
-    --border-highlight: #CBD5E1;
+    --border-subtle: #CBD5E1;
+    --border-highlight: #94A3B8;
     --text-primary: #0F172A;
     --text-secondary: #334155;
-    --text-muted: #64748B;
+    --text-muted: #475569;
 
-    /* Tons Nobres do Leão Dourado para Fundos Claros */
+    /* Dourado para Fundos Claros */
     --brand-gold: #996515;
-    --brand-gold-glow: rgba(153, 101, 21, 0.10);
+    --brand-gold-glow: rgba(153, 101, 21, 0.15);
     --brand-gold-light: #B8860B;
     --brand-gold-dark: #78350F;
-    --brand-cyan: #996515;
-    --brand-cyan-glow: rgba(153, 101, 21, 0.10);
     --brand-primary-text: #FFFFFF;
-    --brand-secondary: #92400E;
 
-    /* Status Financeiros de Alto Contraste para Modo Claro */
+    /* Cores Exclusivas para Valores a Receber (Verde) e a Pagar (Vermelho) */
     --status-success: #047857;
     --status-success-bg: rgba(4, 120, 87, 0.10);
     --status-warning: #B45309;
     --status-warning-bg: rgba(180, 83, 9, 0.10);
     --status-danger: #B91C1C;
     --status-danger-bg: rgba(185, 28, 28, 0.10);
+
+    color-scheme: light;
   }
 
-  body {
+  /* Bloqueio Absoluto de Scroll Horizontal na Janela Inteira */
+  html, body, #root {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    position: relative;
     background-color: var(--bg-app);
     color: var(--text-primary);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
     font-variant-numeric: tabular-nums;
     transition: background-color 0.2s ease, color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  /* Previne alteração acidental de valores numéricos via scroll do mouse */
   input[type="number"] {
     -moz-appearance: textfield;
   }
@@ -86,7 +89,7 @@
   }
 }
 
-/* Custom modern scrollbars para rolagem horizontal e vertical suave */
+/* Scrollbars modernos de alto contraste */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -95,29 +98,143 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
+  background: var(--border-highlight);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--brand-gold);
 }
 
-/* Tabular figures for financial calculations */
 .font-tabular {
   font-variant-numeric: tabular-nums;
 }
 
+.table-responsive {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ========================================================================= */
-/* BLINDAGEM DE FORMULÁRIOS & CONTROLES NATIVOS (TEMA GRAFITE & TEMA CLARO) */
+/* REGRA MESTRA 1: ELIMINAÇÃO DE CORES FORA DO PADRÃO (ROXO, ÍNDIGO, AZUL)   */
+/* Redirecionamento obrigatório para DOURADO, PRETO, CINZA e BRANCO          */
 /* ========================================================================= */
 
-/* Tema Grafite (Dark Mode / Leão Dourado) */
+/* Botões e fundos primários que usavam índigo/roxo/azul viram Dourado Nobre */
+[class*="bg-indigo-6"],
+[class*="bg-indigo-7"],
+[class*="bg-purple-6"],
+[class*="bg-purple-7"],
+[class*="bg-blue-6"],
+[class*="bg-blue-7"] {
+  background-color: #D4AF37 !important;
+  color: #0B0E14 !important;
+  font-weight: 700 !important;
+  border-color: #FDE68A !important;
+}
+
+[class*="bg-indigo-6"]:hover,
+[class*="bg-indigo-7"]:hover,
+[class*="bg-purple-6"]:hover,
+[class*="bg-purple-7"]:hover,
+[class*="bg-blue-6"]:hover,
+[class*="bg-blue-7"]:hover {
+  background-color: #E5C158 !important;
+  color: #0B0E14 !important;
+}
+
+/* Fundos escuros degradê que usavam índigo/roxo viram Preto/Grafite com borda Dourada */
+[class*="from-indigo-"],
+[class*="via-indigo-"],
+[class*="to-indigo-"],
+[class*="bg-indigo-9"],
+[class*="bg-indigo-8"],
+[class*="bg-purple-9"],
+[class*="bg-purple-8"] {
+  background: linear-gradient(135deg, #121620 0%, #19202D 50%, #0B0E14 100%) !important;
+  border-color: rgba(212, 175, 55, 0.35) !important;
+  color: #FFFFFF !important;
+}
+
+/* Textos e ícones que usavam índigo/roxo/azul viram Dourado Nobre ou Branco */
+[class*="text-indigo-"],
+[class*="text-purple-"],
+[class*="text-blue-"] {
+  color: #D4AF37 !important;
+}
+
+/* ========================================================================= */
+/* REGRA MESTRA 2: CONTRASTE ABSOLUTO (FUNDO ESCURO => LETRA CLARA)         */
+/* ========================================================================= */
+
+html.dark [class*="text-slate-9"],
+html.dark [class*="text-slate-8"],
+html.dark [class*="text-gray-9"],
+html.dark [class*="text-gray-8"],
+html.dark [class*="text-zinc-9"],
+html.dark [class*="text-zinc-8"],
+html.dark [class*="text-neutral-9"],
+html.dark [class*="text-neutral-8"],
+html.dark [class*="text-black"],
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-black {
+  color: #FFFFFF !important;
+}
+
+html.dark [class*="text-slate-7"],
+html.dark [class*="text-slate-6"],
+html.dark [class*="text-gray-7"],
+html.dark [class*="text-gray-6"],
+html.dark [class*="text-zinc-7"],
+html.dark [class*="text-zinc-6"],
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-gray-700,
+html.dark .text-gray-600 {
+  color: #E2E8F0 !important;
+}
+
+html.dark [class*="text-slate-5"],
+html.dark [class*="text-slate-4"],
+html.dark [class*="text-gray-5"],
+html.dark [class*="text-gray-4"],
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: #CBD5E1 !important;
+}
+
+/* Fundos claros do Tailwind viram superfícies escuras nobres no Dark Mode */
+html.dark [class*="bg-white"]:not([data-keep-color="true"]):not([class*="bg-amber-4"]):not([class*="bg-amber-5"]):not([class*="bg-yellow-"]) {
+  background-color: var(--surface-card) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark [class*="bg-slate-50"]:not([data-keep-color="true"]),
+html.dark [class*="bg-slate-100"]:not([data-keep-color="true"]) {
+  background-color: var(--surface-elevated) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark [class*="border-slate-"],
+html.dark [class*="border-gray-"] {
+  border-color: var(--border-subtle) !important;
+}
+
+html.dark [class*="divide-slate-"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-subtle) !important;
+}
+
+/* Formulários e Inputs no Tema Escuro */
 html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
 html.dark select,
 html.dark textarea {
-  background-color: #19202D !important;
-  color: #F8FAFC !important;
-  border-color: #334155 !important;
+  background-color: var(--surface-elevated) !important;
+  color: #FFFFFF !important;
+  border-color: var(--border-highlight) !important;
 }
 
 html.dark input::placeholder,
@@ -126,52 +243,101 @@ html.dark textarea::placeholder {
 }
 
 html.dark select option {
-  background-color: #121620 !important;
-  color: #F8FAFC !important;
+  background-color: var(--surface-card) !important;
+  color: #FFFFFF !important;
 }
 
 html.dark input:focus,
 html.dark select:focus,
 html.dark textarea:focus {
-  border-color: #D4AF37 !important;
-  box-shadow: 0 0 0 1.5px rgba(212, 175, 55, 0.25) !important;
+  border-color: var(--brand-gold) !important;
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3) !important;
   outline: none !important;
 }
 
-/* Blindagem de Modais e Diálogos no Tema Grafite */
-html.dark .fixed .bg-white {
+/* Modais no Tema Escuro */
+html.dark .fixed [class*="bg-white"] {
+  background-color: var(--surface-card) !important;
+  color: #FFFFFF !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* ========================================================================= */
+/* REGRA MESTRA 3: CONTRASTE ABSOLUTO (FUNDO CLARO => LETRA ESCURA)         */
+/* ========================================================================= */
+
+html.light body,
+html.light #root,
+html.light main {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+html.light .bg-white,
+html.light [class*="bg-white"] {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+html.light .bg-slate-50,
+html.light [class*="bg-slate-50"] {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+html.light .bg-slate-100,
+html.light [class*="bg-slate-100"] {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+}
+
+/* Elementos escuros legítimos no modo claro (apenas quando o fundo é realmente escuro no modo claro, sem dark:bg-) */
+html.light .bg-slate-900:not([class*="dark:bg-"]),
+html.light .bg-slate-950:not([class*="dark:bg-"]),
+html.light .bg-black:not([class*="dark:bg-"]) {
+  color: #FFFFFF !important;
+}
+
+html.light .bg-slate-900:not([class*="dark:bg-"]) > *,
+html.light .bg-slate-950:not([class*="dark:bg-"]) > *,
+html.light .bg-black:not([class*="dark:bg-"]) > * {
+  color: #FFFFFF !important;
+}
+
+/* ========================================================================= */
+/* REGRA UNIVERSAL DE CONTRASTE: CABEÇALHOS DE TABELAS (THEAD / TH)           */
+/* Modo Claro: Fundo cinza visível (#E2E8F0) + Letra GRAFITE ESCURO (#0F172A)*/
+/* Modo Escuro: Fundo grafite nobre (#121620) + Letra BRANCA/CLARA (#F8FAFC) */
+/* ========================================================================= */
+html.light table thead,
+html.light table th {
+  background-color: #E2E8F0 !important;
+  color: #0F172A !important;
+  border-color: #CBD5E1 !important;
+}
+
+html.light table thead th,
+html.light table thead th span,
+html.light table thead th div,
+html.light table thead th button {
+  color: #0F172A !important;
+}
+
+html.dark table thead,
+html.dark table th {
   background-color: #121620 !important;
   color: #F8FAFC !important;
-  border-color: #242D3D !important;
+  border-color: #273040 !important;
 }
 
-html.dark .fixed .bg-slate-50,
-html.dark .fixed .bg-slate-100 {
-  background-color: #161C28 !important;
-  color: #F8FAFC !important;
-  border-color: #242D3D !important;
-}
-
-html.dark .fixed .text-slate-900,
-html.dark .fixed .text-slate-800 {
+html.dark table thead th,
+html.dark table thead th span,
+html.dark table thead th div,
+html.dark table thead th button {
   color: #F8FAFC !important;
 }
 
-html.dark .fixed .text-slate-700 {
-  color: #CBD5E1 !important;
-}
-
-html.dark .fixed .text-slate-600,
-html.dark .fixed .text-slate-500 {
-  color: #94A3B8 !important;
-}
-
-html.dark .fixed .border-slate-200,
-html.dark .fixed .border-slate-300 {
-  border-color: #242D3D !important;
-}
-
-/* Tema Claro (Light Mode / Executivo Nítido) */
+/* Inputs no Tema Claro */
 html.light input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
 html.light select,
 html.light textarea {
@@ -193,21 +359,80 @@ html.light select option {
 html.light input:focus,
 html.light select:focus,
 html.light textarea:focus {
-  border-color: #B45309 !important;
-  box-shadow: 0 0 0 1.5px rgba(180, 83, 9, 0.2) !important;
+  border-color: #996515 !important;
+  box-shadow: 0 0 0 2px rgba(153, 101, 21, 0.25) !important;
   outline: none !important;
 }
 
 /* ========================================================================= */
-/* LAYOUT DE IMPRESSÃO / EXPORTAÇÃO PDF VIA BROWSER COM VARIÁVEIS DE TEMA     */
+/* REGRA MESTRA 4: BOTÕES E BADGES DOURADOS/AMARELOS TÊM LETRA PRETA OBRIGATÓRIA */
 /* ========================================================================= */
+[class*="bg-amber-4"],
+[class*="bg-amber-5"],
+[class*="bg-yellow-4"],
+[class*="bg-yellow-5"] {
+  color: #0B0E14 !important;
+  font-weight: 700 !important;
+}
+
+[class*="bg-amber-4"] *,
+[class*="bg-amber-5"] *,
+[class*="bg-yellow-4"] *,
+[class*="bg-yellow-5"] * {
+  color: #0B0E14 !important;
+}
+
+/* ========================================================================= */
+/* REGRA MESTRA 5: EXCLUSIVIDADE FINANCEIRA (VERDE = RECEBER / VERMELHO = PAGAR) */
+/* ========================================================================= */
+
+/* Contas a Receber, Receitas, Entradas (Verde de Alto Contraste) */
+html.dark [class*="text-emerald-"],
+html.dark [class*="text-green-"] {
+  color: #34D399 !important;
+}
+
+html.light [class*="text-emerald-"],
+html.light [class*="text-green-"] {
+  color: #047857 !important;
+}
+
+/* Contas a Pagar, Despesas, Saídas, Vencidos (Vermelho de Alto Contraste) */
+html.dark [class*="text-rose-"],
+html.dark [class*="text-red-"] {
+  color: #F87171 !important;
+}
+
+html.light [class*="text-rose-"],
+html.light [class*="text-red-"] {
+  color: #B91C1C !important;
+}
+
+/* Ajustes de Responsividade Mobile */
+@media (max-width: 768px) {
+  button, 
+  [role="button"], 
+  input[type="button"], 
+  input[type="submit"] {
+    min-height: 38px;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="email"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @media print {
   @page {
     size: landscape;
     margin: 8mm 6mm;
   }
 
-  /* Ocultar elementos de navegação, modais e controles não pertinentes ao relatório */
   aside,
   nav,
   header,
@@ -218,7 +443,6 @@ html.light textarea:focus {
     display: none !important;
   }
 
-  /* Desbloquear overflow para renderizar todas as linhas nas páginas impressas */
   html, body {
     background-color: var(--bg-app) !important;
     color: var(--text-primary) !important;
@@ -231,24 +455,6 @@ html.light textarea:focus {
     print-color-adjust: exact !important;
   }
 
-  #root,
-  .h-screen,
-  .overflow-hidden,
-  .overflow-y-auto,
-  .overflow-x-auto,
-  main {
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    position: static !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    width: 100% !important;
-    border: none !important;
-    box-shadow: none !important;
-  }
-
-  /* Garantir que a tabela ocupe toda a largura com cabeçalhos em cada folha */
   table {
     width: 100% !important;
     min-width: 100% !important;
@@ -270,18 +476,6 @@ html.light textarea:focus {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-
-  /* Manter as posições sticky como estáticas no impresso */
-  .sticky {
-    position: static !important;
-  }
-
-  /* Respeitar as cores do tema ativo */
-  .bg-\[var\(--surface-card\)\],
-  .bg-\[var\(--surface-elevated\)\] {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
 }
 
 @keyframes toastProgress {
@@ -292,7 +486,3 @@ html.light textarea:focus {
     width: 0%;
   }
 }
-
-
-
-

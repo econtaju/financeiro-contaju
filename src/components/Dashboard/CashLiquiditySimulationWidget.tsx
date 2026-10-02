@@ -177,9 +177,9 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
           >
-            <Sliders className="w-3.5 h-3.5" />
+            <Sliders className="w-3.5 h-3.5 text-slate-950" />
             <span>Personalizar Cenário</span>
           </button>
         </div>
@@ -323,7 +323,7 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
                 <span>Clientes com atraso previsto configurados neste cenário:</span>
                 <button
                   onClick={() => setIsModalOpen(true)}
-                  className="text-[11px] text-indigo-700 dark:text-indigo-400 hover:underline font-semibold"
+                  className="text-[11px] text-amber-500 hover:text-amber-400 hover:underline font-semibold"
                 >
                   Alterar clientes e porcentagens →
                 </button>

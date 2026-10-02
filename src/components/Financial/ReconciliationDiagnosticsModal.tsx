@@ -439,7 +439,7 @@ export const ReconciliationDiagnosticsModal: React.FC<ReconciliationDiagnosticsM
                               </div>
                               <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden mt-1.5">
                                 <div 
-                                  className="bg-blue-500 h-full rounded-full transition-all" 
+                                  className="bg-amber-500 h-full rounded-full transition-all" 
                                   style={{ width: `${(log.breakdown.descriptionScore / 20) * 100}%` }}
                                 />
                               </div>

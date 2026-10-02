@@ -101,9 +101,9 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
       <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
         
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-indigo-50/60">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white border-b border-amber-500/30">
           <div className="flex items-center space-x-2">
-            <UserCheck className="w-5 h-5 text-indigo-700" />
+            <UserCheck className="w-5 h-5 text-amber-400" />
             <div>
               <h2 className="text-base font-bold text-slate-900">
                 Finalizar Cadastro de {formData.type === 'CLIENTE' ? 'Cliente' : 'Fornecedor'}
@@ -141,7 +141,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
               type="text"
               value={formData.name || ''}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               required
             />
           </div>
@@ -156,7 +156,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
                 value={formData.tradeName || ''}
                 onChange={(e) => setFormData({ ...formData, tradeName: e.target.value })}
                 placeholder="Ex: Contaju Softwares"
-                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
 
@@ -184,7 +184,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
                 value={formData.email || ''}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="contato@empresa.com.br"
-                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
 
@@ -197,7 +197,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
                 value={formData.phone || ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 placeholder="(11) 99999-9999"
-                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
           </div>
@@ -211,7 +211,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
               value={formData.address || ''}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               placeholder="Av. Paulista, 1000 - Sala 12 - São Paulo/SP"
-              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </div>
 
@@ -224,7 +224,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
               value={formData.notes || ''}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               placeholder="Condições comerciais, dados bancários, regime tributário..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </div>
 
@@ -239,7 +239,7 @@ export const CompleteCounterpartyModal: React.FC<CompleteCounterpartyModalProps>
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm transition-colors flex items-center"
+              className="px-5 py-2 text-xs font-semibold text-slate-950 font-bold bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm transition-colors flex items-center"
             >
               <UserCheck className="w-3.5 h-3.5 mr-1.5" />
               Salvar Cadastro Completo

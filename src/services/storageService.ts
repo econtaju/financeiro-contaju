@@ -123,6 +123,7 @@ const DEFAULT_DASHBOARD_CONFIG = {
 
 class StorageService {
   private listeners: Set<() => void> = new Set();
+  private debouncedSyncTimeout: any = null;
 
   constructor() {
     this.initIfEmpty();
@@ -135,49 +136,103 @@ class StorageService {
     };
   }
 
+  private triggerAutoSyncIfConfigured() {
+    if (typeof window === 'undefined') return;
+    try {
+      const autoSyncSaved = localStorage.getItem('contaju_supabase_auto_sync');
+      const isAutoSync = autoSyncSaved !== null ? autoSyncSaved === 'true' : true;
+      const hasUrl = localStorage.getItem('contaju_supabase_url') || (import.meta.env.VITE_SUPABASE_URL as string | undefined);
+      const hasKey = localStorage.getItem('contaju_supabase_anon_key') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
+
+      if (isAutoSync && hasUrl && hasKey) {
+        if (this.debouncedSyncTimeout) {
+          clearTimeout(this.debouncedSyncTimeout);
+        }
+        this.debouncedSyncTimeout = setTimeout(async () => {
+          try {
+            const { supabaseSync } = await import('./supabaseSyncService');
+            await supabaseSync.syncAllToSupabase();
+          } catch {
+            // falha silenciosa para garantir isolamento total e nunca quebrar a UI
+          }
+        }, 3000);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   private notify() {
     // Agendado no próximo tick para evitar "Cannot update a component while rendering a different component"
     setTimeout(() => {
       this.listeners.forEach(fn => fn());
     }, 0);
+    this.triggerAutoSyncIfConfigured();
   }
 
   public initIfEmpty(force = false) {
-    if (force || !localStorage.getItem(STORAGE_KEYS.COMPANY)) {
-      localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(INITIAL_COMPANY));
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, INITIAL_USERS[0].id);
-      localStorage.setItem(STORAGE_KEYS.CHART_ACCOUNTS, JSON.stringify(INITIAL_CHART_ACCOUNTS));
-      localStorage.setItem(STORAGE_KEYS.BANK_ACCOUNTS, JSON.stringify(INITIAL_BANK_ACCOUNTS));
-      localStorage.setItem(STORAGE_KEYS.COUNTERPARTIES, JSON.stringify(INITIAL_COUNTERPARTIES));
-      localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(INITIAL_SERVICES));
-      localStorage.setItem(STORAGE_KEYS.CONTRACTS, JSON.stringify(INITIAL_CONTRACTS));
-      localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify(INITIAL_TITLES));
-      localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify(INITIAL_SETTLEMENTS));
-      localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(INITIAL_MOVEMENTS));
-      localStorage.setItem(STORAGE_KEYS.STATEMENT_ENTRIES, JSON.stringify(INITIAL_STATEMENT_ENTRIES));
-      localStorage.setItem(STORAGE_KEYS.PERIOD_CLOSURES, JSON.stringify(INITIAL_PERIOD_CLOSURES));
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(INITIAL_AUDIT_LOGS));
-      localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(INITIAL_MODULES));
-      localStorage.setItem(STORAGE_KEYS.IMPROVEMENTS, JSON.stringify(INITIAL_IMPROVEMENTS));
-      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify(INITIAL_BUDGET_PLANS));
-      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify(INITIAL_CREDIT_CARDS));
-      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify(INITIAL_CARD_PURCHASES));
-      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify(INITIAL_CASH_COUNTS));
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    
+    const DATA_SCHEMA_VERSION = 'v5_clean_zero_state';
+    const SCHEMA_KEY = 'contaju_schema_version';
+    const currentSchema = localStorage.getItem(SCHEMA_KEY);
+
+    if (force || currentSchema !== DATA_SCHEMA_VERSION) {
+      // Limpeza de todos os dados mockados/transacionais para estado 100% zerado
+      localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.STATEMENT_ENTRIES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.PERIOD_CLOSURES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.IMPROVEMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.BUDGET_VERSIONS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CARD_INVOICE_PAYMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CONTRACTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.COUNTERPARTIES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.BANK_ACCOUNTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.RECONCILIATION_RULES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.DELETED_TITLE_IDS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.DELETED_SALE_IDS, JSON.stringify([]));
+
+      // Garantir perfis essenciais e cadastros base (usuários para login e plano de contas)
+      if (!localStorage.getItem(STORAGE_KEYS.COMPANY) || force) {
+        localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(INITIAL_COMPANY));
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.USERS) || force) {
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, INITIAL_USERS[0].id);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.CHART_ACCOUNTS) || force) {
+        localStorage.setItem(STORAGE_KEYS.CHART_ACCOUNTS, JSON.stringify(INITIAL_CHART_ACCOUNTS));
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.MODULES) || force) {
+        localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(INITIAL_MODULES));
+      }
+
+      localStorage.setItem(SCHEMA_KEY, DATA_SCHEMA_VERSION);
       this.notify();
     }
     // ensure budget plans exists even if already initialized
     if (!localStorage.getItem(STORAGE_KEYS.BUDGET_PLANS)) {
-      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify(INITIAL_BUDGET_PLANS));
+      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify([]));
     }
     if (!localStorage.getItem(STORAGE_KEYS.CREDIT_CARDS)) {
-      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify(INITIAL_CREDIT_CARDS));
+      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify([]));
     }
     if (!localStorage.getItem(STORAGE_KEYS.CARD_PURCHASES)) {
-      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify(INITIAL_CARD_PURCHASES));
+      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify([]));
     }
     if (!localStorage.getItem(STORAGE_KEYS.CASH_COUNTS)) {
-      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify(INITIAL_CASH_COUNTS));
+      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify([]));
     }
 
     // Sync any newly added initial titles or settlements to existing storage ONLY on first initialization or if not deleted
@@ -263,6 +318,7 @@ class StorageService {
 
   // Generic getter/setter
   private get<T>(key: string, fallback: T): T {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return fallback;
     try {
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : fallback;
@@ -272,6 +328,7 @@ class StorageService {
   }
 
   private set<T>(key: string, value: T) {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     localStorage.setItem(key, JSON.stringify(value));
     this.notify();
   }
@@ -419,7 +476,7 @@ class StorageService {
       }
     }
 
-    if (hasNew) {
+    if (hasNew && typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
     }
 

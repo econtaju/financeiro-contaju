@@ -172,7 +172,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: formatBRL(currentMonthGrossRevenue),
       subtext: `Acumulado Ano: ${formatBRL(ytdGrossRevenue)}`,
       icon: Receipt,
-      color: 'indigo',
+      color: 'amber',
       description: 'Faturamento reconhecido por competência contábil no mês selecionado.'
     },
     {
@@ -192,7 +192,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: formatBRL(mrr),
       subtext: `${activeContractsCount} contratos ativos`,
       icon: FileText,
-      color: 'purple',
+      color: 'amber',
       description: 'Receita mensal recorrente normalizada de clientes ativos.'
     },
     {
@@ -202,7 +202,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: `${clientMetrics.activeClients}`,
       subtext: `${clientMetrics.clientsWithActiveContracts} com contrato ativo (${clientMetrics.contractCoveragePercentage}%)`,
       icon: Users,
-      color: 'blue',
+      color: 'amber',
       description: 'Número de clientes com cadastro ativo na Contaju e cobertura contratual regular.'
     },
     {
@@ -222,7 +222,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: `${clientMetrics.totalClients}`,
       subtext: `${clientMetrics.inactiveClients} inativo(s) / churn`,
       icon: UserCheck,
-      color: 'indigo',
+      color: 'amber',
       description: 'Base total de clientes cadastrados no escritório (ativos e inativos).'
     },
     {
@@ -282,7 +282,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: formatBRL(openReceivables),
       subtext: `${receivables.filter(t => t.balancePrincipal > 0).length} títulos a receber`,
       icon: Clock,
-      color: 'blue',
+      color: 'amber',
       description: 'Saldo devedor total em aberto de títulos a receber.'
     },
     {
@@ -302,7 +302,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: `${ytdMargin.toFixed(1)}%`,
       subtext: `Lucro YTD: ${formatBRL(ytdNetResult)}`,
       icon: Percent,
-      color: 'indigo',
+      color: 'amber',
       description: 'Percentual do faturamento anual convertido em lucro líquido.'
     },
     {
@@ -312,7 +312,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       value: formatBRL(averageTicket),
       subtext: 'Base de contratos recorrentes',
       icon: DollarSign,
-      color: 'purple',
+      color: 'amber',
       description: 'Honorário médio mensal contratado por cliente ativo.'
     }
   ];
@@ -321,36 +321,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       
       {/* Top Banner / Welcome & Tabs */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+      <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Painel Executivo Contaju</h1>
-              <span className="text-xs bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-mono font-medium">
+            <div className="flex items-center space-x-2 flex-wrap">
+              <h1 className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight">Painel Executivo Contaju</h1>
+              <span className="text-xs bg-[var(--surface-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] px-2.5 py-0.5 rounded-full font-mono font-medium">
                 {dreData.months[effectiveMonthIdx]}/{effectiveYear}
               </span>
               {period.active && (
-                <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full">
+                <span className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold px-2 py-0.5 rounded-full">
                   Filtro Global Ativo
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-700 mt-0.5">
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
               Gestão executiva por regime de competência (DRE), disponibilidades financeiras e acompanhamento de carteira.
             </p>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap">
             <button
               onClick={onOpenBillingModal}
-              className="px-3 py-1.5 bg-indigo-700 text-white rounded-lg text-xs font-semibold hover:bg-indigo-800 transition-colors shadow-2xs flex items-center"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold transition-colors shadow-2xs flex items-center cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 mr-1.5" />
               Faturamento Mensal
             </button>
             <button
               onClick={() => onNavigate('CONCILIACAO')}
-              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-50 transition-colors flex items-center"
+              className="px-3 py-1.5 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] hover:border-amber-500/50 rounded-lg text-xs font-medium transition-colors flex items-center cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
               Conciliação Bancária
@@ -359,14 +359,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Tab Navigation: Visão Geral vs Configuração de KPIs */}
-        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+        <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-3 flex-wrap gap-2">
           <div className="flex space-x-2">
             <button
               onClick={() => setActiveTab('DASHBOARD')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center ${
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
                 activeTab === 'DASHBOARD'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
@@ -374,18 +374,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('KPIS_CONFIG')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center ${
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
                 activeTab === 'KPIS_CONFIG'
-                  ? 'bg-indigo-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />
+              <Sliders className="w-3.5 h-3.5 mr-1.5 text-slate-950" />
               Personalizar KPIs & Widgets ({config.visibleKpis.length} ativos)
             </button>
           </div>
 
-          <div className="text-[11px] text-slate-700 hidden sm:block">
+          <div className="text-[11px] text-[var(--text-secondary)] hidden sm:block">
             {config.visibleKpis.length} KPIs e {config.visibleWidgets.length} Widgets ativos no painel
           </div>
         </div>
@@ -425,26 +425,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             
             {/* WIDGET 1: RESUMO RÁPIDO DE FATURAMENTO MENSAL */}
             {config.visibleWidgets.includes('widget_faturamento_resumo') && (
-              <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white p-5 rounded-xl border border-indigo-800 shadow-sm relative overflow-hidden">
-                <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="bg-gradient-to-br from-[#121620] via-[#19202D] to-[#0B0E14] text-white p-5 rounded-2xl border border-amber-500/30 shadow-xs relative overflow-hidden">
+                <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
                 
-                <div className="flex items-center justify-between pb-3 border-b border-indigo-800/60">
+                <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
                   <div className="flex items-center space-x-2">
-                    <div className="p-1.5 bg-amber-500/60 rounded-lg">
-                      <Receipt className="w-4 h-4 text-indigo-200" />
+                    <div className="p-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+                      <Receipt className="w-4 h-4 text-amber-400" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-200">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
                         Resumo Rápido de Faturamento
                       </h3>
-                      <div className="text-[11px] text-indigo-300">
+                      <div className="text-[11px] text-[var(--text-secondary)]">
                         Competência {dreData.months[effectiveMonthIdx]}/{effectiveYear}
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={onOpenBillingModal}
-                    className="px-2.5 py-1 bg-amber-500 hover:bg-indigo-500 text-white text-[11px] font-semibold rounded shadow-xs transition-colors flex items-center"
+                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold rounded-lg shadow-xs transition-colors flex items-center cursor-pointer"
                   >
                     Faturar Lote
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -453,23 +453,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                   <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-indigo-300 font-semibold">Total Faturado</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">Total Faturado</div>
                     <div className="text-base sm:text-lg font-bold text-white mt-1">
                       {formatBRL(totalBilledThisMonth)}
                     </div>
-                    <div className="text-[10px] text-indigo-300 mt-0.5">Títulos do mês</div>
+                    <div className="text-[10px] text-slate-300 mt-0.5">Títulos do mês</div>
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-indigo-300 font-semibold">Faturados</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">Faturados</div>
                     <div className="text-base sm:text-lg font-bold text-emerald-400 mt-1">
-                      {contractsBilledCount} <span className="text-xs font-normal text-indigo-300">/ {activeContractsCount}</span>
+                      {contractsBilledCount} <span className="text-xs font-normal text-slate-300">/ {activeContractsCount}</span>
                     </div>
                     <div className="text-[10px] text-emerald-300 mt-0.5">Contratos gerados</div>
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-indigo-300 font-semibold">Pendentes</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">Pendentes</div>
                     <div className="text-base sm:text-lg font-bold text-amber-400 mt-1">
                       {contractsPendingCount}
                     </div>
@@ -477,15 +477,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-indigo-300 font-semibold">Ticket Médio</div>
-                    <div className="text-base sm:text-lg font-bold text-indigo-200 mt-1">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">Ticket Médio</div>
+                    <div className="text-base sm:text-lg font-bold text-white mt-1">
                       {formatBRL(averageTicket)}
                     </div>
-                    <div className="text-[10px] text-indigo-300 mt-0.5">Por contrato ativo</div>
+                    <div className="text-[10px] text-slate-300 mt-0.5">Por contrato ativo</div>
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-indigo-800/40 flex justify-between items-center text-[11px] text-indigo-300">
+                <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center text-[11px] text-slate-300">
                   <span className="flex items-center">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 mr-1" />
                     Processo idempotente com bloqueio de duplicidade automática.
@@ -580,7 +580,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                   <button
                     onClick={() => onNavigate('CONCILIACAO')}
-                    className="text-xs font-semibold text-indigo-700 hover:text-[var(--text-primary)] flex items-center"
+                    className="text-xs font-semibold text-amber-500 hover:text-amber-400 flex items-center"
                   >
                     Ver Extratos & Conciliação
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -591,23 +591,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* WIDGET 3: PANORAMA & MÉTRICAS DE CLIENTES (SOLICITADO) */}
             {config.visibleWidgets.includes('widget_resumo_clientes') && (
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs col-span-1 lg:col-span-2 flex flex-col justify-between">
+              <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs col-span-1 lg:col-span-2 flex flex-col justify-between">
                 <div>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[var(--border-subtle)] gap-3">
                     <div className="flex items-center space-x-2.5">
                       <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/30 text-amber-400">
                         <Users className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
                             Panorama da Carteira de Clientes & Expansão
                           </h3>
-                          <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">
                             {clientMetrics.activeClients} Ativos
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-600">
+                        <div className="text-[11px] text-[var(--text-secondary)]">
                           Métricas de base ativa, novos clientes conquistados e taxa de retenção
                         </div>
                       </div>
@@ -616,7 +616,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => onNavigate('CLIENTES')}
-                        className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 text-xs font-semibold rounded-lg transition-colors flex items-center border border-amber-500/30"
+                        className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-semibold rounded-lg transition-colors flex items-center border border-amber-500/30 cursor-pointer"
                       >
                         <Users className="w-3.5 h-3.5 mr-1" />
                         Ver Todos os Clientes
@@ -625,90 +625,90 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                   </div>
 
-                  {/* 4 Cards de Métricas Principais de Clientes */}
+                  {/* 4 Cards de Métricas Principais de Clientes com Alto Contraste */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-4">
-                    <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/60 space-y-1">
-                      <div className="flex justify-between items-center text-xs text-slate-700">
-                        <span className="font-semibold text-slate-700">Clientes Ativos</span>
+                    <div className="p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] space-y-1">
+                      <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
+                        <span className="font-semibold text-[var(--text-secondary)]">Clientes Ativos</span>
                         <Users className="w-4 h-4 text-amber-400" />
                       </div>
-                      <div className="text-2xl font-bold text-slate-900 tracking-tight">
+                      <div className="text-2xl font-bold font-mono text-[var(--text-primary)] tracking-tight">
                         {clientMetrics.activeClients}
                       </div>
-                      <div className="text-[11px] text-slate-600 flex items-center justify-between pt-0.5">
+                      <div className="text-[11px] text-[var(--text-muted)] flex items-center justify-between pt-0.5">
                         <span>Taxa de Ativação:</span>
                         <span className="font-semibold text-amber-400">{clientMetrics.activePercentage}% da base</span>
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50/40 space-y-1">
-                      <div className="flex justify-between items-center text-xs text-emerald-800">
-                        <span className="font-semibold text-emerald-900">Crescimento de Clientes</span>
-                        <UserPlus className="w-4 h-4 text-emerald-600" />
+                    <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 space-y-1">
+                      <div className="flex justify-between items-center text-xs text-emerald-400">
+                        <span className="font-semibold text-emerald-300">Crescimento de Clientes</span>
+                        <UserPlus className="w-4 h-4 text-emerald-400" />
                       </div>
-                      <div className="text-2xl font-bold text-emerald-950 tracking-tight">
+                      <div className="text-2xl font-bold font-mono text-emerald-300 tracking-tight">
                         +{clientMetrics.newClientsPeriod} novos
                       </div>
-                      <div className="text-[11px] text-emerald-800 flex items-center justify-between pt-0.5">
+                      <div className="text-[11px] text-emerald-400 flex items-center justify-between pt-0.5">
                         <span>Expansão no Mês:</span>
-                        <span className="font-semibold text-emerald-700">
+                        <span className="font-semibold text-emerald-300">
                           {clientMetrics.growthRate > 0 ? '+' : ''}{clientMetrics.growthRate}%
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-lg border border-purple-200 bg-purple-50/40 space-y-1">
-                      <div className="flex justify-between items-center text-xs text-purple-800">
-                        <span className="font-semibold text-purple-900">Cobertura de Contratos</span>
-                        <FileText className="w-4 h-4 text-purple-600" />
+                    <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1">
+                      <div className="flex justify-between items-center text-xs text-amber-400">
+                        <span className="font-semibold text-amber-300">Cobertura de Contratos</span>
+                        <FileText className="w-4 h-4 text-amber-400" />
                       </div>
-                      <div className="text-2xl font-bold text-purple-950 tracking-tight">
-                        {clientMetrics.clientsWithActiveContracts} <span className="text-sm font-normal text-slate-600">/ {clientMetrics.activeClients}</span>
+                      <div className="text-2xl font-bold font-mono text-amber-300 tracking-tight">
+                        {clientMetrics.clientsWithActiveContracts} <span className="text-sm font-normal text-[var(--text-muted)]">/ {clientMetrics.activeClients}</span>
                       </div>
-                      <div className="text-[11px] text-purple-800 flex items-center justify-between pt-0.5">
+                      <div className="text-[11px] text-amber-400 flex items-center justify-between pt-0.5">
                         <span>Com Recorrência:</span>
-                        <span className="font-semibold text-purple-700">{clientMetrics.contractCoveragePercentage}% da carteira</span>
+                        <span className="font-semibold text-amber-300">{clientMetrics.contractCoveragePercentage}% da carteira</span>
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1">
-                      <div className="flex justify-between items-center text-xs text-indigo-800">
-                        <span className="font-semibold text-[var(--text-primary)]">Ticket Médio (ARPU)</span>
+                    <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1">
+                      <div className="flex justify-between items-center text-xs text-amber-400">
+                        <span className="font-semibold text-amber-300">Ticket Médio (ARPU)</span>
                         <DollarSign className="w-4 h-4 text-amber-400" />
                       </div>
-                      <div className="text-xl font-bold text-indigo-950 tracking-tight">
+                      <div className="text-xl font-bold font-mono text-amber-300 tracking-tight">
                         {formatBRL(clientMetrics.averageTicketPerClient)}
                       </div>
-                      <div className="text-[11px] text-indigo-800 flex items-center justify-between pt-0.5">
+                      <div className="text-[11px] text-amber-400 flex items-center justify-between pt-0.5">
                         <span>MRR Normalizado:</span>
-                        <span className="font-semibold text-indigo-700">{formatBRL(mrr)}/mês</span>
+                        <span className="font-semibold text-amber-300">{formatBRL(mrr)}/mês</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Barra Visual de Saúde e Distribuição da Carteira */}
-                  <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="mt-4 p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] space-y-2">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-slate-700">Composição da Carteira de Clientes:</span>
+                      <span className="font-semibold text-[var(--text-secondary)]">Composição da Carteira de Clientes:</span>
                       <div className="flex items-center space-x-3 text-[11px]">
-                        <span className="flex items-center text-emerald-800">
-                          <span className="w-2 h-2 rounded-full bg-emerald-600 mr-1.5" />
+                        <span className="flex items-center text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />
                           {clientMetrics.activeClients} Ativos ({clientMetrics.activePercentage}%)
                         </span>
-                        <span className="flex items-center text-slate-600">
-                          <span className="w-2 h-2 rounded-full bg-slate-400 mr-1.5" />
+                        <span className="flex items-center text-[var(--text-muted)]">
+                          <span className="w-2 h-2 rounded-full bg-slate-500 mr-1.5" />
                           {clientMetrics.inactiveClients} Inativos ({100 - clientMetrics.activePercentage}%)
                         </span>
                       </div>
                     </div>
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden flex">
+                    <div className="w-full bg-[var(--surface-card)] border border-[var(--border-subtle)] h-2 rounded-full overflow-hidden flex">
                       <div 
-                        className="bg-emerald-600 h-full transition-all" 
+                        className="bg-emerald-500 h-full transition-all" 
                         style={{ width: `${clientMetrics.activePercentage}%` }} 
                         title={`Ativos: ${clientMetrics.activeClients}`}
                       />
                       <div 
-                        className="bg-slate-400 h-full transition-all" 
+                        className="bg-slate-600 h-full transition-all" 
                         style={{ width: `${100 - clientMetrics.activePercentage}%` }} 
                         title={`Inativos: ${clientMetrics.inactiveClients}`}
                       />
@@ -716,13 +716,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap justify-between items-center text-xs text-slate-600 gap-2">
+                <div className="mt-3 pt-2.5 border-t border-[var(--border-subtle)] flex flex-wrap justify-between items-center text-xs text-[var(--text-secondary)] gap-2">
                   <span className="text-[11px]">
-                    Base total de <strong>{clientMetrics.totalClients} clientes</strong> registrados. Última atualização em tempo real.
+                    Base total de <strong className="text-[var(--text-primary)]">{clientMetrics.totalClients} clientes</strong> registrados. Última atualização em tempo real.
                   </span>
                   <button
                     onClick={() => onNavigate('CLIENTES')}
-                    className="text-xs font-semibold text-indigo-700 hover:text-[var(--text-primary)] flex items-center"
+                    className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center cursor-pointer"
                   >
                     Gerenciar Clientes & Contratos
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -735,17 +735,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* GRID DE KPIS DINÂMICOS CONFORME CONFIGURAÇÃO DO USUÁRIO */}
           {config.visibleKpis.length > 0 && (
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+            <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-3">
+              <div className="flex justify-between items-center border-b border-[var(--border-subtle)] pb-2.5">
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-amber-500" />
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
                     Indicadores Financeiros Chave (KPIs Selecionados)
                   </h3>
                 </div>
                 <button
                   onClick={() => setActiveTab('KPIS_CONFIG')}
-                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium flex items-center"
+                  className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center cursor-pointer"
                 >
                   <Sliders className="w-3.5 h-3.5 mr-1" />
                   Editar KPIs visíveis
@@ -768,21 +768,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div 
                         key={kpi.id}
                         onClick={() => navTarget && onNavigate(navTarget)}
-                        className={`p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:border-slate-300 transition-all space-y-1.5 ${
-                          navTarget ? 'cursor-pointer hover:bg-slate-100/70 hover:shadow-2xs active:scale-[0.99]' : ''
+                        className={`p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-amber-500/40 transition-all space-y-1.5 ${
+                          navTarget ? 'cursor-pointer hover:shadow-2xs active:scale-[0.99]' : ''
                         }`}
                         title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
                       >
-                        <div className="flex justify-between items-center text-xs text-slate-700">
+                        <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
                           <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
-                          <IconComponent className="w-4 h-4 text-slate-500 shrink-0 ml-1" />
+                          <IconComponent className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
                         </div>
-                        <div className="text-lg font-bold text-slate-900 tracking-tight">
+                        <div className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
                           {kpi.value}
                         </div>
-                        <div className="text-[11px] text-slate-700 truncate flex items-center justify-between" title={kpi.subtext}>
+                        <div className="text-[11px] text-[var(--text-muted)] truncate flex items-center justify-between" title={kpi.subtext}>
                           <span>{kpi.subtext}</span>
-                          {navTarget && <ArrowRight className="w-3 h-3 text-slate-400 opacity-60 ml-1 shrink-0" />}
+                          {navTarget && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-60 ml-1 shrink-0" />}
                         </div>
                       </div>
                     );
@@ -803,61 +803,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <button
                   onClick={() => onNavigate('DRE')}
-                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium"
+                  className="text-xs text-amber-500 hover:text-amber-400 font-semibold"
                 >
                   Abrir DRE Completa →
                 </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 rounded-lg bg-indigo-50/50 border border-indigo-100">
-                  <div className="flex justify-between items-center text-xs text-[var(--text-primary)] font-medium">
+                <div className="p-4 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] space-y-1">
+                  <div className="flex justify-between items-center text-xs text-[var(--text-secondary)] font-medium">
                     <span>Receita Reconhecida ({dreData.months[effectiveMonthIdx]})</span>
                     <Receipt className="w-4 h-4 text-amber-400" />
                   </div>
-                  <div className="text-xl font-bold text-indigo-950 mt-1">
+                  <div className="text-xl font-bold font-mono text-[var(--text-primary)] mt-1">
                     {formatBRL(currentMonthGrossRevenue)}
                   </div>
-                  <div className="text-[11px] text-slate-700 mt-1 flex justify-between">
+                  <div className="text-[11px] text-[var(--text-muted)] mt-1 flex justify-between">
                     <span>Acumulado Ano:</span>
-                    <span className="font-semibold text-slate-700">{formatBRL(ytdGrossRevenue)}</span>
+                    <span className="font-semibold text-[var(--text-secondary)]">{formatBRL(ytdGrossRevenue)}</span>
                   </div>
                 </div>
 
-                <div className="p-4 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                  <div className="flex justify-between items-center text-xs text-emerald-900 font-medium">
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+                  <div className="flex justify-between items-center text-xs text-emerald-400 font-medium">
                     <span>Resultado Líquido (Mês)</span>
-                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <div className="text-xl font-bold text-emerald-950 mt-1">
+                  <div className="text-xl font-bold font-mono text-emerald-300 mt-1">
                     {formatBRL(currentMonthNetResult)}
                   </div>
-                  <div className="text-[11px] text-slate-700 mt-1 flex justify-between">
+                  <div className="text-[11px] text-emerald-400 mt-1 flex justify-between">
                     <span>Margem Gerencial Ano:</span>
-                    <span className="font-semibold text-emerald-700">{ytdMargin.toFixed(1)}%</span>
+                    <span className="font-semibold text-emerald-300">{ytdMargin.toFixed(1)}%</span>
                   </div>
                 </div>
 
-                <div className="p-4 rounded-lg bg-purple-50/50 border border-purple-100">
-                  <div className="flex justify-between items-center text-xs text-purple-900 font-medium">
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1">
+                  <div className="flex justify-between items-center text-xs text-amber-400 font-medium">
                     <span>MRR (Receita Recorrente)</span>
-                    <FileText className="w-4 h-4 text-purple-600" />
+                    <FileText className="w-4 h-4 text-amber-400" />
                   </div>
-                  <div className="text-xl font-bold text-purple-950 mt-1">
+                  <div className="text-xl font-bold font-mono text-amber-300 mt-1">
                     {formatBRL(mrr)}
                   </div>
-                  <div className="text-[11px] text-slate-700 mt-1 flex justify-between">
+                  <div className="text-[11px] text-amber-400 mt-1 flex justify-between">
                     <span>Contratos Ativos:</span>
-                    <span className="font-semibold text-purple-700">{activeContractsCount} clientes</span>
+                    <span className="font-semibold text-amber-300">{activeContractsCount} clientes</span>
                   </div>
                 </div>
 
-                <div className="p-4 rounded-lg bg-amber-50/50 border border-amber-100">
-                  <div className="flex justify-between items-center text-xs text-amber-900 font-medium">
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1">
+                  <div className="flex justify-between items-center text-xs text-rose-400 font-medium">
                     <span className="flex items-center">
                       Inadimplência Carteira
                       <span title="Fórmula: Saldo Vencido / Saldo Total em Aberto na data" className="ml-1 cursor-help">
-                        <HelpCircle className="w-3 h-3 text-amber-600" />
+                        <HelpCircle className="w-3 h-3 text-rose-400" />
                       </span>
                     </span>
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -886,7 +886,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <button
                   onClick={() => onNavigate('FLUXO_CAIXA')}
-                  className="text-xs text-indigo-700 hover:text-[var(--text-primary)] font-medium"
+                  className="text-xs text-amber-500 hover:text-amber-400 font-semibold"
                 >
                   Ver Fluxo de Caixa →
                 </button>
@@ -961,7 +961,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </h3>
                   <button
                     onClick={() => onNavigate('CONTAS_RECEBER')}
-                    className="text-xs font-medium text-indigo-700 hover:text-[var(--text-primary)]"
+                    className="text-xs font-semibold text-amber-500 hover:text-amber-400"
                   >
                     Ver todos ({receivables.filter(t => t.balancePrincipal > 0).length}) →
                   </button>
@@ -1016,7 +1016,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </h3>
                   <button
                     onClick={() => onNavigate('CONTAS_PAGAR')}
-                    className="text-xs font-medium text-indigo-700 hover:text-[var(--text-primary)]"
+                    className="text-xs font-semibold text-amber-500 hover:text-amber-400"
                   >
                     Ver todos ({payables.filter(t => t.balancePrincipal > 0).length}) →
                   </button>
@@ -1097,7 +1097,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
                 <button
                   onClick={() => setActiveTab('DASHBOARD')}
-                  className="px-4 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg text-xs font-semibold shadow-2xs flex items-center"
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold shadow-2xs flex items-center"
                 >
                   Ver no Dashboard
                   <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
@@ -1129,17 +1129,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 <button
                   onClick={() => applyPreset('TESOURARIA')}
-                  className="px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-medium transition-colors flex items-center"
+                  className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-medium transition-colors flex items-center"
                 >
-                  <Wallet className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                  <Wallet className="w-3.5 h-3.5 mr-1.5 text-amber-500" />
                   Perfil Tesouraria & Caixa (Saldos Bancários, Entradas e Saídas)
                 </button>
 
                 <button
                   onClick={() => applyPreset('CONTROLADORIA')}
-                  className="px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-900 text-xs font-medium transition-colors flex items-center"
+                  className="px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-[var(--text-primary)] text-xs font-medium transition-colors flex items-center"
                 >
-                  <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-purple-600" />
+                  <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
                   Perfil Controladoria & DRE (Faturamento Anual, Margem Líquida)
                 </button>
               </div>

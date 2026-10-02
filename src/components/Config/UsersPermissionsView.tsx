@@ -134,7 +134,7 @@ export const UsersPermissionsView: React.FC = () => {
                         ? 'bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/30'
                         : u.role === 'GESTOR_FINANCEIRO'
                         ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
-                        : 'bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-500/30'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
                     }`}>
                       {u.role}
                     </span>

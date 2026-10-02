@@ -283,16 +283,16 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
         </div>
 
         <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] space-y-1">
-          <div className="flex justify-between items-center text-xs text-indigo-400 font-medium">
+          <div className="flex justify-between items-center text-xs text-amber-500 font-medium">
             <span>Cobertura de Contratos</span>
-            <FileText className="w-4 h-4 text-indigo-400" />
+            <FileText className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
             {clientMetrics.clientsWithActiveContracts} <span className="text-sm font-normal text-[var(--text-secondary)]">/ {clientMetrics.activeClients}</span>
           </div>
           <div className="text-[11px] text-[var(--text-secondary)] flex justify-between pt-0.5">
             <span>Contratos recorrentes:</span>
-            <span className="font-semibold text-indigo-400">{clientMetrics.contractCoveragePercentage}% da carteira</span>
+            <span className="font-semibold text-amber-500">{clientMetrics.contractCoveragePercentage}% da carteira</span>
           </div>
         </div>
 

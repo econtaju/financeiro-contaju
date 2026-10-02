@@ -31,7 +31,7 @@ const BILL_DENOMINATIONS: Array<{ key: keyof CashDenominations['bills']; value: 
   { key: '50', value: 50, label: 'R$ 50', color: 'bg-amber-950/60 text-amber-300 border-amber-700/40' },
   { key: '20', value: 20, label: 'R$ 20', color: 'bg-yellow-950/60 text-yellow-300 border-yellow-700/40' },
   { key: '10', value: 10, label: 'R$ 10', color: 'bg-red-950/60 text-red-300 border-red-700/40' },
-  { key: '5', value: 5, label: 'R$ 5', color: 'bg-purple-950/60 text-purple-300 border-purple-700/40' },
+  { key: '5', value: 5, label: 'R$ 5', color: 'bg-amber-950/60 text-amber-300 border-amber-700/40' },
   { key: '2', value: 2, label: 'R$ 2', color: 'bg-blue-950/60 text-blue-300 border-blue-700/40' }
 ];
 

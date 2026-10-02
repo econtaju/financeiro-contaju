@@ -31,19 +31,19 @@ export const GlobalPeriodBanner: React.FC<GlobalPeriodBannerProps> = ({
 
   return (
     <>
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white px-4 py-2.5 rounded-xl border border-indigo-700/60 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white px-4 py-2.5 rounded-xl border border-amber-500/30 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
         <div className="flex items-center space-x-2.5">
-          <div className="w-6 h-6 rounded-md bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center shrink-0">
-            <Filter className="w-3.5 h-3.5 text-indigo-200" />
+          <div className="w-6 h-6 rounded-md bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
+            <Filter className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-semibold text-white">Filtro Central Ativo:</span>
-              <span className="bg-indigo-400/20 text-indigo-100 font-bold px-2 py-0.5 rounded border border-indigo-300/30">
+              <span className="bg-amber-400/20 text-amber-200 font-bold px-2 py-0.5 rounded border border-amber-300/30">
                 {monthLabel}
               </span>
             </div>
-            <p className="text-[11px] text-indigo-200 mt-0.5">
+            <p className="text-[11px] text-slate-300 mt-0.5">
               Sincronizado em todo o sistema. {matchedCount !== undefined && totalCount !== undefined ? (
                 <>Mostrando <strong>{matchedCount}</strong> de {totalCount} registros em {moduleName}.</>
               ) : (

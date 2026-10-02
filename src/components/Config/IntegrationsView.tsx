@@ -42,7 +42,7 @@ export const IntegrationsView: React.FC = () => {
       </div>
 
       {/* Grid de Conectores */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-start">
@@ -65,7 +65,7 @@ export const IntegrationsView: React.FC = () => {
         <div className="bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-start">
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-500/30">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30">
                 PRONTO
               </span>
               <span className="text-xs font-mono text-[var(--text-secondary)]">REST API</span>
@@ -75,7 +75,7 @@ export const IntegrationsView: React.FC = () => {
               Endpoints para emissão de títulos, consulta de saldos e integração com ERPs externos de clientes.
             </p>
           </div>
-          <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
+          <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center text-xs text-[var(--text-secondary)] font-semibold">
             <Server className="w-4 h-4 mr-1.5 shrink-0" />
             Endpoints Documentados
           </div>
@@ -97,6 +97,25 @@ export const IntegrationsView: React.FC = () => {
           <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center text-xs text-amber-700 dark:text-amber-400 font-semibold">
             <Send className="w-4 h-4 mr-1.5 shrink-0" />
             Eventos Assíncronos
+          </div>
+        </div>
+
+        <div className="bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-start">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                SUPABASE
+              </span>
+              <span className="text-xs font-mono text-[var(--text-secondary)]">POSTGRES</span>
+            </div>
+            <h3 className="font-bold text-[var(--text-primary)] text-sm mt-2.5">Supabase Cloud DB</h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
+              Banco de dados relacional PostgreSQL na nuvem com sincronização bidirecional e backup contínuo.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center text-xs text-amber-600 dark:text-amber-400 font-semibold">
+            <CheckCircle2 className="w-4 h-4 mr-1.5 shrink-0" />
+            Pronto para Conectar
           </div>
         </div>
       </div>

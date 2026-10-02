@@ -198,11 +198,11 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
           onClick={() => setActiveFilter('CONTRATOS')}
           className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
             activeFilter === 'CONTRATOS' 
-              ? 'border-indigo-500 bg-indigo-500/[0.10]' 
-              : 'border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-indigo-500/50'
+              ? 'border-amber-500 bg-amber-500/[0.10]' 
+              : 'border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-amber-500/50'
           }`}
         >
-          <div className="flex items-center justify-between text-xs text-indigo-400 font-bold uppercase">
+          <div className="flex items-center justify-between text-xs text-amber-400 font-bold uppercase">
             <span>Contratos Próximos</span>
             <FileText className="w-4 h-4" />
           </div>
@@ -401,7 +401,7 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
                 onClick={() => setActiveFilter('CONTRATOS')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
                   activeFilter === 'CONTRATOS'
-                    ? 'bg-indigo-600 text-white font-bold'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
               >
@@ -439,7 +439,7 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
             <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
               <div className="p-3.5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <FileText className="w-4 h-4 text-indigo-400" />
+                  <FileText className="w-4 h-4 text-amber-400" />
                   <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
                     Contratos com Término Previsto ({expiringContracts.length})
                   </h3>
@@ -447,7 +447,7 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
                 {onNavigate && (
                   <button
                     onClick={() => onNavigate('CONTRATOS')}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center"
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center"
                   >
                     Ver Contratos <ArrowRight className="w-3.5 h-3.5 ml-1" />
                   </button>

@@ -47,7 +47,7 @@ export const BillingGenerationModal: React.FC<BillingGenerationModalProps> = ({
         
         <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)]">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-500 dark:text-indigo-400">
+            <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-500">
               <CalendarClock className="w-5 h-5" />
             </div>
             <div>
@@ -79,7 +79,7 @@ export const BillingGenerationModal: React.FC<BillingGenerationModalProps> = ({
                 setCompetence(e.target.value);
                 setResults(null);
               }}
-              className="w-full rounded-xl border border-[var(--border-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] bg-[var(--surface-card)] focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-[var(--border-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] bg-[var(--surface-card)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
             <p className="text-[11px] text-[var(--text-secondary)] mt-1.5 leading-relaxed">
               Gera títulos a receber com base nos contratos ativos. A execução é <strong>idempotente</strong>: rodar novamente não duplica cobranças da mesma competência.
@@ -158,7 +158,7 @@ export const BillingGenerationModal: React.FC<BillingGenerationModalProps> = ({
             <button
               type="button"
               onClick={handleExecuteGeneration}
-              className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <CalendarClock className="w-4 h-4" />
               <span>Executar Faturamento em Lote</span>

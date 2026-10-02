@@ -165,7 +165,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           title: srv.name,
           subtitle: `${srv.code ? `Código: ${srv.code} • ` : ''}${srv.category || 'Geral'}`,
           badge: formatBRL(srv.defaultPrice),
-          badgeColor: 'bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 font-mono',
+          badgeColor: 'bg-amber-500/15 text-amber-900 dark:text-amber-300 font-mono font-bold',
           amount: srv.defaultPrice,
           icon: Briefcase
         });
@@ -221,7 +221,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           title: `${s.saleNumber} - ${clientName}`,
           subtitle: `Comp. ${formatCompetence(s.competence)} • ${s.items?.[0]?.description || 'Prestação de Serviços'}`,
           badge: formatBRL(s.netTotal || s.grossTotal),
-          badgeColor: 'bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 font-mono',
+          badgeColor: 'bg-amber-500/15 text-amber-900 dark:text-amber-300 font-mono font-bold',
           amount: s.netTotal || s.grossTotal,
           icon: Receipt
         });
@@ -517,17 +517,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                   <div className="flex items-center space-x-3 truncate">
                     <div className={`p-2.5 rounded-xl shrink-0 ${
                       item.category === 'CLIENTE'
-                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                        ? 'bg-slate-500/15 text-slate-800 dark:text-slate-200'
                         : item.category === 'CONTRATO'
                         ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                         : item.category === 'SERVICO'
-                        ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                         : item.category === 'RECEBER'
                         ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                         : item.category === 'PAGAR'
                         ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                         : item.category === 'VENDA'
-                        ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                         : 'bg-slate-500/15 text-slate-600 dark:text-slate-400'
                     }`}>
                       <Icon className="w-4 h-4" />

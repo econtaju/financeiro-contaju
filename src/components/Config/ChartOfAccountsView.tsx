@@ -98,20 +98,20 @@ export const ChartOfAccountsView: React.FC = () => {
     <div className="space-y-6">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--surface-card)] p-5 rounded-xl border border-[var(--border-subtle)] shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
-            <Network className="w-5 h-5 text-indigo-700" />
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Plano de Contas Gerencial</h1>
+            <Network className="w-5 h-5 text-amber-500" />
+            <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Plano de Contas Gerencial</h1>
           </div>
-          <p className="text-xs text-slate-700 mt-0.5">
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">
             Estrutura hierárquica contábil vinculada diretamente às linhas da DRE e centros de custo.
           </p>
         </div>
 
         <button
           onClick={handleOpenNew}
-          className="px-3.5 py-2 bg-indigo-700 text-white rounded-lg text-xs font-semibold hover:bg-indigo-800 transition-colors shadow-2xs flex items-center"
+          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold transition-colors shadow-2xs flex items-center cursor-pointer"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           Nova Conta Contábil
@@ -119,7 +119,7 @@ export const ChartOfAccountsView: React.FC = () => {
       </div>
 
       {/* Search */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+      <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-2xs flex items-center justify-between">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
           <input
@@ -127,17 +127,17 @@ export const ChartOfAccountsView: React.FC = () => {
             placeholder="Buscar por código ou descrição..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-slate-300"
+            className="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] focus:outline-hidden focus:border-amber-500"
           />
         </div>
-        <span className="text-xs text-slate-700">{filtered.length} contas cadastradas</span>
+        <span className="text-xs text-[var(--text-secondary)]">{filtered.length} contas cadastradas</span>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase">
+            <thead className="bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] text-[var(--text-secondary)] font-semibold uppercase">
               <tr>
                 <th className="py-3 px-4">Código Estrutural</th>
                 <th className="py-3 px-4">Descrição da Conta</th>
@@ -148,14 +148,14 @@ export const ChartOfAccountsView: React.FC = () => {
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--border-subtle)]">
               {filtered.map(acc => {
                 const isSynthetic = acc.isSynthetic ?? !acc.isAnalytical;
                 const level = acc.code.split('.').length;
 
                 return (
-                  <tr key={acc.id} className={isSynthetic ? 'bg-slate-50/70 font-bold text-slate-900' : 'hover:bg-slate-50 text-slate-700'}>
-                    <td className="py-2.5 px-4 font-mono text-slate-900">
+                  <tr key={acc.id} className={isSynthetic ? 'bg-[var(--surface-elevated)]/60 font-bold text-[var(--text-primary)]' : 'hover:bg-[var(--surface-elevated)] text-[var(--text-primary)]'}>
+                    <td className="py-2.5 px-4 font-mono text-[var(--text-primary)]">
                       {acc.code}
                     </td>
                     <td className="py-2.5 px-4" style={{ paddingLeft: `${level * 14}px` }}>
@@ -163,26 +163,26 @@ export const ChartOfAccountsView: React.FC = () => {
                     </td>
                     <td className="py-2.5 px-4">
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                        isSynthetic ? 'bg-slate-200 text-slate-800' : 'bg-indigo-50 text-indigo-700'
+                        isSynthetic ? 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                       }`}>
                         {isSynthetic ? 'Sintética (Grupo)' : 'Analítica (Lançamento)'}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4 font-mono text-[11px] text-slate-700">
+                    <td className="py-2.5 px-4 font-mono text-[11px] text-[var(--text-secondary)]">
                       {acc.nature}
                     </td>
-                    <td className="py-2.5 px-4 font-mono text-indigo-700 font-medium">
+                    <td className="py-2.5 px-4 font-mono text-[var(--text-primary)] font-medium">
                       Linha {acc.dreLineMapping || acc.dremap?.line || '-'}
                     </td>
                     <td className="py-2.5 px-4 text-center">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                         {acc.status || (acc.isActive ? 'ATIVO' : 'INATIVO')}
                       </span>
                     </td>
                     <td className="py-2.5 px-4 text-right">
                       <button
                         onClick={() => handleEdit(acc)}
-                        className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+                        className="p-1 text-[var(--text-secondary)] hover:text-amber-400 hover:bg-[var(--surface-elevated)] rounded"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
@@ -198,12 +198,12 @@ export const ChartOfAccountsView: React.FC = () => {
       {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-slate-50">
-              <h2 className="text-base font-semibold text-slate-900">
+          <div className="bg-[var(--surface-card)] rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-[var(--border-subtle)]">
+            <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)]">
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
                 {editingAccount ? 'Editar Conta' : 'Nova Conta Contábil'}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-700 p-1">
+              <button onClick={() => setIsModalOpen(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 cursor-pointer">
                 ✕
               </button>
             </div>
@@ -211,22 +211,22 @@ export const ChartOfAccountsView: React.FC = () => {
             <form onSubmit={handleSave} className="p-6 space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Código Estrutural *</label>
+                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Código Estrutural *</label>
                   <input
                     type="text"
                     required
                     placeholder="Ex: 4.1.05"
                     value={formData.code || ''}
                     onChange={e => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full rounded border border-slate-300 px-3 py-1.5 font-mono"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] px-3 py-1.5 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Natureza</label>
+                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Natureza</label>
                   <select
                     value={formData.nature || 'DEVEDORA'}
                     onChange={e => setFormData({ ...formData, nature: e.target.value as any })}
-                    className="w-full rounded border border-slate-300 px-3 py-1.5"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] px-3 py-1.5"
                   >
                     <option value="CREDORA">Credora (Receitas/Passivo)</option>
                     <option value="DEVEDORA">Devedora (Despesas/Ativo)</option>
@@ -235,52 +235,52 @@ export const ChartOfAccountsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Nome da Conta *</label>
+                <label className="block font-medium text-[var(--text-secondary)] mb-1">Nome da Conta *</label>
                 <input
                   type="text"
                   required
                   placeholder="Ex: Softwares e Ferramentas em Nuvem"
                   value={formData.name || ''}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full rounded border border-slate-300 px-3 py-1.5"
+                  className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] px-3 py-1.5"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Mapeamento Linha DRE</label>
+                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Mapeamento Linha DRE</label>
                   <input
                     type="text"
                     placeholder="Ex: 6.1"
                     value={formData.dreLineMapping || ''}
                     onChange={e => setFormData({ ...formData, dreLineMapping: e.target.value })}
-                    className="w-full rounded border border-slate-300 px-3 py-1.5 font-mono"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] px-3 py-1.5 font-mono"
                   />
                 </div>
                 <div className="flex items-center pt-5">
-                  <label className="flex items-center space-x-2 text-slate-700 font-medium cursor-pointer">
+                  <label className="flex items-center space-x-2 text-[var(--text-primary)] font-medium cursor-pointer">
                     <input
                       type="checkbox"
                       checked={Boolean(formData.isSynthetic)}
                       onChange={e => setFormData({ ...formData, isSynthetic: e.target.checked })}
-                      className="rounded border-slate-300 text-indigo-600"
+                      className="rounded border-[var(--border-subtle)] text-amber-500 focus:ring-amber-500"
                     />
                     <span>Conta Sintética (Grupo)</span>
                   </label>
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-subtle)]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-lg"
+                  className="px-4 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-lg cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm"
+                  className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm cursor-pointer"
                 >
                   Salvar Conta
                 </button>

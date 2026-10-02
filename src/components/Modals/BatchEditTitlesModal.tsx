@@ -148,19 +148,19 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
       <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
         
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-indigo-50/70">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-amber-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white">
           <div className="flex items-center space-x-2">
-            <Layers className="w-5 h-5 text-indigo-700" />
+            <Layers className="w-5 h-5 text-amber-400" />
             <div>
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-base font-bold text-white">
                 Alteração em Massa ({selectedTitleIds.length} selecionados)
               </h2>
-              <p className="text-[11px] text-slate-700">
+              <p className="text-[11px] text-slate-300">
                 Escolha os campos que deseja alterar simultaneamente nos títulos selecionados.
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg">
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -182,7 +182,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   type="checkbox"
                   checked={enableCompetence}
                   onChange={(e) => setEnableCompetence(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                  className="rounded text-amber-500 focus:ring-amber-500"
                 />
                 <span>Alterar Competência de Todos</span>
               </label>
@@ -208,7 +208,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   type="checkbox"
                   checked={enableDueDate}
                   onChange={(e) => setEnableDueDate(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                  className="rounded text-amber-500 focus:ring-amber-500"
                 />
                 <span>Alterar Data de Vencimento</span>
               </label>
@@ -222,7 +222,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                       name="dueDateMode"
                       checked={dueDateMode === 'FIXED'}
                       onChange={() => setDueDateMode('FIXED')}
-                      className="text-indigo-600"
+                      className="text-amber-500 focus:ring-amber-500"
                     />
                     <span>Data Fixa</span>
                   </label>
@@ -232,7 +232,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                       name="dueDateMode"
                       checked={dueDateMode === 'POSTPONE'}
                       onChange={() => setDueDateMode('POSTPONE')}
-                      className="text-indigo-600"
+                      className="text-amber-500 focus:ring-amber-500"
                     />
                     <span>Postergar Dias (+X dias)</span>
                   </label>
@@ -272,7 +272,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   type="checkbox"
                   checked={enableAccount}
                   onChange={(e) => setEnableAccount(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                  className="rounded text-amber-500 focus:ring-amber-500"
                 />
                 <span>
                   Alterar Classificação Contábil ({type === 'RECEBER' ? 'Apenas Receitas' : 'Apenas Custos & Despesas'})
@@ -308,7 +308,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
                   type="checkbox"
                   checked={enableBank}
                   onChange={(e) => setEnableBank(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                  className="rounded text-amber-500 focus:ring-amber-500"
                 />
                 <span>Alterar Conta Bancária Prevista</span>
               </label>
@@ -336,7 +336,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm transition-colors flex items-center"
+              className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm transition-colors flex items-center cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
               Aplicar em {selectedTitleIds.length} Títulos

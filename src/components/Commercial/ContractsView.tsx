@@ -538,7 +538,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-[#131720] p-5 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-indigo-700 dark:text-indigo-400" />
+            <FileText className="w-5 h-5 text-amber-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Contratos Recorrentes (MRR)</h1>
           </div>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
@@ -558,14 +558,14 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           </button>
           <button
             onClick={onOpenBillingModal}
-            className="h-9 px-3.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap"
+            className="h-9 px-3.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap"
           >
-            <CalendarClock className="w-4 h-4 mr-1.5 shrink-0" />
+            <CalendarClock className="w-4 h-4 mr-1.5 shrink-0 text-amber-500" />
             Processar Faturamento Mensal
           </button>
           <button
             onClick={handleOpenNew}
-            className="h-9 px-3.5 bg-indigo-700 text-white rounded-lg text-xs font-semibold hover:bg-indigo-800 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap"
+            className="h-9 px-3.5 bg-amber-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-amber-400 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap cursor-pointer"
           >
             <Plus className="w-4 h-4 mr-1.5 shrink-0" />
             Novo Contrato
@@ -631,9 +631,9 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
         <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Ticket Médio Ativo</span>
-            <DollarSign className="w-4 h-4 text-purple-500" />
+            <DollarSign className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-xl font-bold text-purple-700 dark:text-purple-400 mt-1.5 font-mono">
+          <div className="text-xl font-bold text-slate-900 dark:text-white mt-1.5 font-mono">
             {formatBRL(activeAvgTicket)}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
@@ -716,14 +716,14 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
             onClick={() => setStatusTab('SUSPENSO_ENCERRADO')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               statusTab === 'SUSPENSO_ENCERRADO'
-                ? 'bg-purple-600 text-white shadow-xs shadow-purple-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-purple-500/10 hover:text-purple-700 dark:hover:text-purple-300'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-purple-400 shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
             <span>Suspensos / Encerrados</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-              statusTab === 'SUSPENSO_ENCERRADO' ? 'bg-white/25 text-white font-extrabold' : 'bg-purple-500/15 text-purple-700 dark:text-purple-400'
+              statusTab === 'SUSPENSO_ENCERRADO' ? 'bg-white/25 text-white font-extrabold' : 'bg-slate-500/20 text-slate-700 dark:text-slate-300'
             }`}>
               {suspendedOrClosedContracts.length}
             </span>
@@ -817,10 +817,10 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                         )}
                         {c.adjustments && c.adjustments.length > 0 && (
                           <span 
-                            className="inline-flex items-center text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/30"
+                            className="inline-flex items-center text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded border border-amber-500/30"
                             title={`${c.adjustments.length} reajuste(s) no histórico. Último em ${formatDateBR(c.adjustments[0]?.date)}`}
                           >
-                            <TrendingUp className="w-3 h-3 mr-1 text-blue-500" />
+                            <TrendingUp className="w-3 h-3 mr-1 text-amber-500" />
                             {c.adjustments.length} reajuste(s)
                           </span>
                         )}
@@ -842,12 +842,12 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                           </span>
                         )}
                         {c.acquisitionChannel === 'REDE_SOCIAL' && (
-                          <span className="inline-flex items-center text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                          <span className="inline-flex items-center text-[10px] font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700">
                             📱 {c.acquisitionSocialNetwork || 'Rede Social'}
                           </span>
                         )}
                         {c.acquisitionChannel === 'MECANISMO_PESQUISA' && (
-                          <span className="inline-flex items-center text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                          <span className="inline-flex items-center text-[10px] font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700">
                             🔍 Google / Pesquisa
                           </span>
                         )}
@@ -973,7 +973,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
 
                       {c.status === 'SUSPENSO' && (
                         <div className="flex flex-col items-center">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/30">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
                             <Clock className="w-3 h-3" />
                             SUSPENSO
                           </span>
@@ -1178,7 +1178,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                               : formData.status === 'INATIVO'
                               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                               : formData.status === 'SUSPENSO'
-                              ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/30'
+                              ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
                               : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                           }`}>
                             <span className={`w-2 h-2 rounded-full ${
@@ -1321,7 +1321,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                                           ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/30'
                                           : entry.newStatus === 'INATIVO'
                                           ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-                                          : 'bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30'
+                                          : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600'
                                       }`}>
                                         {entry.newStatus}
                                       </span>
@@ -1948,14 +1948,14 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                 </div>
 
                 {/* Bloco 5: Histórico & Registro de Reajustes de Valor */}
-                <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 space-y-3">
+                <div className="p-4 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider block flex items-center gap-1.5">
-                        <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
+                      <span className="text-[11px] font-bold text-amber-500 uppercase tracking-wider block flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
                         5. Histórico & Registro de Reajustes de Valor
                       </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
                         Registre alterações de honorários contratuais (anuais, inflação ou escopo) com rastreabilidade completa.
                       </p>
                     </div>
@@ -1972,7 +1972,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                           });
                           setShowAdjustmentForm(true);
                         }}
-                        className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-1 shadow-xs transition-colors shrink-0"
+                        className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-xs transition-colors shrink-0 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         + Novo Reajuste
@@ -1982,10 +1982,10 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
 
                   {/* Formulário em Linha para Registrar Novo Reajuste */}
                   {showAdjustmentForm && (
-                    <div className="p-3.5 rounded-xl bg-white dark:bg-[#131720] border border-blue-300 dark:border-blue-800 shadow-sm space-y-3 animate-in fade-in">
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                        <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <History className="w-4 h-4 text-blue-500" />
+                    <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-sm space-y-3 animate-in fade-in">
+                      <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
+                        <span className="font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                          <History className="w-4 h-4 text-amber-500" />
                           Lançar Novo Reajuste de Valor
                         </span>
                         <button
@@ -2085,12 +2085,12 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                           <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">{formatBRL(formData.monthlyTotal || 0)}</span>
                           <span className="mx-2 text-slate-400">➔</span>
                           <span className="text-slate-500">Novo Valor: </span>
-                          <span className="font-bold text-blue-600 dark:text-blue-400 font-mono">{formatBRL(newAdjustmentData.newAmount)}</span>
+                          <span className="font-bold text-amber-500 font-mono">{formatBRL(newAdjustmentData.newAmount)}</span>
                           {formData.monthlyTotal && formData.monthlyTotal > 0 ? (
                             <span className={`ml-2 text-[11px] font-bold px-1.5 py-0.5 rounded ${
                               newAdjustmentData.newAmount >= formData.monthlyTotal 
-                                ? 'bg-emerald-100 text-emerald-700' 
-                                : 'bg-rose-100 text-rose-700'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' 
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
                             }`}>
                               {newAdjustmentData.newAmount >= formData.monthlyTotal ? '+' : ''}
                               {(((newAdjustmentData.newAmount - formData.monthlyTotal) / formData.monthlyTotal) * 100).toFixed(2)}%
@@ -2102,14 +2102,14 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                           <button
                             type="button"
                             onClick={() => setShowAdjustmentForm(false)}
-                            className="px-3 py-1 text-xs rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+                            className="px-3 py-1 text-xs rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] transition-colors cursor-pointer"
                           >
                             Cancelar
                           </button>
                           <button
                             type="button"
                             onClick={handleApplyAdjustment}
-                            className="px-3.5 py-1 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition-colors"
+                            className="px-3.5 py-1 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-xs transition-colors cursor-pointer"
                           >
                             Gravar Reajuste
                           </button>

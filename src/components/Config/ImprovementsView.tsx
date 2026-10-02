@@ -98,7 +98,7 @@ export const ImprovementsView: React.FC = () => {
                     r.status === 'CONCLUIDO' 
                       ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300' 
                       : r.status === 'EM_ANDAMENTO'
-                      ? 'bg-indigo-500/15 text-indigo-800 dark:text-indigo-300'
+                      ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
                       : 'bg-slate-200 dark:bg-slate-800 text-[var(--text-secondary)]'
                   }`}>
                     {r.status === 'CONCLUIDO' ? '✓ IMPLEMENTADO' : r.status === 'EM_ANDAMENTO' ? 'EM DESENVOLVIMENTO' : 'EM ANÁLISE'}

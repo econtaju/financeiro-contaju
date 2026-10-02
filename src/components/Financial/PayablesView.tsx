@@ -728,17 +728,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'ALL' && statusFilter === 'ABERTO'
               ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/30'
-              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 shadow-2xs'
+              : 'bg-white dark:bg-[#131720] hover:bg-slate-50 dark:hover:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'text-slate-300' : 'text-slate-500'
+              quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'
             }`}>
               Em Aberto
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-700'
+              quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
             }`}>
               {stats.openCount}
             </span>
@@ -746,7 +746,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.openTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'text-slate-400' : 'text-slate-500'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ALL' && statusFilter === 'ABERTO' ? 'text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
             Total a pagar em aberto
           </div>
         </button>
@@ -758,17 +758,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'HOJE'
               ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-400/40'
-              : 'bg-amber-50/50 hover:bg-amber-50 border-amber-200 text-amber-950 shadow-2xs'
+              : 'bg-amber-50/50 hover:bg-amber-50 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-800'
+              quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-800 dark:text-amber-300'
             }`}>
               Vence Hoje
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'HOJE' ? 'bg-amber-600 text-white' : 'bg-amber-200 text-amber-900'
+              quickDateFilter === 'HOJE' ? 'bg-amber-600 text-white' : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
             }`}>
               {stats.hojeCount}
             </span>
@@ -776,7 +776,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.hojeTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-700 dark:text-amber-400'}`}>
             Vencendo na data de hoje
           </div>
         </button>
@@ -788,17 +788,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'ESTA_SEMANA'
               ? 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-400/40'
-              : 'bg-rose-50/50 hover:bg-rose-50 border-rose-200 text-rose-950 shadow-2xs'
+              : 'bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/25 dark:hover:bg-rose-950/45 border-rose-200 dark:border-rose-800/60 text-rose-950 dark:text-rose-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'ESTA_SEMANA' ? 'text-rose-100' : 'text-rose-800'
+              quickDateFilter === 'ESTA_SEMANA' ? 'text-rose-100' : 'text-rose-800 dark:text-rose-300'
             }`}>
               Vence Esta Semana
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'ESTA_SEMANA' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'
+              quickDateFilter === 'ESTA_SEMANA' ? 'bg-rose-700 text-white' : 'bg-rose-200 dark:bg-rose-900/80 text-rose-900 dark:text-rose-200'
             }`}>
               {stats.semanaCount}
             </span>
@@ -806,7 +806,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.semanaTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ESTA_SEMANA' ? 'text-rose-100' : 'text-rose-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ESTA_SEMANA' ? 'text-rose-100' : 'text-rose-700 dark:text-rose-400'}`}>
             Agenda até domingo
           </div>
         </button>
@@ -818,17 +818,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'VENCIDO'
               ? 'bg-red-700 text-white border-red-800 shadow-md ring-2 ring-red-500/40'
-              : 'bg-red-50/60 hover:bg-red-50 border-red-200 text-red-950 shadow-2xs'
+              : 'bg-red-50/60 hover:bg-red-50 dark:bg-red-950/30 dark:hover:bg-red-950/50 border-red-200 dark:border-red-800/60 text-red-950 dark:text-red-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'VENCIDO' ? 'text-red-100' : 'text-red-800'
+              quickDateFilter === 'VENCIDO' ? 'text-red-100' : 'text-red-800 dark:text-red-300'
             }`}>
               Vencidos
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'VENCIDO' ? 'bg-red-800 text-white' : 'bg-red-200 text-red-900'
+              quickDateFilter === 'VENCIDO' ? 'bg-red-800 text-white' : 'bg-red-200 dark:bg-red-900/80 text-red-900 dark:text-red-200'
             }`}>
               {stats.vencidosCount}
             </span>
@@ -836,7 +836,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.vencidosTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-red-100' : 'text-red-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-red-100' : 'text-red-700 dark:text-red-400'}`}>
             Obrigações em atraso
           </div>
         </button>
@@ -851,17 +851,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           className={`p-3.5 rounded-xl border text-left transition-all col-span-2 sm:col-span-1 ${
             quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO'
               ? 'bg-emerald-700 text-white border-emerald-800 shadow-md ring-2 ring-emerald-400/40'
-              : 'bg-emerald-50/50 hover:bg-emerald-50 border-emerald-200 text-emerald-950 shadow-2xs'
+              : 'bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/45 border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-800'
+              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-800 dark:text-emerald-300'
             }`}>
               Pagos
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'bg-emerald-800 text-white' : 'bg-emerald-200 text-emerald-900'
+              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'bg-emerald-800 text-white' : 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200'
             }`}>
               {stats.liquidadosCount}
             </span>
@@ -869,14 +869,14 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.liquidadosTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-700 dark:text-emerald-400'}`}>
             Total liquidado
           </div>
         </button>
       </div>
 
       {/* Top Filter Bar (Superior Filters) */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+      <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
         
         {/* Row 1: Status Pill Tabs & Search */}
         <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
@@ -896,17 +896,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   setStatusFilter(tab.id as any);
                   setQuickDateFilter('ALL');
                 }}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                   statusFilter === tab.id && quickDateFilter === 'ALL'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 bg-slate-50 border border-slate-200'
+                    ? 'bg-slate-900 dark:bg-amber-500 text-white dark:text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700'
                 }`}
               >
                 <span>{tab.label}</span>
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                   statusFilter === tab.id && quickDateFilter === 'ALL'
-                    ? 'bg-slate-800 text-slate-200'
-                    : 'bg-slate-200/80 text-slate-700'
+                    ? 'bg-slate-800 dark:bg-amber-600 text-slate-200 dark:text-slate-950'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
                 }`}>
                   {tab.count}
                 </span>
@@ -922,23 +922,23 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               placeholder="Buscar por fornecedor, documento ou descrição..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+              className="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
             />
           </div>
         </div>
 
         {/* Row 2: Advanced Dropdown Filters (Category, Supplier, Bank Account, Origin) */}
-        <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs items-center">
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs items-center">
           
           {/* Categoria / Plano de Contas */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Plano de Contas / Despesa:
             </label>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
             >
               <option value="ALL">Todas as Despesas</option>
               {chartAccounts.filter(a => a.type === 'DESPESA').map(acc => (
@@ -951,13 +951,13 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
           {/* Fornecedor / Favorecido */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Fornecedor / Favorecido:
             </label>
             <select
               value={counterpartyFilter}
               onChange={(e) => setCounterpartyFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
             >
               <option value="ALL">Todos os Fornecedores e Clientes</option>
               <optgroup label="Fornecedores">
@@ -979,13 +979,13 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
           {/* Conta Bancária / Caixa Previsto */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Conta Bancária / Caixa:
             </label>
             <select
               value={bankFilter}
               onChange={(e) => setBankFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
             >
               <option value="ALL">Todas as Contas</option>
               {bankAccounts.map(b => (
@@ -998,13 +998,13 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
           {/* Origem / Modalidade (Cartão de Crédito vs Título) */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Modalidade / Origem:
             </label>
             <select
               value={originFilter}
               onChange={(e) => setOriginFilter(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
             >
               <option value="ALL">Todas as Modalidades</option>
               <option value="CARTAO_CREDITO">💳 Cartão de Crédito</option>
@@ -1018,7 +1018,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               <button
                 type="button"
                 onClick={handleClearFilters}
-                className="px-3 py-1.5 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg font-medium transition-colors flex items-center justify-center w-full shadow-2xs"
+                className="px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800 rounded-lg font-medium transition-colors flex items-center justify-center w-full shadow-2xs cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                 Limpar Filtros
@@ -1308,7 +1308,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         </span>
                       )}
                       {t.settlementState === 'PARCIAL' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                           Parcialmente Baixado
                         </span>
                       )}
@@ -1351,7 +1351,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                       <div>
                         <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">Competência</span>
-                        <span className="font-mono font-medium text-indigo-600 dark:text-indigo-400 block">
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 block">
                           {t.competence || '-'}
                         </span>
                       </div>
@@ -1383,8 +1383,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                       {t.originType === 'CARTAO_CREDITO' && (
                         <div className="col-span-2">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-violet-100 dark:bg-violet-950/70 text-violet-800 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
-                            <CreditCard className="w-3 h-3 text-violet-600 dark:text-violet-400" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
+                            <CreditCard className="w-3 h-3 text-amber-500" />
                             Lançamento via Cartão de Crédito
                           </span>
                         </div>
@@ -1478,158 +1478,162 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       </div>
 
       {/* Payables Table (Desktop & Tablets) */}
-      <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="hidden md:block bg-white dark:bg-[#131720] rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider select-none">
+            <thead className="bg-slate-200/90 dark:bg-[#121620] border-b-2 border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold uppercase tracking-wider select-none">
               <tr>
                 <th className="py-3 px-3 w-10 text-center">
                   <button
                     type="button"
                     onClick={handleToggleSelectAll}
-                    className="text-slate-500 hover:text-slate-800 transition-colors"
+                    className="text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
                     title={isAllSelected ? "Desmarcar todos" : "Selecionar todas as obrigações da lista"}
                   >
                     {isAllSelected ? (
-                      <CheckSquare className="w-4 h-4 text-rose-600" />
+                      <CheckSquare className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <Square className="w-4 h-4 text-slate-400" />
+                      <Square className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                     )}
                   </button>
                 </th>
 
                 {/* Título / Documento */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('titleNumber')}
                   title="Clique para ordenar por Documento/Descrição"
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Título / Documento</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Título / Documento</span>
                     {sortField === 'titleNumber' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Fornecedor / Favorecido */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('counterparty')}
                   title="Clique para ordenar por Fornecedor (Ordem Alfabética)"
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Fornecedor / Favorecido</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Fornecedor / Favorecido</span>
                     {sortField === 'counterparty' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Competência */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('competence')}
                   title="Clique para ordenar por Competência"
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Competência</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Competência</span>
                     {sortField === 'competence' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Vencimento */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('dueDate')}
                   title="Clique para ordenar por Data de Vencimento"
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Vencimento</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Vencimento</span>
                     {sortField === 'dueDate' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Previsão Caixa */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('expectedCashDate')}
                   title="Clique para ordenar por Data de Previsão de Pagamento"
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Previsão Caixa</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Previsão Caixa</span>
                     {sortField === 'expectedCashDate' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Valor Original */}
                 <th 
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('originalAmount')}
                   title="Clique para ordenar por Valor Original"
                 >
                   <div className="flex items-center justify-end space-x-1">
-                    <span>Valor Original</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Valor Original</span>
                     {sortField === 'originalAmount' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Saldo Restante */}
                 <th 
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('balancePrincipal')}
                   title="Clique para ordenar por Saldo Restante"
                 >
                   <div className="flex items-center justify-end space-x-1">
-                    <span>Saldo Restante</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Saldo Restante</span>
                     {sortField === 'balancePrincipal' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
                 {/* Situação Temporal */}
-                <th className="py-3 px-4 text-center">Situação Temporal</th>
+                <th className="py-3 px-4 text-center text-slate-900 dark:text-slate-100 font-bold">
+                  Situação Temporal
+                </th>
 
                 {/* Status */}
                 <th 
-                  className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors"
+                  className="py-3 px-4 text-center cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('status')}
                   title="Clique para ordenar por Status"
                 >
                   <div className="flex items-center justify-center space-x-1">
-                    <span>Status</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Status</span>
                     {sortField === 'status' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
                 </th>
 
-                <th className="py-3 px-4 text-right">Ações</th>
+                <th className="py-3 px-4 text-right text-slate-900 dark:text-slate-100 font-bold">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1659,23 +1663,23 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   }
 
                   // Row status styling: Red (Overdue), Yellow (Near due 0-3 days), Clean (On time)
-                  let rowColorClass = 'hover:bg-slate-50 transition-colors';
+                  let rowColorClass = 'hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/60';
                   if (t.documentState === 'CANCELADO') {
-                    rowColorClass = 'opacity-50 bg-slate-50/50';
+                    rowColorClass = 'opacity-50 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/60';
                   } else if (balance > 0) {
                     if (diffDays < 0 || titleDueDate < today) {
-                      // Overdue - Red alert
-                      rowColorClass = 'bg-rose-50/75 hover:bg-rose-100/80 border-l-4 border-l-rose-500 text-rose-950 font-medium';
+                      // Overdue - Red alert (suave e legível em ambos os temas)
+                      rowColorClass = 'bg-rose-50/75 hover:bg-rose-100/80 border-l-4 border-l-rose-500 text-rose-950 dark:bg-rose-950/25 dark:hover:bg-rose-950/45 dark:border-l-rose-500 dark:text-rose-100 font-medium border-b border-slate-100 dark:border-slate-800/60';
                     } else if (!isNaN(diffDays) && diffDays <= 3) {
                       // Near due (Today or next 3 days) - Amber alert
-                      rowColorClass = 'bg-amber-50/75 hover:bg-amber-100/80 border-l-4 border-l-amber-500 text-amber-950 font-medium';
+                      rowColorClass = 'bg-amber-50/75 hover:bg-amber-100/80 border-l-4 border-l-amber-500 text-amber-950 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 dark:border-l-amber-400 dark:text-amber-100 font-medium border-b border-slate-100 dark:border-slate-800/60';
                     }
                   } else if (t.settlementState === 'LIQUIDADO') {
-                    rowColorClass = 'hover:bg-emerald-50/30 transition-colors';
+                    rowColorClass = 'hover:bg-emerald-50/30 dark:hover:bg-emerald-950/30 transition-colors border-b border-slate-100 dark:border-slate-800/60';
                   }
 
                   if (isSelected) {
-                    rowColorClass += ' bg-rose-100/80';
+                    rowColorClass += ' bg-rose-100/80 dark:bg-rose-950/50';
                   }
 
                   return (
@@ -1690,16 +1694,16 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                           type="checkbox"
                           checked={isSelected}
                           onChange={(e) => handleToggleSelectOne(t.id, e as any)}
-                          className="rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer w-4 h-4"
+                          className="rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 cursor-pointer w-4 h-4 bg-white dark:bg-slate-800"
                         />
                       </td>
 
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-semibold text-slate-900">{t.titleNumber}</span>
+                          <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{t.titleNumber}</span>
                           {t.originType === 'CARTAO_CREDITO' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-100 text-violet-800 border border-violet-200 shadow-2xs">
-                              <CreditCard className="w-3 h-3 text-violet-600" />
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-2xs">
+                              <CreditCard className="w-3 h-3 text-amber-500" />
                               Cartão de Crédito
                             </span>
                           )}
@@ -1719,44 +1723,44 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             </button>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-700 truncate max-w-[220px]">{t.description}</div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate max-w-[220px]">{t.description}</div>
                       </td>
 
                       <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800">{supplier?.name || 'Fornecedor'}</div>
-                        <div className="text-[10px] text-slate-700">{supplier?.document}</div>
+                        <div className="font-medium text-slate-800 dark:text-slate-200">{supplier?.name || 'Fornecedor'}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">{supplier?.document}</div>
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-medium text-indigo-700">
+                      <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
                         {t.competence}
                       </td>
 
-                      <td className="py-3 px-4 text-slate-700 font-medium">
+                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
                         {formatDateBR(t.dueDate)}
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
                         {formatDateBR(t.expectedCashDate || t.dueDate)}
                       </td>
 
-                      <td className="py-3 px-4 text-right text-slate-700 font-medium">
+                      <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300 font-medium">
                         {formatBRL(t.originalAmount)}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-bold text-rose-700 text-sm">
+                      <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 text-sm">
                         {formatBRL(t.balancePrincipal)}
                       </td>
 
                       <td className="py-3 px-4 text-center">
                         {t.balancePrincipal <= 0 ? (
-                          <span className="text-[10px] font-medium text-slate-700">-</span>
+                          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">-</span>
                         ) : (
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
                             tempStatus === 'VENCIDO'
-                              ? 'bg-rose-100 text-rose-800'
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 dark:border dark:border-rose-800/60'
                               : tempStatus === 'VENCE_HOJE'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-50 text-emerald-800'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/60'
+                              : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/60'
                           }`}>
                             {tempStatus === 'VENCIDO' ? 'Vencido' : tempStatus === 'VENCE_HOJE' ? 'Vence Hoje' : 'A Vencer'}
                           </span>
@@ -1766,12 +1770,12 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       <td className="py-3 px-4 text-center">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
                           t.documentState === 'CANCELADO'
-                            ? 'bg-slate-200 text-slate-700'
+                            ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                             : t.settlementState === 'LIQUIDADO'
-                            ? 'bg-emerald-100 text-emerald-800'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/60'
                             : t.settlementState === 'PARCIAL'
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : 'bg-amber-100 text-amber-800'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 dark:border dark:border-amber-800/60'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/60'
                         }`}>
                           {t.documentState === 'CANCELADO' ? 'CANCELADO' : t.settlementState}
                         </span>
@@ -1781,7 +1785,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
                           <button
                             onClick={() => setSelectedTitleForSettlement(t)}
-                            className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded shadow-2xs transition-colors inline-flex items-center"
+                            className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded shadow-2xs transition-colors inline-flex items-center cursor-pointer"
                             title="Efetuar pagamento da obrigação"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
@@ -1791,7 +1795,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                         <button
                           onClick={() => setSelectedTitleForEdit(t)}
-                          className="p-1 text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded"
+                          className="p-1 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                           title="Editar obrigação (ou dê duplo clique na linha)"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -1799,7 +1803,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                         <button
                           onClick={(e) => handleDuplicateOne(t, e)}
-                          className="p-1 text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded"
+                          className="p-1 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                           title="Duplicar esta obrigação"
                         >
                           <Copy className="w-4 h-4" />
@@ -1807,7 +1811,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                         <button
                           onClick={() => setHistoryTitle(t)}
-                          className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+                          className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
                           title="Ver detalhes e histórico de pagamentos"
                         >
                           <Eye className="w-4 h-4" />
@@ -1816,7 +1820,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
                           <button
                             onClick={(e) => handleOpenSingleCancel(t, e)}
-                            className="p-1 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded"
+                            className="p-1 text-amber-500 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition-colors cursor-pointer"
                             title="Cancelar Obrigação (muda status para CANCELADO)"
                           >
                             <Ban className="w-4 h-4" />
@@ -1825,7 +1829,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
                         <button
                           onClick={(e) => handleOpenSingleDelete(t, e)}
-                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                          className="p-1 text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                           title="Excluir Lançamento Definitivamente"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1856,51 +1860,51 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       {/* History Modal */}
       {historyTitle && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-slate-50">
-              <h2 className="text-base font-semibold text-slate-900">
+          <div className="bg-white dark:bg-[#131720] rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 Histórico da Obrigação: {historyTitle.titleNumber}
               </h2>
-              <button onClick={() => setHistoryTitle(null)} className="text-slate-400 hover:text-slate-700 p-1">
+              <button onClick={() => setHistoryTitle(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 cursor-pointer">
                 ✕
               </button>
             </div>
 
             <div className="p-6 space-y-4 text-xs">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1">
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-slate-700">Valor Original:</span>
-                  <span className="font-semibold text-slate-800">{formatBRL(historyTitle.originalAmount)}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Valor Original:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">{formatBRL(historyTitle.originalAmount)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-700">Principal Pago:</span>
-                  <span className="font-semibold text-rose-700">{formatBRL(historyTitle.settledPrincipal)}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Principal Pago:</span>
+                  <span className="font-semibold text-rose-600 dark:text-rose-400">{formatBRL(historyTitle.settledPrincipal)}</span>
                 </div>
-                <div className="flex justify-between border-t border-slate-200 pt-1">
-                  <span className="text-slate-800 font-medium">Saldo Restante:</span>
-                  <span className="font-bold text-slate-900">{formatBRL(historyTitle.balancePrincipal)}</span>
+                <div className="flex justify-between border-t border-slate-200 dark:border-slate-800 pt-1">
+                  <span className="text-slate-800 dark:text-slate-200 font-medium">Saldo Restante:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{formatBRL(historyTitle.balancePrincipal)}</span>
                 </div>
               </div>
 
               <div>
-                <h3 className="font-bold text-slate-900 mb-2">Pagamentos Realizados</h3>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 mb-2">Pagamentos Realizados</h3>
                 {settlements.filter(s => s.titleId === historyTitle.id).length === 0 ? (
-                  <p className="text-slate-700 p-3 bg-slate-50 rounded border border-slate-100">
+                  <p className="text-slate-600 dark:text-slate-400 p-3 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800">
                     Nenhum pagamento registrado até o momento.
                   </p>
                 ) : (
                   <div className="space-y-2">
                     {settlements.filter(s => s.titleId === historyTitle.id).map(s => (
-                      <div key={s.id} className="p-3 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
-                        <div className="flex justify-between font-semibold text-slate-800">
+                      <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+                        <div className="flex justify-between font-semibold text-slate-800 dark:text-slate-200">
                           <span>Data: {formatDateBR(s.settlementDate)}</span>
-                          <span className="text-rose-700">-{formatBRL(s.components.netFinancialAmount)}</span>
+                          <span className="text-rose-600 dark:text-rose-400">-{formatBRL(s.components.netFinancialAmount)}</span>
                         </div>
-                        <div className="text-slate-600 text-[11px]">
+                        <div className="text-slate-600 dark:text-slate-400 text-[11px]">
                           Principal pago: {formatBRL(s.components.principalSettled)} | Desconto: {formatBRL(s.components.discount)} | Juros: {formatBRL(s.components.interest)}
                         </div>
                         {s.voucherRef && (
-                          <div className="text-slate-700 text-[10px]">Autenticação: {s.voucherRef}</div>
+                          <div className="text-slate-500 dark:text-slate-400 text-[10px]">Autenticação: {s.voucherRef}</div>
                         )}
                       </div>
                     ))}
@@ -1909,10 +1913,10 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex justify-end">
               <button
                 onClick={() => setHistoryTitle(null)}
-                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg"
+                className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer"
               >
                 Fechar
               </button>

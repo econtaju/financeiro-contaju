@@ -145,16 +145,16 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
         
         {/* Header com estilo Magic Board */}
-        <div className="px-6 py-4 bg-gradient-to-r from-indigo-700 via-indigo-600 to-indigo-800 text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-amber-500/30 text-white flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="p-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/20">
-              <FolderPlus className="w-5 h-5 text-indigo-100" />
+              <FolderPlus className="w-5 h-5 text-amber-400" />
             </div>
             <div>
               <h3 className="text-base font-bold text-white tracking-tight">
                 Nova Conta no Plano de Contas
               </h3>
-              <p className="text-xs text-indigo-200">
+              <p className="text-xs text-slate-300">
                 Cadastre a categoria ou subcategoria sem perder seu lançamento
               </p>
             </div>
@@ -175,7 +175,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
             onClick={() => setMode('SUBCATEGORIA')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
               mode === 'SUBCATEGORIA'
-                ? 'border-indigo-600 text-indigo-700'
+                ? 'border-amber-500 text-amber-500 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -187,7 +187,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
             onClick={() => setMode('CATEGORIA')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
               mode === 'CATEGORIA'
-                ? 'border-indigo-600 text-indigo-700'
+                ? 'border-amber-500 text-amber-500 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -213,7 +213,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
               <select
                 value={parentAccountId}
                 onChange={(e) => handleSelectParent(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 required
               >
                 <option value="">Selecione o grupo/categoria pai...</option>
@@ -243,7 +243,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
                 value={accountCode}
                 onChange={(e) => setAccountCode(e.target.value)}
                 placeholder="Ex: 4.1.15"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 required
               />
             </div>
@@ -257,7 +257,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
                 placeholder={mode === 'SUBCATEGORIA' ? 'Ex: Softwares e Ferramentas de TI' : 'Ex: DESPESAS COM TECNOLOGIA'}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 required
                 autoFocus
               />
@@ -330,7 +330,7 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
+              className="px-5 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
             >
               <PlusCircle className="w-4 h-4" />
               Salvar e Selecionar

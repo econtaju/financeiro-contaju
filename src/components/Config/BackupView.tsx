@@ -231,7 +231,7 @@ export const BackupView: React.FC = () => {
             <div className="p-3.5 bg-slate-50 dark:bg-[#1B212D] rounded-xl border border-slate-200/80 dark:border-[#273040]">
               <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wider">Títulos Fin.</span>
-                <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
               </div>
               <div className="text-lg font-bold text-slate-900 dark:text-white">{titles.length}</div>
               <div className="text-[10px] text-slate-500">Pagar e Receber</div>
@@ -329,7 +329,7 @@ export const BackupView: React.FC = () => {
       {/* Seção 2: Restauração de Backup */}
       <div className="bg-white dark:bg-[#131720] p-6 rounded-2xl border border-slate-200 dark:border-[#273040] shadow-2xs space-y-4">
         <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-[#273040] pb-3">
-          <Upload className="w-4 h-4 text-indigo-500" />
+          <Upload className="w-4 h-4 text-amber-400" />
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             Restaurar Base de Dados a Partir de um Arquivo .JSON
           </h2>

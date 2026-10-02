@@ -151,7 +151,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                 max={today}
                 value={settlementDate}
                 onChange={(e) => setSettlementDate(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 required
               />
               <span className="text-[10px] text-slate-500 mt-0.5 block">Data do movimento bancário</span>
@@ -164,7 +164,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
               <select
                 value={bankAccountId}
                 onChange={(e) => setBankAccountId(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-900 bg-white"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium text-slate-900 bg-white"
                 required
               >
                 <option value="">Selecione a conta bancária...</option>
@@ -180,7 +180,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                 <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                   <div>
                     <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                      <Landmark className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+                      <Landmark className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                       <span>{selectedAccount.name}</span>
                       <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded font-mono">
                         {selectedAccount.type}
@@ -207,7 +207,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
           <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
             <div className="flex items-center justify-between font-semibold text-slate-800 border-b border-slate-200 pb-2">
               <span className="flex items-center">
-                <Calculator className="w-4 h-4 mr-1 text-indigo-600" />
+                <Calculator className="w-4 h-4 mr-1 text-amber-500" />
                 Composição Financeira da Baixa
               </span>
               <span className="text-[10px] font-normal text-slate-500">Regra de Cálculo Oficial</span>

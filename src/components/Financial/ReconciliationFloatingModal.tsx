@@ -474,7 +474,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
                         title="Lança a diferença a maior como multa"
                       >
-                        <Plus className="w-3.5 h-3.5 text-indigo-500" />
+                        <Plus className="w-3.5 h-3.5 text-amber-500" />
                         <span>Lançar como Multa (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
                       </button>
                     </>
@@ -596,7 +596,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#1B212D]/60 border border-slate-200 dark:border-[#273040] space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-[#273040]">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                   <span className="font-bold text-xs text-slate-900 dark:text-white uppercase tracking-wider">
                     Lançamento Contábil no ERP
                   </span>
@@ -625,7 +625,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                   })}
                   <div className="pt-2 border-t border-slate-200 dark:border-[#273040] flex justify-between font-bold text-xs">
                     <span>Total dos Títulos:</span>
-                    <span className="font-mono text-blue-600 dark:text-blue-400">{formatBRL(totalTitlesAmount)}</span>
+                    <span className="font-mono text-slate-900 dark:text-amber-400">{formatBRL(totalTitlesAmount)}</span>
                   </div>
                 </div>
               ) : singleTitle ? (
@@ -639,7 +639,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] text-slate-500 uppercase font-semibold block">Saldo em Aberto:</span>
-                      <span className="text-base font-extrabold font-mono text-blue-600 dark:text-blue-400">
+                      <span className="text-base font-extrabold font-mono text-slate-900 dark:text-amber-400">
                         {formatBRL(currentTitleBalance)}
                       </span>
                     </div>
@@ -660,7 +660,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                 </div>
               ) : (
                 <div className="p-8 text-center text-slate-400 bg-white dark:bg-[#131720] rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-                  <AlertCircle className="w-8 h-8 text-blue-500 mx-auto mb-2 opacity-60" />
+                  <AlertCircle className="w-8 h-8 text-amber-500 mx-auto mb-2 opacity-80" />
                   <p className="font-bold text-xs text-slate-800 dark:text-slate-200">Nenhum título contábil selecionado</p>
                   <p className="text-[11px] text-slate-500 mt-1">Marque ou clique em "Conciliar" em um título na coluna do ERP para confrontar.</p>
                 </div>
@@ -718,7 +718,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
 
                 {/* Multa */}
                 <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <label className="text-[10px] text-indigo-400 font-bold uppercase block mb-1">
+                  <label className="text-[10px] text-amber-400 font-bold uppercase block mb-1">
                     + Multa (R$)
                   </label>
                   <input
@@ -727,7 +727,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                     min="0"
                     value={adjFine || ''}
                     onChange={e => setAdjFine(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-indigo-300 font-mono focus:border-indigo-400 focus:outline-hidden"
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:border-amber-400 focus:outline-hidden"
                   />
                   <span className="text-[9px] text-slate-500 mt-1 block">Penalidade contratual</span>
                 </div>
@@ -754,8 +754,8 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                 <div className="text-slate-300">
                   <span>Cálculo: </span>
                   <span className="text-white font-semibold">{formatBRL(adjPrincipal)}</span>
-                  {adjInterest > 0 && <span className="text-sky-400"> + {formatBRL(adjInterest)} (Juros)</span>}
-                  {adjFine > 0 && <span className="text-indigo-400"> + {formatBRL(adjFine)} (Multa)</span>}
+                  {adjInterest > 0 && <span className="text-rose-400"> + {formatBRL(adjInterest)} (Juros)</span>}
+                  {adjFine > 0 && <span className="text-amber-400"> + {formatBRL(adjFine)} (Multa)</span>}
                   {adjDiscount > 0 && <span className="text-emerald-400"> - {formatBRL(adjDiscount)} (Desc)</span>}
                   <span className="text-white font-bold"> = Total: {formatBRL(totalSettledCalculated)}</span>
                 </div>

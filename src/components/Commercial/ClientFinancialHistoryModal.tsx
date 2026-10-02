@@ -291,7 +291,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                 {client.status}
               </span>
               {activeContracts.length > 0 && (
-                <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 rounded">
+                <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
                   {activeContracts.length} Contrato(s) Ativo(s)
                 </span>
               )}
@@ -1145,7 +1145,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                     onClick={() => setMovementFilter('FATURA')}
                     className={`px-2 py-1 rounded font-medium transition-all ${
                       movementFilter === 'FATURA'
-                        ? 'bg-indigo-500/20 text-indigo-300 font-semibold'
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -1192,7 +1192,7 @@ export const ClientFinancialHistoryModal: React.FC<ClientFinancialHistoryModalPr
                               ? 'border-rose-400 ring-4 ring-rose-500/10'
                               : ev.type === 'CONTRATO'
                                 ? 'border-amber-400 ring-4 ring-amber-500/10'
-                                : 'border-indigo-400 ring-4 ring-indigo-500/10'
+                                : 'border-amber-400 ring-4 ring-amber-500/10'
                         }`} />
 
                         <div className="p-3.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] group-hover:border-amber-500/30 transition-all">

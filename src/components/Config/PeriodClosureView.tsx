@@ -703,7 +703,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
             Auditor Responsável
           </span>
           <div className="flex items-center gap-2 mt-1.5">
-            <ShieldAlert className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <ShieldAlert className="w-5 h-5 text-amber-500" />
             <span className="text-sm font-bold text-[var(--text-primary)] truncate">
               {currentUser.name}
             </span>
@@ -717,7 +717,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
       {/* SELETOR DE COMPETÊNCIA PARA AUDITORIA */}
       <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
             <Calendar className="w-5 h-5" />
           </div>
           <div>
@@ -975,9 +975,9 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                 <button
                   type="button"
                   onClick={() => onNavigate('PLANO_CONTAS')}
-                  className="px-3 py-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-slate-200 dark:hover:bg-[#1B212D] text-[var(--text-primary)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-slate-200 dark:hover:bg-[#1B212D] text-[var(--text-primary)] border border-[var(--border-subtle)] text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                 >
-                  <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
                   <span>Plano de Contas</span>
                 </button>
               )}
@@ -990,9 +990,9 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
               <div className={`p-2 rounded-xl mt-0.5 shrink-0 ${
                 checklist?.isTaxesOk 
                   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
-                  : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                  : 'bg-slate-500/15 text-slate-700 dark:text-slate-300'
               }`}>
-                {checklist?.isTaxesOk ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                {checklist?.isTaxesOk ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4 text-amber-500" />}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -1001,8 +1001,8 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     checklist?.isTaxesOk 
-                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' 
-                      : 'bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-300'
+                       ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' 
+                       : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                   }`}>
                     {checklist?.isTaxesOk ? 'Tributos Provisionados' : 'Sem Guias Identificadas'}
                   </span>
@@ -1146,7 +1146,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                           R$ 0,00
                         </span>
                       ) : isPositiveDiff ? (
-                        <span className="text-indigo-700 dark:text-indigo-400 font-extrabold flex items-center justify-end gap-1">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-extrabold flex items-center justify-end gap-1">
                           <ArrowUpRight className="w-3.5 h-3.5" />
                           +{formatBRL(item.difference)}
                         </span>
@@ -1179,7 +1179,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
 
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               isPositiveDiff 
-                                ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800/40' 
+                                ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/40' 
                                 : 'bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800/40'
                             }`} title={isPositiveDiff ? 'Sobra no Banco (Passando)' : 'Falta no Banco (Faltando)'}>
                               {isPositiveDiff ? '+ Sobra' : '- Falta'}
@@ -1221,7 +1221,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                   {areAllBanksMatched ? (
                     <span className="text-emerald-700 dark:text-emerald-400">R$ 0,00</span>
                   ) : totalBankDifference > 0 ? (
-                    <span className="text-indigo-700 dark:text-indigo-400">+{formatBRL(totalBankDifference)}</span>
+                    <span className="text-emerald-700 dark:text-emerald-400">+{formatBRL(totalBankDifference)}</span>
                   ) : (
                     <span className="text-rose-700 dark:text-rose-400">{formatBRL(totalBankDifference)}</span>
                   )}
@@ -1256,7 +1256,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] leading-relaxed">
               <div className="p-3 rounded-xl bg-white/60 dark:bg-black/20 border border-amber-500/20">
-                <strong className="block text-indigo-900 dark:text-indigo-300 mb-1">
+                <strong className="block text-emerald-900 dark:text-emerald-300 mb-1">
                   1. Se estiver "Passando no Banco" (+ Sobra de Saldo no Extrato):
                 </strong>
                 Verifique se houve recebimentos de clientes via Pix direto não baixados, créditos de rendimentos de aplicação financeira ou transferências entre contas que entraram no banco mas não foram registradas.
@@ -1542,7 +1542,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                             className="px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl transition-all inline-flex items-center gap-1 cursor-pointer"
                             title="Ver Saldos e Checklist gravados no fechamento"
                           >
-                            <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                            <Eye className="w-3.5 h-3.5 text-amber-500" />
                             <span>Detalhes</span>
                           </button>
                         )}
@@ -1768,7 +1768,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                             {b.isMatched ? (
                               <span className="text-emerald-600 dark:text-emerald-400">R$ 0,00</span>
                             ) : (
-                              <span className={b.difference > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}>
+                              <span className={b.difference > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                                 {formatBRL(b.difference)}
                               </span>
                             )}
@@ -2135,7 +2135,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                             {b.isMatched ? (
                               <span className="text-emerald-700 dark:text-emerald-400">R$ 0,00</span>
                             ) : (
-                              <span className={b.difference > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}>
+                              <span className={b.difference > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                                 {b.difference > 0 ? `+${formatBRL(b.difference)}` : formatBRL(b.difference)}
                               </span>
                             )}

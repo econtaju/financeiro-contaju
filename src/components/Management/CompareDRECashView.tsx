@@ -61,7 +61,7 @@ export const CompareDRECashView: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
-            <Scale className="w-5 h-5 text-indigo-700" />
+            <Scale className="w-5 h-5 text-amber-500" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               Conciliação Executiva: DRE (Competência) x Caixa (Realizado)
             </h1>
@@ -83,13 +83,13 @@ export const CompareDRECashView: React.FC = () => {
       </div>
 
       {/* Explanatory Rule Box */}
-      <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-950 flex items-start space-x-3">
-        <Info className="w-5 h-5 text-indigo-700 mt-0.5 flex-shrink-0" />
+      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-slate-900 dark:text-slate-100 flex items-start space-x-3">
+        <Info className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
         <div className="space-y-1">
-          <span className="font-bold text-indigo-900">
+          <span className="font-bold text-slate-900 dark:text-slate-100">
             Princípio Contábil Fundamental
           </span>
-          <p className="text-indigo-800/90 leading-relaxed">
+          <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
             "Lucro não é caixa." A DRE reconhece os direitos e obrigações no momento em que o serviço é prestado ou o custo incorrido (Regime de Competência). 
             O Fluxo de Caixa registra o dinheiro apenas no momento de sua efetiva liquidação bancária.
             A conciliação abaixo mapeia exatamente as pontes e defasagens temporais entre os dois universos.
@@ -103,7 +103,7 @@ export const CompareDRECashView: React.FC = () => {
         {/* Left: DRE Result */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-800">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-500">
               Visão Econômica (DRE - Competência)
             </span>
             <span className="text-[10px] font-mono text-slate-700">{formatCompetence(selectedCompetence)}</span>

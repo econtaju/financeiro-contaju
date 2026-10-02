@@ -143,7 +143,7 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
                 }`}
                 title="Tema do Sistema: Utiliza as variáveis de cor exatas do app (Dark ou Light)"
               >
-                <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                <Moon className="w-3.5 h-3.5 text-amber-400" />
                 <span className="hidden sm:inline">Tema do App</span>
               </button>
             </div>
@@ -305,8 +305,8 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
                   let rowText = isDark ? 'text-slate-200' : 'text-slate-800';
 
                   if (row.isNetLine) {
-                    rowBg = isDark ? 'bg-indigo-950/40 font-bold' : 'bg-indigo-50 font-bold';
-                    rowText = isDark ? 'text-indigo-200' : 'text-indigo-950';
+                    rowBg = isDark ? 'bg-amber-950/40 font-bold' : 'bg-amber-50 font-bold';
+                    rowText = isDark ? 'text-amber-300' : 'text-slate-950';
                   } else if (row.isSummary) {
                     rowBg = isDark ? 'bg-[#19202D] font-bold' : 'bg-slate-100 font-bold';
                     rowText = isDark ? 'text-white' : 'text-slate-900';

@@ -266,7 +266,7 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden font-sans antialiased transition-colors relative">
+    <div className="flex h-screen w-full max-w-full bg-[var(--bg-app)] text-[var(--text-primary)] overflow-x-hidden overflow-y-hidden font-sans antialiased transition-colors relative">
       
       {/* Floating Focus Mode Banner */}
       {isFocusMode && (
@@ -275,7 +275,7 @@ function AppContent() {
           <span className="text-xs font-semibold text-amber-300">Modo Foco Ativo</span>
           <button
             onClick={() => setIsFocusMode(false)}
-            className="ml-1 px-2.5 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] flex items-center gap-1.5 transition-colors shadow-xs"
+            className="ml-1 px-2.5 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             title="Pressione ESC para sair do Modo Foco"
           >
             <Minimize2 className="w-3.5 h-3.5" />
@@ -298,32 +298,16 @@ function AppContent() {
       )}
 
       {/* Main Layout Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0 max-w-full">
         
-        {/* Mobile Header Bar with Hamburger (hidden in Focus Mode) */}
-        {!isFocusMode && (
-          <div className="md:hidden bg-[var(--surface-card)] text-[var(--text-primary)] p-3 flex items-center justify-between border-b border-[var(--border-subtle)]">
-            <button
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="p-1.5 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]"
-              aria-label="Abrir menu lateral"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <span className="font-bold text-sm text-amber-400">Contaju Gestão Financeira</span>
-            <div className="w-7 h-7 rounded-lg bg-[#101827] border border-amber-400/40 text-amber-400 flex items-center justify-center font-bold text-xs">
-              {currentUser.name.substring(0, 2).toUpperCase()}
-            </div>
-          </div>
-        )}
-
-        {/* Global Header (hidden in Focus Mode) */}
+        {/* Global Header Responsivo (hidden in Focus Mode) */}
         {!isFocusMode && (
           <Header
             currentUser={currentUser}
             onOpenNewTitleModal={handleOpenNewTitleModal}
             onOpenTransferModal={() => setIsTransferModalOpen(true)}
             onOpenBillingModal={() => setIsBillingModalOpen(true)}
+            onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
             onNavigate={(screen) => setCurrentScreen(screen)}
             onNavigateWithSearch={handleNavigateWithSearch}
             onToggleCalculator={handleToggleCalculator}
@@ -332,11 +316,11 @@ function AppContent() {
           />
         )}
 
-        {/* Main Dynamic View Scroll Area - Full Screen Width */}
-        <main className={`flex-1 overflow-y-auto bg-[var(--bg-app)] text-[var(--text-primary)] w-full min-w-0 ${
-          isFocusMode ? 'p-3 sm:p-5' : 'p-2.5 sm:p-3.5 md:p-4'
+        {/* Main Dynamic View Scroll Area - Full Screen Width Responsivo */}
+        <main className={`flex-1 overflow-y-auto overflow-x-hidden bg-[var(--bg-app)] text-[var(--text-primary)] w-full max-w-full min-w-0 ${
+          isFocusMode ? 'p-2 sm:p-4' : 'p-2 sm:p-3 md:p-4 lg:p-5'
         }`}>
-          <div className="w-full min-w-0 space-y-4">
+          <div className="w-full max-w-full min-w-0 space-y-4">
             {renderActiveScreen()}
           </div>
         </main>

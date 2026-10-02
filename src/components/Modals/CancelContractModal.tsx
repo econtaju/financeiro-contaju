@@ -229,12 +229,12 @@ export const CancelContractModal: React.FC<CancelContractModalProps> = ({
                 <label 
                   className={`p-3 rounded-xl border flex flex-col gap-1 cursor-pointer transition-all ${
                     actionType === 'SUSPENSO'
-                      ? 'border-purple-500 bg-purple-500/10 shadow-xs'
-                      : 'border-slate-200 dark:border-[#273040] bg-white dark:bg-[#1B212D]/50 hover:border-purple-300'
+                      ? 'border-amber-500 bg-amber-500/10 shadow-xs'
+                      : 'border-slate-200 dark:border-[#273040] bg-white dark:bg-[#1B212D]/50 hover:border-amber-400'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1.5">
+                    <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5" />
                       Suspender
                     </span>
@@ -243,7 +243,7 @@ export const CancelContractModal: React.FC<CancelContractModalProps> = ({
                       name="actionType"
                       checked={actionType === 'SUSPENSO'}
                       onChange={() => setActionType('SUSPENSO')}
-                      className="text-purple-600 focus:ring-purple-500"
+                      className="text-amber-500 focus:ring-amber-500"
                     />
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">

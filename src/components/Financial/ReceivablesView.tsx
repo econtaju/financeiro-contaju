@@ -844,17 +844,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'HOJE'
               ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-400/40'
-              : 'bg-amber-50/50 hover:bg-amber-50 border-amber-200 text-amber-950 shadow-2xs'
+              : 'bg-amber-50/50 hover:bg-amber-50 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-800'
+              quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-800 dark:text-amber-300'
             }`}>
               Vence Hoje
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'HOJE' ? 'bg-amber-600 text-white' : 'bg-amber-200 text-amber-900'
+              quickDateFilter === 'HOJE' ? 'bg-amber-600 text-white' : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
             }`}>
               {stats.hojeCount}
             </span>
@@ -862,7 +862,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.hojeTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'HOJE' ? 'text-amber-100' : 'text-amber-700 dark:text-amber-400'}`}>
             Vencendo na data de hoje
           </div>
         </button>
@@ -873,18 +873,18 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           onClick={() => setQuickDateFilter(prev => prev === 'ESTA_SEMANA' ? 'ALL' : 'ESTA_SEMANA')}
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'ESTA_SEMANA'
-              ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-400/40'
-              : 'bg-indigo-50/50 hover:bg-indigo-50 border-indigo-200 text-indigo-950 shadow-2xs'
+              ? 'bg-slate-900 text-white border-amber-500 shadow-md ring-2 ring-amber-400/40'
+              : 'bg-[var(--surface-card)] hover:bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-primary)] shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'ESTA_SEMANA' ? 'text-indigo-100' : 'text-indigo-800'
+              quickDateFilter === 'ESTA_SEMANA' ? 'text-amber-400' : 'text-slate-700 dark:text-slate-300'
             }`}>
               Vence Esta Semana
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'ESTA_SEMANA' ? 'bg-indigo-700 text-white' : 'bg-indigo-200 text-indigo-900'
+              quickDateFilter === 'ESTA_SEMANA' ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
             }`}>
               {stats.semanaCount}
             </span>
@@ -892,7 +892,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.semanaTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ESTA_SEMANA' ? 'text-indigo-100' : 'text-indigo-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ESTA_SEMANA' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
             Agenda até domingo
           </div>
         </button>
@@ -904,17 +904,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'VENCIDO'
               ? 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-400/40'
-              : 'bg-rose-50/60 hover:bg-rose-50 border-rose-200 text-rose-950 shadow-2xs'
+              : 'bg-rose-50/60 hover:bg-rose-50 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 border-rose-200 dark:border-rose-800/60 text-rose-950 dark:text-rose-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-800'
+              quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-800 dark:text-rose-300'
             }`}>
               Vencidos
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'VENCIDO' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'
+              quickDateFilter === 'VENCIDO' ? 'bg-rose-700 text-white' : 'bg-rose-200 dark:bg-rose-900/80 text-rose-900 dark:text-rose-200'
             }`}>
               {stats.vencidosCount}
             </span>
@@ -922,7 +922,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.vencidosTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'VENCIDO' ? 'text-rose-100' : 'text-rose-700 dark:text-rose-400'}`}>
             Títulos em atraso
           </div>
         </button>
@@ -937,17 +937,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           className={`p-3.5 rounded-xl border text-left transition-all col-span-2 sm:col-span-1 ${
             quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO'
               ? 'bg-emerald-700 text-white border-emerald-800 shadow-md ring-2 ring-emerald-400/40'
-              : 'bg-emerald-50/50 hover:bg-emerald-50 border-emerald-200 text-emerald-950 shadow-2xs'
+              : 'bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/45 border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-200 shadow-2xs'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-800'
+              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-800 dark:text-emerald-300'
             }`}>
               Recebidos
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'bg-emerald-800 text-white' : 'bg-emerald-200 text-emerald-900'
+              quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'bg-emerald-800 text-white' : 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200'
             }`}>
               {stats.liquidadosCount}
             </span>
@@ -955,7 +955,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           <div className="text-base font-bold mt-1.5 truncate">
             {formatBRL(stats.liquidadosTotal)}
           </div>
-          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO' ? 'text-emerald-100' : 'text-emerald-700 dark:text-emerald-400'}`}>
             Total liquidado
           </div>
         </button>
@@ -1109,9 +1109,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         const totalSelectedBalance = selectedTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
 
         return (
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 rounded-xl border border-indigo-800 shadow-xl flex flex-wrap justify-between items-center gap-3 animate-in slide-in-from-top duration-200">
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-3.5 rounded-xl border border-amber-500/40 shadow-xl flex flex-wrap justify-between items-center gap-3 animate-in slide-in-from-top duration-200">
             <div className="flex items-center space-x-3">
-              <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-xs shadow-xs">
+              <span className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-xs shadow-xs">
                 {selectedIds.length}
               </span>
               <div>
@@ -1123,8 +1123,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-indigo-200">
-                  Saldo total selecionado: <strong>{formatBRL(totalSelectedBalance)}</strong>
+                <div className="text-[11px] text-slate-300">
+                  Saldo total selecionado: <strong className="text-amber-400 font-bold">{formatBRL(totalSelectedBalance)}</strong>
                 </div>
               </div>
             </div>
@@ -1162,7 +1162,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
               <button
                 onClick={() => setIsBatchEditOpen(true)}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5 mr-1.5" />
                 Alteração em Massa
@@ -1216,17 +1216,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       })()}
 
       {/* Summary Banner of current list */}
-      <div className="bg-emerald-50/50 border border-emerald-100 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
-        <span className="text-emerald-900 flex items-center flex-wrap gap-1">
+      <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/60 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+        <span className="text-emerald-900 dark:text-emerald-200 flex items-center flex-wrap gap-1">
           <span>Listando <strong>{sortedTitles.length}</strong> lançamentos correspondentes aos filtros.</span>
-          <span className="hidden sm:inline ml-2 text-[11px] text-slate-700 bg-white/80 px-2 py-0.5 rounded border border-emerald-200">
+          <span className="hidden sm:inline ml-2 text-[11px] text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700">
             💡 Dica: Duplo clique em qualquer linha para editar o título
           </span>
-          <span className="sm:hidden text-[10px] text-emerald-700 font-medium">
+          <span className="sm:hidden text-[10px] text-emerald-700 dark:text-emerald-300 font-medium">
             👆 Toque na linha para ver os detalhes completos
           </span>
         </span>
-        <span className="text-emerald-950 font-bold text-xs sm:text-sm">
+        <span className="text-emerald-950 dark:text-emerald-100 font-bold text-xs sm:text-sm">
           Saldo em Aberto Filtrado: {formatBRL(sortedTitles.filter(t => t.documentState !== 'CANCELADO').reduce((acc, t) => acc + t.balancePrincipal, 0))}
         </span>
       </div>
@@ -1385,7 +1385,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         </span>
                       )}
                       {t.settlementState === 'PARCIAL' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                           Parcialmente Baixado
                         </span>
                       )}
@@ -1412,7 +1412,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
                       <div>
                         <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">Competência</span>
-                        <span className="font-mono font-medium text-indigo-600 dark:text-indigo-400 block">
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 block">
                           {t.competence || '-'}
                         </span>
                       </div>
@@ -1583,22 +1583,22 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       </div>
 
       {/* Receivables Table (Desktop & Tablets) */}
-      <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="hidden md:block bg-white dark:bg-[#131720] rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
+            <thead className="bg-slate-200/90 dark:bg-[#121620] border-b-2 border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold uppercase tracking-wider select-none">
               <tr>
                 <th className="py-3 px-3 w-10 text-center">
                   <button
                     type="button"
                     onClick={handleToggleSelectAll}
-                    className="text-slate-500 hover:text-slate-800 transition-colors"
+                    className="text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
                     title={isAllSelected ? "Desmarcar todos" : "Selecionar todos os títulos da lista"}
                   >
                     {isAllSelected ? (
-                      <CheckSquare className="w-4 h-4 text-indigo-600" />
+                      <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     ) : (
-                      <Square className="w-4 h-4 text-slate-400" />
+                      <Square className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                     )}
                   </button>
                 </th>
@@ -1606,13 +1606,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Título */}
                 <th 
                   onClick={() => handleSort('titleNumber')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por número do título"
                 >
                   <div className="flex items-center gap-1">
                     <span>Título / Lançamento</span>
                     {sortField === 'titleNumber' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1622,13 +1622,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Cliente */}
                 <th 
                   onClick={() => handleSort('counterparty')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por nome do cliente (ordem alfabética)"
                 >
                   <div className="flex items-center gap-1">
                     <span>Cliente</span>
                     {sortField === 'counterparty' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1638,13 +1638,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Competência */}
                 <th 
                   onClick={() => handleSort('competence')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por competência"
                 >
                   <div className="flex items-center gap-1">
                     <span>Competência</span>
                     {sortField === 'competence' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1654,13 +1654,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Vencimento */}
                 <th 
                   onClick={() => handleSort('dueDate')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por data de vencimento"
                 >
                   <div className="flex items-center gap-1">
                     <span>Vencimento</span>
                     {sortField === 'dueDate' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1670,13 +1670,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Previsão Caixa */}
                 <th 
                   onClick={() => handleSort('expectedCashDate')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por previsão de caixa"
                 >
                   <div className="flex items-center gap-1">
                     <span>Previsão Caixa</span>
                     {sortField === 'expectedCashDate' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1686,13 +1686,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Valor Original */}
                 <th 
                   onClick={() => handleSort('originalAmount')}
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por valor original"
                 >
                   <div className="flex items-center justify-end gap-1">
                     <span>Valor Original</span>
                     {sortField === 'originalAmount' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1702,13 +1702,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Saldo Devedor */}
                 <th 
                   onClick={() => handleSort('balancePrincipal')}
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por saldo devedor"
                 >
                   <div className="flex items-center justify-end gap-1">
                     <span>Saldo Devedor</span>
                     {sortField === 'balancePrincipal' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1721,13 +1721,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 {/* Sortable Column: Status */}
                 <th 
                   onClick={() => handleSort('status')}
-                  className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 select-none transition-colors"
+                  className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por status de liquidação"
                 >
                   <div className="flex items-center justify-center gap-1">
                     <span>Status</span>
                     {sortField === 'status' ? (
-                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     )}
@@ -1763,17 +1763,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   const isOverdue = balance > 0 && titleDueDate < today;
                   const isNearDue = balance > 0 && !isOverdue && !isNaN(daysDiff) && daysDiff >= 0 && daysDiff <= 3;
 
-                  let rowColorClass = 'hover:bg-slate-50 border-l-4 border-l-transparent';
+                  let rowColorClass = 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-l-transparent';
                   if (t.documentState === 'CANCELADO') {
-                    rowColorClass = 'opacity-50 bg-slate-50/50 border-l-4 border-l-slate-300';
+                    rowColorClass = 'opacity-50 bg-slate-50/50 dark:bg-slate-900/40 border-l-4 border-l-slate-300 dark:border-l-slate-700';
                   } else if (t.settlementState === 'LIQUIDADO') {
-                    rowColorClass = 'bg-emerald-50/25 hover:bg-emerald-50/50 border-l-4 border-l-emerald-400';
+                    rowColorClass = 'bg-emerald-50/25 hover:bg-emerald-50/50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 border-l-4 border-l-emerald-400';
                   } else if (isOverdue) {
-                    // Soft red for overdue row as requested
-                    rowColorClass = 'bg-rose-50/75 hover:bg-rose-100/80 border-l-4 border-l-rose-500 text-rose-950 font-medium';
+                    // Soft red for overdue row with full dark contrast
+                    rowColorClass = 'bg-rose-50/75 hover:bg-rose-100/80 border-l-4 border-l-rose-500 text-rose-950 dark:bg-rose-950/25 dark:hover:bg-rose-950/45 dark:border-l-rose-500 dark:text-rose-100 font-medium';
                   } else if (isNearDue) {
-                    // Soft yellow for near due row as requested
-                    rowColorClass = 'bg-amber-50/75 hover:bg-amber-100/80 border-l-4 border-l-amber-500 text-amber-950 font-medium';
+                    // Soft yellow for near due row with full dark contrast
+                    rowColorClass = 'bg-amber-50/75 hover:bg-amber-100/80 border-l-4 border-l-amber-500 text-amber-950 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 dark:border-l-amber-400 dark:text-amber-100 font-medium';
                   }
 
                   return (
@@ -1782,7 +1782,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       onDoubleClick={() => setSelectedTitleForEdit(t)}
                       title="💡 Dê um duplo clique para editar este lançamento"
                       className={`${rowColorClass} transition-colors cursor-pointer select-none ${
-                        isSelected ? 'bg-indigo-50/90 ring-1 ring-inset ring-indigo-300' : ''
+                        isSelected ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400' : ''
                       }`}
                     >
                       <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1790,7 +1790,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                           type="checkbox"
                           checked={isSelected}
                           onChange={(e) => handleToggleSelectOne(t.id, e as any)}
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                          className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer w-4 h-4"
                         />
                       </td>
 
@@ -1822,7 +1822,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <div className="text-[10px] text-slate-700">{client?.document}</div>
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-medium text-indigo-700">
+                      <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
                         {t.competence}
                       </td>
 
@@ -1865,7 +1865,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             : t.settlementState === 'LIQUIDADO'
                             ? 'bg-emerald-100 text-emerald-800'
                             : t.settlementState === 'PARCIAL'
-                            ? 'bg-indigo-100 text-indigo-800'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
                             : 'bg-amber-100 text-amber-800'
                         }`}>
                           {t.documentState === 'CANCELADO' ? 'CANCELADO' : t.settlementState}
@@ -1886,7 +1886,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
                         <button
                           onClick={() => setSelectedTitleForEdit(t)}
-                          className="p-1 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 rounded"
+                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
                           title="Editar lançamento (ou dê duplo clique na linha)"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -1894,7 +1894,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
                         <button
                           onClick={(e) => handleDuplicateOne(t, e)}
-                          className="p-1 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 rounded"
+                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
                           title="Duplicar este lançamento"
                         >
                           <Copy className="w-4 h-4" />

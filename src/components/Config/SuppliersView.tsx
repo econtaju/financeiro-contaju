@@ -112,7 +112,7 @@ export const SuppliersView: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div>
           <div className="flex items-center space-x-2">
-            <Truck className="w-5 h-5 text-indigo-700" />
+            <Truck className="w-5 h-5 text-amber-500" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Fornecedores e Prestadores</h1>
           </div>
           <p className="text-xs text-slate-700 mt-0.5">
@@ -122,7 +122,7 @@ export const SuppliersView: React.FC = () => {
 
         <button
           onClick={handleOpenNew}
-          className="px-3.5 py-2 bg-indigo-700 text-white rounded-lg text-xs font-semibold hover:bg-indigo-800 transition-colors shadow-2xs flex items-center"
+          className="px-3.5 py-2 bg-amber-500 text-slate-950 rounded-lg text-xs font-bold hover:bg-amber-400 transition-colors shadow-2xs flex items-center"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           Novo Fornecedor
@@ -286,7 +286,7 @@ export const SuppliersView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow-sm"
                 >
                   Salvar
                 </button>
