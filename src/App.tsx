@@ -34,9 +34,11 @@ import { Menu, Minimize2 } from 'lucide-react';
 import { useToast, ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Common/Toast';
 import { FloatingCalculator } from './components/Common/FloatingCalculator';
+import { LoginView } from './components/Auth/LoginView';
 
 function AppContent() {
   const { toasts, dismissToast, showSuccess, showError, showInfo } = useToast();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => storage.isAuthenticated());
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('DASHBOARD');
   const [currentUser, setCurrentUser] = useState<User>(storage.getCurrentUser());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -64,6 +66,7 @@ function AppContent() {
       document.documentElement.classList.toggle('light', updatedTheme === 'light');
       document.documentElement.classList.toggle('dark', updatedTheme === 'dark');
       setCurrentUser(storage.getCurrentUser());
+      setIsAuthenticated(storage.isAuthenticated());
     });
     return unsubscribe;
   }, []);
@@ -265,6 +268,21 @@ function AppContent() {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen w-full bg-[var(--surface-canvas)] font-sans antialiased text-[var(--text-primary)]">
+        <LoginView
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            setIsAuthenticated(true);
+            showSuccess('Acesso Liberado', `Bem-vindo(a), ${user.name}!`);
+          }}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full max-w-full bg-[var(--bg-app)] text-[var(--text-primary)] overflow-x-hidden overflow-y-hidden font-sans antialiased transition-colors relative">
       
@@ -313,6 +331,10 @@ function AppContent() {
             onToggleCalculator={handleToggleCalculator}
             isCalculatorOpen={isCalculatorOpen}
             isCalculatorMinimized={isCalculatorMinimized}
+            onLogout={() => {
+              setIsAuthenticated(false);
+              showInfo('Sessão Encerrada', 'Você saiu com segurança.');
+            }}
           />
         )}
 

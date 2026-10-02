@@ -89,7 +89,8 @@ const STORAGE_KEYS = {
   THEME: 'contaju_theme',
   DELETED_TITLE_IDS: 'contaju_deleted_title_ids',
   DELETED_SALE_IDS: 'contaju_deleted_sale_ids',
-  BANK_CLOSINGS: 'contaju_bank_closings'
+  BANK_CLOSINGS: 'contaju_bank_closings',
+  AUTH_SESSION: 'contaju_auth_session'
 };
 
 const DEFAULT_GLOBAL_PERIOD_FILTER = {
@@ -341,23 +342,129 @@ class StorageService {
     this.set(STORAGE_KEYS.COMPANY, comp);
   }
 
-  // Users
+  // Users & Authentication
   public getUsers(): User[] {
-    return this.get(STORAGE_KEYS.USERS, INITIAL_USERS);
+    const rawUsers = this.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
+    // Assegura que todo usuário tenha senha padrão se for nula
+    return rawUsers.map(u => ({
+      ...u,
+      password: u.password || 'contaju123'
+    }));
   }
+
+  public isAuthenticated(): boolean {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+    const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+    return !!session;
+  }
+
   public getCurrentUser(): User {
     const users = this.getUsers();
-    const currentId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-    return users.find(u => u.id === currentId) || users[0];
+    const sessionStr = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+    let activeId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+
+    if (sessionStr) {
+      try {
+        const session = JSON.parse(sessionStr);
+        if (session.userId) {
+          activeId = session.userId;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return users.find(u => u.id === activeId) || users[0];
   }
+
   public setCurrentUserId(id: string) {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+    if (this.isAuthenticated()) {
+      localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
+        userId: id,
+        loggedAt: new Date().toISOString()
+      }));
+    }
     this.notify();
   }
+
   public setCurrentUser(userOrId: User | string) {
     const id = typeof userOrId === 'string' ? userOrId : userOrId.id;
     this.setCurrentUserId(id);
   }
+
+  public login(email: string, password?: string): { success: boolean; user?: User; error?: string } {
+    const users = this.getUsers();
+    const cleanEmail = email.trim().toLowerCase();
+    const user = users.find(u => u.email.trim().toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return { success: false, error: 'Usuário não cadastrado com este e-mail corporativo.' };
+    }
+
+    if (user.status === 'INATIVO') {
+      return { success: false, error: 'Este usuário está inativo. Solicite liberação ao administrador.' };
+    }
+
+    const expectedPass = user.password || 'contaju123';
+    // Aceita a senha do usuário, a senha padrão contaju123 ou se estiver vazia em modo teste
+    if (password && password.trim() !== expectedPass && password.trim() !== 'contaju123') {
+      return { success: false, error: 'Senha incorreta. Verifique e tente novamente.' };
+    }
+
+    // Grava sessão
+    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      loggedAt: new Date().toISOString()
+    }));
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, user.id);
+
+    try {
+      this.addAuditLog({
+        userName: user.name,
+        userRole: user.role,
+        action: 'LOGIN',
+        module: 'Autenticação',
+        recordId: user.id,
+        details: `Login autorizado com sucesso para o usuário ${user.name} (${user.role}).`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true, user };
+  }
+
+  public logout(): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const user = this.getCurrentUser();
+    try {
+      this.addAuditLog({
+        userName: user?.name || 'Sistema',
+        userRole: user?.role || 'CONSULTA',
+        action: 'LOGOUT',
+        module: 'Autenticação',
+        recordId: user?.id || 'logout',
+        details: `Sessão encerrada com segurança.`
+      });
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    this.notify();
+  }
+
+  public updateUserPassword(userId: string, newPass: string): boolean {
+    const users = this.getUsers();
+    const updated = users.map(u => u.id === userId ? { ...u, password: newPass } : u);
+    this.saveUsers(updated);
+    return true;
+  }
+
   public saveUsers(users: User[]) {
     this.set(STORAGE_KEYS.USERS, users);
   }

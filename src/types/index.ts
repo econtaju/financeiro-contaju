@@ -7,6 +7,7 @@ export interface User {
   role: UserRole;
   avatar?: string;
   status?: 'ATIVO' | 'INATIVO';
+  password?: string;
   createdAt?: string;
 }
 

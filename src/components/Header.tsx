@@ -18,7 +18,8 @@ import {
   Bell,
   Search,
   Calculator,
-  Menu
+  Menu,
+  LogOut
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { NavigationScreen } from './Sidebar';
@@ -40,6 +41,7 @@ interface HeaderProps {
   onToggleCalculator?: () => void;
   isCalculatorOpen?: boolean;
   isCalculatorMinimized?: boolean;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -52,7 +54,8 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateWithSearch,
   onToggleCalculator,
   isCalculatorOpen = false,
-  isCalculatorMinimized = false
+  isCalculatorMinimized = false,
+  onLogout
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
@@ -394,6 +397,18 @@ export const Header: React.FC<HeaderProps> = ({
                       Restaurar Backup JSON
                       <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
                     </label>
+
+                    <button
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        storage.logout();
+                        if (onLogout) onLogout();
+                      }}
+                      className="w-full text-left text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 flex items-center py-1.5 cursor-pointer transition-colors border-t border-[var(--border-subtle)] mt-1 pt-1.5 font-bold"
+                    >
+                      <LogOut className="w-3.5 h-3.5 mr-2 text-rose-500" />
+                      Encerrar Sessão (Sair)
+                    </button>
                   </div>
                 </div>
               )}

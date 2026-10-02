@@ -37,26 +37,34 @@ export const INITIAL_USERS: User[] = [
     name: 'Carlos Mendes',
     email: 'carlos@contaju.com.br',
     role: 'ADMIN',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80'
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+    status: 'ATIVO',
+    password: 'contaju123'
   },
   {
     id: 'usr-2',
     name: 'Mariana Silva',
     email: 'mariana.silva@contaju.com.br',
     role: 'GESTOR_FINANCEIRO',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80'
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80',
+    status: 'ATIVO',
+    password: 'contaju123'
   },
   {
     id: 'usr-3',
     name: 'Rafael Costa',
     email: 'rafael.costa@contaju.com.br',
-    role: 'OPERADOR'
+    role: 'OPERADOR',
+    status: 'ATIVO',
+    password: 'contaju123'
   },
   {
     id: 'usr-4',
     name: 'Beatriz Lima',
     email: 'beatriz.lima@contaju.com.br',
-    role: 'CONSULTA'
+    role: 'CONSULTA',
+    status: 'ATIVO',
+    password: 'contaju123'
   }
 ];
 
