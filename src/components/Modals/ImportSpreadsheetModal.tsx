@@ -28,10 +28,14 @@ import {
   GitMerge,
   Filter,
   Layers,
-  Sparkles
+  Sparkles,
+  Brain,
+  Zap,
+  CheckCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storage } from '../../services/storageService';
+import { categoryLearningService } from '../../services/categoryLearningService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { 
   FinancialTitle, 
@@ -540,6 +544,60 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
     }));
   };
 
+  // Filtros de Categoria e Memória Inteligente (Step 3)
+  const [filterCategoryMode, setFilterCategoryMode] = useState<'TODOS' | 'MEMORIA' | 'MANUAL' | 'FILTRADOS_SINAL'>('TODOS');
+  const [batchCategoryId, setBatchCategoryId] = useState<string>('');
+
+  const handleChangeRowCategory = (rowNumber: number, newAccountId: string) => {
+    const targetAccount = chartAccounts.find(a => a.id === newAccountId);
+    if (!targetAccount) return;
+
+    setAnalyzedRows(prev => prev.map(r => {
+      if (r.rowNumber !== rowNumber) return r;
+      return {
+        ...r,
+        matchedChartAccountId: targetAccount.id,
+        matchedChartAccountName: targetAccount.name,
+        normalized: {
+          ...r.normalized,
+          categoria: targetAccount.name,
+          isManuallyEdited: true
+        },
+        categoryResolution: 'MATCH_PLANO',
+        isFromMemory: false,
+        memoryReason: 'Ajustado manualmente nesta sessão (será gravado na memória de IA)'
+      };
+    }));
+  };
+
+  const handleApplyBatchCategory = () => {
+    if (!batchCategoryId) {
+      alert('Por favor, selecione uma categoria para aplicar aos lançamentos marcados.');
+      return;
+    }
+    const targetAccount = chartAccounts.find(a => a.id === batchCategoryId);
+    if (!targetAccount) return;
+
+    let count = 0;
+    setAnalyzedRows(prev => prev.map(r => {
+      if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+      count++;
+      return {
+        ...r,
+        matchedChartAccountId: targetAccount.id,
+        matchedChartAccountName: targetAccount.name,
+        normalized: {
+          ...r.normalized,
+          categoria: targetAccount.name,
+          isManuallyEdited: true
+        },
+        categoryResolution: 'MATCH_PLANO',
+        isFromMemory: false,
+        memoryReason: `Atribuído em lote para "${targetAccount.name}"`
+      };
+    }));
+  };
+
   // Métricas do Preview (Step 3)
   const previewMetrics = useMemo(() => {
     const total = analyzedRows.length;
@@ -547,8 +605,11 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
     const toUpdate = analyzedRows.filter(r => r.action === 'ATUALIZAR' && r.isSelected).length;
     const ignored = analyzedRows.filter(r => r.action === 'IGNORAR_IDENTICO').length;
     const errors = analyzedRows.filter(r => r.action === 'ERRO').length;
+    const memoryCount = analyzedRows.filter(r => r.isFromMemory && !r.isTypeFilteredOut).length;
+    const filteredOutCount = analyzedRows.filter(r => r.isTypeFilteredOut).length;
+    const manualCategoryCount = analyzedRows.filter(r => !r.isFromMemory && !r.isTypeFilteredOut && r.action !== 'ERRO').length;
     
-    const selectedActive = analyzedRows.filter(r => r.isSelected && r.action !== 'ERRO');
+    const selectedActive = analyzedRows.filter(r => r.isSelected && r.action !== 'ERRO' && !r.isTypeFilteredOut);
     const totalReceivables = selectedActive
       .filter(r => r.normalized.tipo === 'RECEBER')
       .reduce((acc, r) => acc + r.normalized.valorOriginal, 0);
@@ -565,6 +626,9 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
       toUpdate, 
       ignored, 
       errors, 
+      memoryCount,
+      filteredOutCount,
+      manualCategoryCount,
       totalReceivables, 
       totalPayables, 
       netBalance: totalReceivables - totalPayables,
@@ -572,7 +636,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
     };
   }, [analyzedRows]);
 
-  // Linhas filtradas para exibição no Step 3 (por status, tipo e mês)
+  // Linhas filtradas para exibição no Step 3 (por status, tipo, mês e categoria)
   const displayedRows = useMemo(() => {
     return analyzedRows.filter(r => {
       // Filtro por Mês
@@ -591,9 +655,20 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         return false;
       }
 
+      // Filtro por Categoria / Memória IA
+      if (filterCategoryMode === 'MEMORIA' && !r.isFromMemory) {
+        return false;
+      }
+      if (filterCategoryMode === 'MANUAL' && (r.isFromMemory || r.isTypeFilteredOut)) {
+        return false;
+      }
+      if (filterCategoryMode === 'FILTRADOS_SINAL' && !r.isTypeFilteredOut) {
+        return false;
+      }
+
       return true;
     });
-  }, [analyzedRows, filterAction, filterType, selectedMonth]);
+  }, [analyzedRows, filterAction, filterType, selectedMonth, filterCategoryMode]);
 
   // Toggle seleção individual
   const toggleRow = (rowNumber: number) => {
@@ -959,6 +1034,24 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         storage.saveMovements([...newMovements, ...currentMovements]);
       }
 
+      // Aprendizado Contínuo com os dados confirmados pelo usuário
+      try {
+        const rowsToLearn = selectedRows.map(r => {
+          const acc = chartAccounts.find(a => a.id === r.matchedChartAccountId);
+          return {
+            fornecedor: r.normalized.fornecedor,
+            descricao: r.normalized.descricao,
+            tipo: r.normalized.tipo,
+            chartAccountId: r.matchedChartAccountId || '',
+            chartAccountName: acc?.name || r.normalized.categoria || ''
+          };
+        }).filter(r => r.chartAccountId && r.chartAccountName);
+
+        categoryLearningService.learnBatch(rowsToLearn);
+      } catch (e) {
+        console.warn('Falha ao gravar aprendizado de categorias:', e);
+      }
+
       // Registro de Auditoria
       storage.addAuditLog({
         userName: currentUser.name,
@@ -1060,7 +1153,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
               3
             </span>
             <span className={step === 3 ? 'text-amber-400 font-bold' : 'text-[var(--text-secondary)]'}>
-              Validação, Resumos & Cruzamento
+              Conferência de Categorias & Memória IA
             </span>
           </div>
 
@@ -1467,15 +1560,141 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                 </div>
               )}
 
+              {/* Card Informativo do Filtro Rigoroso de Direção e Sinal */}
+              <div className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
+                fallbackDefaultType === 'RECEBER'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              }`}>
+                <div className="p-2 rounded-lg bg-[var(--surface-elevated)] shrink-0">
+                  {fallbackDefaultType === 'RECEBER' ? (
+                    <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-rose-400" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[var(--text-primary)] text-sm">
+                      {fallbackDefaultType === 'RECEBER'
+                        ? 'Filtro de Contas a Receber: Apenas Valores Positivos (Recebimentos)'
+                        : 'Filtro de Contas a Pagar: Apenas Despesas & Saídas Financeiras'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Filtro Ativo
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                    {fallbackDefaultType === 'RECEBER'
+                      ? 'Neste módulo, o sistema aceitará estritamente valores positivos e créditos de recebimento. Lançamentos com valores negativos ou classificados como despesas serão automaticamente descartados para evitar poluição da carteira.'
+                      : 'Neste módulo, o sistema aceitará estritamente despesas e saídas a pagar. Valores com sinal negativo na planilha serão interpretados como valor devido a pagar. Créditos e recebimentos serão descartados.'}
+                  </p>
+                </div>
+              </div>
+
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* STEP 3: VALIDATION, RESUMOS MENSAIS, EDIÇÃO & APROVAÇÃO */}
+          {/* STEP 3: CONFERÊNCIA DE CATEGORIAS, MEMÓRIA IA & APROVAÇÃO */}
           {/* ========================================================= */}
           {step === 3 && (
             <div className="space-y-4">
               
+              {/* Banner de Conferência de Categorias & Memória IA */}
+              <div className="p-4 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-[var(--surface-card)] to-amber-500/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 shadow-xs">
+                    <Brain className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                        Conferência de Categorias & Memória de IA
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Aprendizado Contínuo Ativo
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Verifique e ajuste em qual categoria do Plano de Contas cada lançamento está sendo encaixado. As confirmações e correções feitas aqui são memorizadas para as próximas importações!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Atribuição de Categoria em Lote */}
+                <div className="flex items-center gap-2 w-full md:w-auto shrink-0 bg-[var(--surface-elevated)] p-1.5 rounded-xl border border-[var(--border-subtle)]">
+                  <select
+                    value={batchCategoryId}
+                    onChange={(e) => setBatchCategoryId(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] text-xs font-medium text-[var(--text-primary)] focus:outline-hidden max-w-[210px]"
+                  >
+                    <option value="">Aplicar categoria em lote...</option>
+                    {chartAccounts.filter(a => a.isAnalytical).map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleApplyBatchCategory}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                    title="Aplica a categoria escolhida a todos os lançamentos marcados"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Aplicar Marcados</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Cards de Métricas Inteligentes e Diagnóstico */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[var(--text-secondary)] block uppercase font-bold">Total a Importar</span>
+                    <span className="text-base font-black text-[var(--text-primary)]">{previewMetrics.toCreate + previewMetrics.toUpdate}</span>
+                  </div>
+                  <Layers className="w-5 h-5 text-amber-400/60" />
+                </div>
+
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-emerald-400 block uppercase font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-xs shadow-emerald-400" />
+                      Memória de IA
+                    </span>
+                    <span className="text-base font-black text-emerald-400">
+                      {previewMetrics.memoryCount} <span className="text-xs font-normal text-emerald-300/80">({previewMetrics.total > 0 ? Math.round((previewMetrics.memoryCount / previewMetrics.total) * 100) : 0}%)</span>
+                    </span>
+                  </div>
+                  <Brain className="w-5 h-5 text-emerald-400/80" />
+                </div>
+
+                <div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[var(--text-secondary)] block uppercase font-bold">Revisão / Padrão</span>
+                    <span className="text-base font-black text-amber-400">{previewMetrics.manualCategoryCount}</span>
+                  </div>
+                  <Edit3 className="w-5 h-5 text-amber-400/60" />
+                </div>
+
+                <div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[var(--text-secondary)] block uppercase font-bold">
+                      {previewMetrics.filteredOutCount > 0 ? '🚫 Descartados por Sinal' : 'Valor Total'}
+                    </span>
+                    <span className="text-xs font-black text-[var(--text-primary)] font-mono block truncate">
+                      {previewMetrics.filteredOutCount > 0 
+                        ? `${previewMetrics.filteredOutCount} ignorados` 
+                        : formatBRL(fallbackDefaultType === 'RECEBER' ? previewMetrics.totalReceivables : previewMetrics.totalPayables)}
+                    </span>
+                  </div>
+                  <Filter className="w-5 h-5 text-slate-400" />
+                </div>
+              </div>
+
               {/* Barra de Resumo Mensal Dinâmico & Abas por Mês */}
               <ImportMonthlySummaryBar
                 monthlySummaries={monthlySummaries}
@@ -1489,8 +1708,9 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
               {/* Barra de Ações, Filtros e Ferramentas Cadastrais */}
               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-[var(--surface-card)] p-3 rounded-xl border border-[var(--border-subtle)] text-xs">
                 
-                {/* Filtros Combinados (Status e Tipo) */}
+                {/* Filtros Combinados (Status, Tipo e Memória de Categoria) */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Filtro por Tipo */}
                   <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-lg border border-[var(--border-subtle)]">
                     <button
                       type="button"
@@ -1501,7 +1721,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                     >
-                      Todos Tipos
+                      Todos
                     </button>
                     <button
                       type="button"
@@ -1529,11 +1749,65 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                     </button>
                   </div>
 
+                  {/* Filtro de Memória / Categoria */}
+                  <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-lg border border-[var(--border-subtle)]">
+                    <button
+                      type="button"
+                      onClick={() => setFilterCategoryMode('TODOS')}
+                      className={`px-2 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        filterCategoryMode === 'TODOS'
+                          ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      Todas Categorias
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterCategoryMode('MEMORIA')}
+                      className={`px-2 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 transition-colors ${
+                        filterCategoryMode === 'MEMORIA'
+                          ? 'bg-emerald-500 text-white font-bold shadow-xs'
+                          : 'text-emerald-400 hover:bg-emerald-500/10'
+                      }`}
+                      title="Exibir apenas lançamentos pré-enquadrados pela inteligência do sistema"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+                      <span>Memória IA ({previewMetrics.memoryCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterCategoryMode('MANUAL')}
+                      className={`px-2 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        filterCategoryMode === 'MANUAL'
+                          ? 'bg-blue-500 text-white font-bold shadow-xs'
+                          : 'text-blue-400 hover:bg-blue-500/10'
+                      }`}
+                    >
+                      Padrão/Manual ({previewMetrics.manualCategoryCount})
+                    </button>
+                    {previewMetrics.filteredOutCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterCategoryMode('FILTRADOS_SINAL')}
+                        className={`px-2 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 transition-colors ${
+                          filterCategoryMode === 'FILTRADOS_SINAL'
+                            ? 'bg-rose-500 text-white font-bold shadow-xs'
+                            : 'text-rose-400 hover:bg-rose-500/10'
+                        }`}
+                        title="Lançamentos descartados por sinal ou tipo incompatível com o módulo"
+                      >
+                        <span>🚫 Descartados ({previewMetrics.filteredOutCount})</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filtro por Ação / Diff */}
                   <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-lg border border-[var(--border-subtle)]">
                     {[
                       { id: 'TODOS', label: 'Todos' },
                       { id: 'CRIAR', label: 'Novos' },
-                      { id: 'ATUALIZAR', label: 'Alterações (Diff)' },
+                      { id: 'ATUALIZAR', label: 'Diff' },
                       { id: 'IGNORAR_IDENTICO', label: 'Idênticos' },
                       { id: 'ERRO', label: 'Erros' }
                     ].map(f => (
@@ -1609,7 +1883,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       <th className="py-2.5 px-3 text-right w-24">Baixado</th>
                       <th className="py-2.5 px-3 text-right w-24">Saldo</th>
                       <th className="py-2.5 px-2.5 text-center w-24">Situação</th>
-                      <th className="py-2.5 px-3">Plano de Contas</th>
+                      <th className="py-2.5 px-3 min-w-[240px]">Plano de Contas & Memória IA</th>
                       {extraColumns.map(col => (
                         <th key={col.id} className="py-2.5 px-3 text-[var(--text-secondary)]">
                           {col.label}
@@ -1633,6 +1907,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                           <tr 
                             key={row.rowNumber} 
                             className={`hover:bg-[var(--surface-elevated)]/50 transition-colors ${
+                              row.isTypeFilteredOut ? 'bg-rose-500/5 opacity-40' :
                               row.action === 'ERRO' ? 'bg-rose-500/5 opacity-70' :
                               row.action === 'IGNORAR_IDENTICO' ? 'opacity-50' : 
                               !row.isSelected ? 'opacity-40' : ''
@@ -1643,10 +1918,10 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               <input
                                 type="checkbox"
                                 checked={row.isSelected}
-                                disabled={row.action === 'ERRO' || row.action === 'IGNORAR_IDENTICO'}
+                                disabled={row.action === 'ERRO' || row.action === 'IGNORAR_IDENTICO' || row.isTypeFilteredOut}
                                 onChange={() => toggleRow(row.rowNumber)}
                                 aria-label={`Selecionar linha ${row.rowNumber}`}
-                                className="rounded border-[var(--border-subtle)] text-amber-400 focus:ring-0 cursor-pointer"
+                                className="rounded border-[var(--border-subtle)] text-amber-400 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                               />
                             </td>
 
@@ -1772,9 +2047,60 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               </button>
                             </td>
 
-                            {/* Plano de Contas */}
-                            <td className="py-2 px-3 font-sans text-[var(--text-secondary)] truncate max-w-[150px]">
-                              {row.normalized.categoria || (isRevenue ? 'Receita de Serviços' : 'Despesas Administrativas')}
+                            {/* Plano de Contas & Memória IA */}
+                            <td className="py-2 px-3 font-sans min-w-[240px]">
+                              {row.isTypeFilteredOut ? (
+                                <span 
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 block truncate"
+                                  title={row.typeFilterReason}
+                                >
+                                  🚫 Descartado ({row.normalized.tipo === 'RECEBER' ? 'Receita' : 'Despesa'})
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  {/* Circulozinho Indicador de Memória / IA */}
+                                  {row.isFromMemory ? (
+                                    <span 
+                                      title={`🧠 Enquadrado pela Memória de IA do Sistema!\nMotivo: ${row.memoryReason || 'Padrão anterior similar'}\nConfiança: ${Math.round((row.memoryConfidence || 0.9) * 100)}%`}
+                                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-help"
+                                    >
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border border-emerald-300 shadow-xs shadow-emerald-500/50 items-center justify-center text-[7px] text-slate-950 font-black">
+                                        ✓
+                                      </span>
+                                    </span>
+                                  ) : row.normalized.isManuallyEdited ? (
+                                    <span 
+                                      title="✏️ Categoria ajustada manualmente nesta sessão. Será gravada na memória de IA ao concluir a importação!"
+                                      className="inline-flex rounded-full h-3 w-3 bg-blue-500 border border-blue-300 shrink-0 cursor-help"
+                                    />
+                                  ) : (
+                                    <span 
+                                      title="⚙️ Categoria padrão do plano de contas. Altere para enquadrar na categoria correta."
+                                      className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-500 border border-slate-400 shrink-0 cursor-help"
+                                    />
+                                  )}
+
+                                  <select
+                                    value={row.matchedChartAccountId || ''}
+                                    onChange={(e) => handleChangeRowCategory(row.rowNumber, e.target.value)}
+                                    aria-label={`Categoria da linha ${row.rowNumber}`}
+                                    className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium border transition-colors focus:outline-hidden ${
+                                      row.isFromMemory
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 focus:border-emerald-400'
+                                        : row.normalized.isManuallyEdited
+                                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 focus:border-blue-400'
+                                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400'
+                                    }`}
+                                  >
+                                    {chartAccounts.filter(a => a.isAnalytical).map(acc => (
+                                      <option key={acc.id} value={acc.id}>
+                                        {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                             </td>
 
                             {/* Colunas Extras */}
@@ -1867,6 +2193,26 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-[var(--text-secondary)] font-medium">Novos Cadastros Criados no App:</span>
                   <span className="font-bold text-[var(--text-primary)] font-mono text-sm">{importSummary.newPartiesCount}</span>
+                </div>
+              </div>
+
+              {/* Card de Confirmação do Aprendizado de IA */}
+              <div className="max-w-lg mx-auto p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-amber-500/10 to-emerald-500/10 border border-emerald-500/30 text-left flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Brain className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-[var(--text-primary)]">
+                      Motor de Inteligência e Aprendizado Atualizado
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Memória Salva
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                    Todas as categorias confirmadas ou corrigidas nesta importação foram memorizadas pelo sistema. Nas próximas importações de planilhas, lançamentos similares virão enquadrados automaticamente com o selo de memória!
+                  </p>
                 </div>
               </div>
             </div>

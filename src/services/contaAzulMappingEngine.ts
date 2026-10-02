@@ -11,6 +11,7 @@
  */
 
 import { FinancialTitle, Counterparty, ChartAccount, BankAccount, TitleType } from '../types';
+import { categoryLearningService } from './categoryLearningService';
 
 export interface ExtraColumnDefinition {
   id: string;
@@ -69,7 +70,16 @@ export interface AnalyzedImportRow {
   // Resolução de Categoria / Plano de Contas
   matchedChartAccountId?: string;
   suggestedChartAccountId?: string;
+  matchedChartAccountName?: string;
   categoryResolution?: 'MATCH_PLANO' | 'CRIAR_NOVO_PLANO' | 'USAR_PADRAO';
+  // Inteligência de Memória & Aprendizado de Categorização
+  isFromMemory?: boolean;
+  memoryConfidence?: number;
+  memoryReason?: string;
+  // Filtro Estrito de Sinal / Direção
+  originalSign?: number; // 1 para positivo, -1 para negativo
+  isTypeFilteredOut?: boolean;
+  typeFilterReason?: string;
   // Controle de aprovação/seleção na UI
   isSelected: boolean;
 }
@@ -655,16 +665,44 @@ export function analyzeContaAzulSpreadsheet(
       saldoAtual = Math.max(0, Math.round((valorOriginal - principalBaixado) * 100) / 100);
     }
 
-    // 6. Separação de Tipo (Receita vs Despesa)
+    // 6. Separação de Tipo (Receita vs Despesa) e Filtro Estrito de Sinal
+    const isRawNegative = isNegativeRawValue(rawValOriginal);
+    const originalSign = isRawNegative ? -1 : 1;
     const rawTipo = getVal('tipo');
     const rawCat = getVal('categoria');
-    const tipo: TitleType = detectTitleType(
+    
+    // Se o valor bruto for negativo, é inerentemente PAGAR / Saída
+    let tipo: TitleType = detectTitleType(
       rawTipo,
       rawValOriginal,
       rawCat,
       typeDetectionMode,
       fallbackDefaultType
     );
+
+    if (isRawNegative) {
+      tipo = 'PAGAR';
+    }
+
+    // Filtro estrito solicitado pelo usuário:
+    // No Contas a Receber: só importa valores positivos e que sejam aprovados de receber (rejeita negativos/despesas).
+    // No Contas a Pagar: só importa saídas/despesas (rejeita receitas de entrada).
+    let isTypeFilteredOut = false;
+    let typeFilterReason: string | undefined;
+
+    if (fallbackDefaultType === 'RECEBER') {
+      if (isRawNegative || tipo === 'PAGAR') {
+        isTypeFilteredOut = true;
+        typeFilterReason = 'Lançamento com valor negativo ou saída (despesa). No módulo de Contas a Receber, apenas valores positivos e recebimentos são aceitos.';
+        warnings.push('Filtro de Recebimento: Linha de valor negativo/despesa desconsiderada.');
+      }
+    } else if (fallbackDefaultType === 'PAGAR') {
+      if (!isRawNegative && tipo === 'RECEBER') {
+        isTypeFilteredOut = true;
+        typeFilterReason = 'Lançamento de crédito/receita. No módulo de Contas a Pagar, apenas despesas e saídas a pagar são aceitas.';
+        warnings.push('Filtro de Pagamento: Linha de receita/crédito desconsiderada.');
+      }
+    }
 
     // 7. Fornecedor / Cliente (Contraparte)
     const rawForn = getVal('fornecedor');
@@ -764,21 +802,27 @@ export function analyzeContaAzulSpreadsheet(
       }
     }
 
-    // 12. Cruzamento com Plano de Contas Atual do Sistema
+    // 12. Cruzamento com Plano de Contas Atual & Motor de Inteligência de Memória
     let matchedChartAccountId: string | undefined;
     let suggestedChartAccountId: string | undefined;
+    let matchedChartAccountName: string | undefined;
     let categoryResolution: 'MATCH_PLANO' | 'CRIAR_NOVO_PLANO' | 'USAR_PADRAO' = 'USAR_PADRAO';
+    let isFromMemory = false;
+    let memoryConfidence: number | undefined;
+    let memoryReason: string | undefined;
 
     const rawCategoryName = rawCat ? String(rawCat).trim() : '';
+
+    // 12.1. Primeiro verifica se a planilha trouxe uma categoria que casa com o Plano de Contas
     if (rawCategoryName) {
       const normCat = normalizeText(rawCategoryName);
-      // Busca conta analítica com mesmo nome ou compatível
       const exactAccount = existingChartAccounts.find(a => 
         a.isAnalytical && normalizeText(a.name) === normCat
       );
 
       if (exactAccount) {
         matchedChartAccountId = exactAccount.id;
+        matchedChartAccountName = exactAccount.name;
         categoryResolution = 'MATCH_PLANO';
       } else {
         const partialAccount = existingChartAccounts.find(a => 
@@ -786,16 +830,46 @@ export function analyzeContaAzulSpreadsheet(
         );
         if (partialAccount) {
           suggestedChartAccountId = partialAccount.id;
+          matchedChartAccountId = partialAccount.id;
+          matchedChartAccountName = partialAccount.name;
           categoryResolution = 'MATCH_PLANO';
-        } else {
-          categoryResolution = 'CRIAR_NOVO_PLANO';
-          warnings.push(`Categoria "${rawCategoryName}" não existe no Plano de Contas. Pode ser criada automaticamente.`);
         }
       }
     }
 
+    // 12.2. Se não encontrou match exato ou a planilha veio sem categoria, consulta o Motor de Memória e Inteligência
     if (!matchedChartAccountId) {
-      matchedChartAccountId = suggestedChartAccountId || (tipo === 'RECEBER' ? defaultRevenueAccountId : defaultExpenseAccountId);
+      const prediction = categoryLearningService.predictCategory(
+        contraparteName,
+        descricao,
+        tipo,
+        existingChartAccounts,
+        existingTitles
+      );
+
+      if (prediction) {
+        matchedChartAccountId = prediction.chartAccountId;
+        matchedChartAccountName = prediction.chartAccountName;
+        isFromMemory = true;
+        memoryConfidence = prediction.confidence;
+        memoryReason = prediction.reason;
+        categoryResolution = 'MATCH_PLANO';
+      }
+    }
+
+    // 12.3. Fallback para Plano de Contas padrão se ainda não definido
+    if (!matchedChartAccountId) {
+      const fallbackId = tipo === 'RECEBER' ? defaultRevenueAccountId : defaultExpenseAccountId;
+      matchedChartAccountId = suggestedChartAccountId || fallbackId;
+      const fallbackAcc = existingChartAccounts.find(a => a.id === matchedChartAccountId);
+      matchedChartAccountName = fallbackAcc?.name || (tipo === 'RECEBER' ? 'Receita de Serviços' : 'Despesas Gerais');
+      if (rawCategoryName && !suggestedChartAccountId) {
+        categoryResolution = 'CRIAR_NOVO_PLANO';
+        warnings.push(`Categoria "${rawCategoryName}" não encontrada no Plano de Contas. Será criada automaticamente ou associada ao padrão.`);
+      }
+    } else if (!matchedChartAccountName) {
+      const acc = existingChartAccounts.find(a => a.id === matchedChartAccountId);
+      matchedChartAccountName = acc?.name || rawCategoryName;
     }
 
     // 13. Captura de Colunas Extras Personalizadas da Planilha
@@ -888,8 +962,15 @@ export function analyzeContaAzulSpreadsheet(
       counterpartyResolution,
       matchedChartAccountId,
       suggestedChartAccountId,
+      matchedChartAccountName,
       categoryResolution,
-      isSelected: action !== 'ERRO' && action !== 'IGNORAR_IDENTICO'
+      isFromMemory,
+      memoryConfidence,
+      memoryReason,
+      originalSign,
+      isTypeFilteredOut,
+      typeFilterReason,
+      isSelected: action !== 'ERRO' && action !== 'IGNORAR_IDENTICO' && !isTypeFilteredOut
     });
   });
 
