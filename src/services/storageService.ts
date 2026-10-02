@@ -402,6 +402,13 @@ class StorageService {
       return { success: false, error: 'Usuário não cadastrado com este e-mail corporativo.' };
     }
 
+    if (user.status === 'PENDENTE') {
+      return { 
+        success: false, 
+        error: 'Sua solicitação de cadastro foi recebida com sucesso e aguarda aprovação do administrador (leonardoricardoarantes@gmail.com). Você poderá acessar o sistema assim que for aprovado.' 
+      };
+    }
+
     if (user.status === 'INATIVO') {
       return { success: false, error: 'Este usuário está inativo. Solicite liberação ao administrador.' };
     }
@@ -437,6 +444,132 @@ class StorageService {
 
     this.notify();
     return { success: true, user };
+  }
+
+  public async registerUser(
+    name: string, 
+    email: string, 
+    password: string, 
+    requestedRole: UserRole = 'OPERADOR'
+  ): Promise<{ success: boolean; user?: User; error?: string }> {
+    const users = this.getUsers();
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (users.some(u => u.email.trim().toLowerCase() === cleanEmail)) {
+      return { success: false, error: 'Já existe um cadastro com este e-mail corporativo.' };
+    }
+
+    const newUser: User = {
+      id: `usr-${Date.now()}`,
+      name: name.trim(),
+      email: cleanEmail,
+      role: requestedRole,
+      status: 'PENDENTE',
+      password: password.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    const updated = [...users, newUser];
+    this.saveUsers(updated);
+
+    try {
+      this.addAuditLog({
+        userName: newUser.name,
+        userRole: newUser.role,
+        action: 'SOLICITACAO_CADASTRO',
+        module: 'Autenticação',
+        recordId: newUser.id,
+        details: `Novo cadastro solicitado por ${newUser.name} (${newUser.email}). Notificação enviada para leonardoricardoarantes@gmail.com.`
+      });
+    } catch {
+      // ignore
+    }
+
+    // Notificar administrador via Resend
+    try {
+      const { resendService } = await import('./resendService');
+      await resendService.sendRegistrationApprovalEmail({
+        userId: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        createdAt: newUser.createdAt || new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn('Falha no disparo em background do e-mail de aprovação:', err);
+    }
+
+    this.notify();
+    return { success: true, user: newUser };
+  }
+
+  public approveUser(userId: string, approvedBy?: string): { success: boolean; user?: User; error?: string } {
+    const users = this.getUsers();
+    const target = users.find(u => u.id === userId);
+    if (!target) {
+      return { success: false, error: 'Usuário não localizado.' };
+    }
+
+    const currentAdmin = this.getCurrentUser();
+    const approver = approvedBy || currentAdmin?.name || 'Administrador Geral';
+
+    const updated = users.map(u => {
+      if (u.id === userId) {
+        return {
+          ...u,
+          status: 'ATIVO' as const,
+          approvedAt: new Date().toISOString(),
+          approvedBy: approver
+        };
+      }
+      return u;
+    });
+
+    this.saveUsers(updated);
+
+    try {
+      this.addAuditLog({
+        userName: approver,
+        userRole: currentAdmin?.role || 'ADMIN',
+        action: 'APROVACAO_USUARIO',
+        module: 'Usuários e Permissões',
+        recordId: target.id,
+        details: `Acesso aprovado para o colaborador ${target.name} (${target.email}).`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true, user: updated.find(u => u.id === userId) };
+  }
+
+  public rejectUser(userId: string): { success: boolean; error?: string } {
+    const users = this.getUsers();
+    const target = users.find(u => u.id === userId);
+    if (!target) {
+      return { success: false, error: 'Usuário não localizado.' };
+    }
+
+    const currentAdmin = this.getCurrentUser();
+    const updated = users.filter(u => u.id !== userId);
+    this.saveUsers(updated);
+
+    try {
+      this.addAuditLog({
+        userName: currentAdmin?.name || 'Administrador Geral',
+        userRole: currentAdmin?.role || 'ADMIN',
+        action: 'REJEICAO_USUARIO',
+        module: 'Usuários e Permissões',
+        recordId: target.id,
+        details: `Solicitação de acesso rejeitada/removida para ${target.name} (${target.email}).`
+      });
+    } catch {
+      // ignore
+    }
+
+    this.notify();
+    return { success: true };
   }
 
   public logout(): void {

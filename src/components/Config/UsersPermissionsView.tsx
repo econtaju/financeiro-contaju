@@ -47,6 +47,25 @@ export const UsersPermissionsView: React.FC = () => {
     { module: 'Configurações Globais & Auditoria', admin: true, gestor: false, operador: false, consulta: false },
   ];
 
+  const pendingUsers = users.filter(u => u.status === 'PENDENTE');
+  const activeUsers = users.filter(u => u.status !== 'PENDENTE');
+
+  const handleApproveUser = (user: User) => {
+    storage.approveUser(user.id, currentUser.name);
+    setUsers(storage.getUsers());
+    setToastMessage(`Acesso de ${user.name} aprovado com sucesso!`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleRejectUser = (user: User) => {
+    if (confirm(`Deseja realmente recusar e remover a solicitação de ${user.name}?`)) {
+      storage.rejectUser(user.id);
+      setUsers(storage.getUsers());
+      setToastMessage(`Solicitação de ${user.name} recusada.`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) return;
@@ -146,12 +165,77 @@ export const UsersPermissionsView: React.FC = () => {
         </button>
       </div>
 
+      {/* Bloco de Solicitações Pendentes de Aprovação */}
+      {pendingUsers.length > 0 && (
+        <div className="bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl p-5 shadow-lg animate-in fade-in">
+          <div className="flex items-center justify-between pb-3 mb-4 border-b border-amber-500/30">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-amber-500 text-slate-950 rounded-xl font-bold">
+                <AlertCircle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  Solicitações de Acesso Pendentes
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
+                    {pendingUsers.length} aguardando
+                  </span>
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Notificação enviada para <strong>leonardoricardoarantes@gmail.com</strong>. Aprove ou recuse o acesso abaixo:
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {pendingUsers.map(pu => (
+              <div 
+                key={pu.id} 
+                className="bg-[var(--surface-card)] border border-amber-500/40 rounded-xl p-4 flex flex-col justify-between shadow-xs"
+              >
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-[var(--text-primary)]">{pu.name}</h4>
+                      <p className="text-xs font-mono text-[var(--text-secondary)]">{pu.email}</p>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
+                      {pu.role}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-2">
+                    Solicitado em: {pu.createdAt ? new Date(pu.createdAt).toLocaleString('pt-BR') : 'Recentemente'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-[var(--border-subtle)]">
+                  <button
+                    onClick={() => handleRejectUser(pu)}
+                    className="flex-1 py-1.5 px-3 rounded-lg border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Recusar
+                  </button>
+                  <button
+                    onClick={() => handleApproveUser(pu)}
+                    className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Aprovar Acesso
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Grid de Usuários Ativos */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
           <h2 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-2">
             <Users className="w-4 h-4 text-amber-500" />
-            <span>Colaboradores Cadastrados ({users.length})</span>
+            <span>Colaboradores Cadastrados ({activeUsers.length})</span>
           </h2>
           <span className="text-[11px] text-[var(--text-secondary)]">
             Logado como: <strong>{currentUser.name}</strong> ({currentUser.role})
@@ -171,7 +255,7 @@ export const UsersPermissionsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)]">
-              {users.map(u => (
+              {activeUsers.map(u => (
                 <tr key={u.id} className="hover:bg-[var(--surface-elevated)]/40 transition-colors">
                   <td className="py-3.5 px-4">
                     <div className="font-bold text-[var(--text-primary)] flex items-center gap-2">

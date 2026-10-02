@@ -6,9 +6,11 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
-  status?: 'ATIVO' | 'INATIVO';
+  status?: 'ATIVO' | 'INATIVO' | 'PENDENTE';
   password?: string;
   createdAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
 }
 
 export type OperationNature = 
