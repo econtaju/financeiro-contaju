@@ -508,6 +508,20 @@ export function formatMonthLabel(monthKey: string): string {
   return `${monthNames[idx] || m}/${y}`;
 }
 
+// Extrai a chave de mês canônica (AAAA-MM) de forma defensiva e segura.
+// Prioriza a competência contábil e usa o vencimento como fallback. Nunca quebra com undefined/null.
+export function getRowMonthKey(norm?: Partial<BaseSpreadsheetRow> | null): string {
+  if (!norm) return 'OUTROS';
+  if (norm.competencia && typeof norm.competencia === 'string' && /^\d{4}-\d{2}$/.test(norm.competencia.trim())) {
+    return norm.competencia.trim();
+  }
+  if (norm.vencimento && typeof norm.vencimento === 'string') {
+    const match = norm.vencimento.trim().match(/^(\d{4}-\d{2})/);
+    if (match) return match[1];
+  }
+  return 'OUTROS';
+}
+
 // Calcula resumos consolidados por mês para auditoria e aprovação
 export function calculateMonthlySummaries(rows: AnalyzedImportRow[]): MonthSummary[] {
   const map: Record<string, {
@@ -523,15 +537,8 @@ export function calculateMonthlySummaries(rows: AnalyzedImportRow[]): MonthSumma
   }> = {};
 
   for (const row of rows) {
-    // Agrupa preferencialmente por competência; se não houver, usa mês do vencimento
-    let mKey = row.normalized.competencia;
-    if (!mKey || !/^\d{4}-\d{2}$/.test(mKey)) {
-      if (row.normalized.vencimento && /^\d{4}-\d{2}/.test(row.normalized.vencimento)) {
-        mKey = row.normalized.vencimento.substring(0, 7);
-      } else {
-        mKey = 'OUTROS';
-      }
-    }
+    // Agrupa preferencialmente por competência; se não houver, usa mês do vencimento via getRowMonthKey seguro
+    const mKey = getRowMonthKey(row?.normalized);
 
     if (!map[mKey]) {
       map[mKey] = {
@@ -552,9 +559,9 @@ export function calculateMonthlySummaries(rows: AnalyzedImportRow[]): MonthSumma
     if (row.isSelected) item.selectedCount++;
     if (row.action === 'ERRO') item.errorCount++;
 
-    const val = row.normalized.valorOriginal || 0;
-    const settled = row.normalized.principalBaixado || 0;
-    const open = row.normalized.saldoAtual || 0;
+    const val = (typeof row.normalized.valorOriginal === 'number' && !isNaN(row.normalized.valorOriginal)) ? row.normalized.valorOriginal : 0;
+    const settled = (typeof row.normalized.principalBaixado === 'number' && !isNaN(row.normalized.principalBaixado)) ? row.normalized.principalBaixado : 0;
+    const open = (typeof row.normalized.saldoAtual === 'number' && !isNaN(row.normalized.saldoAtual)) ? row.normalized.saldoAtual : 0;
 
     if (row.normalized.tipo === 'RECEBER') {
       item.receivablesCount++;

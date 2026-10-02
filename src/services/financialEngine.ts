@@ -17,12 +17,13 @@ import {
 import { storage } from './storageService';
 
 export const formatBRL = (amount: number): string => {
+  const safeAmount = (typeof amount === 'number' && !isNaN(amount) && isFinite(amount)) ? amount : 0;
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount || 0);
+  }).format(safeAmount);
 };
 
 export const parseBRL = (str: string): number => {

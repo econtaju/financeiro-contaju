@@ -60,6 +60,7 @@ import {
   ImportDiffAction,
   MonthSummary,
   generateTitleFingerprint,
+  getRowMonthKey,
   normalizeText,
   normalizeToCompetence,
   normalizeToISODate
@@ -415,33 +416,46 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   // Step 2 -> 3: Process and Validate Mapped Rows
   // -------------------------------------------------------------
   const handleProcessValidation = () => {
-    if (!mapping.vencimento && !mapping.valorOriginal) {
-      alert('Selecione pelo menos as colunas de "Data de Vencimento" e "Valor Original" para continuar.');
-      return;
+    try {
+      if (!mapping.vencimento && !mapping.valorOriginal) {
+        alert('Selecione pelo menos as colunas de "Data de Vencimento" e "Valor Original" para continuar.');
+        return;
+      }
+
+      const existingTitles = storage.getTitles() || [];
+      const currentCounterparties = storage.getCounterparties() || [];
+      const currentAccounts = storage.getChartAccounts() || [];
+
+      const analyzed = analyzeContaAzulSpreadsheet(
+        rawSheetData,
+        availableHeaders,
+        mapping as any,
+        existingTitles,
+        currentCounterparties,
+        currentAccounts,
+        fallbackExpenseAccountId,
+        fallbackRevenueAccountId,
+        typeDetectionMode,
+        extraColumns,
+        fallbackDefaultType
+      );
+
+      if (!analyzed || analyzed.length === 0) {
+        alert('Nenhum registro legível foi extraído da planilha com os mapeamentos informados. Por favor, revise as colunas.');
+        return;
+      }
+
+      setAnalyzedRows(analyzed);
+      setPartyOverrides({});
+      setSelectedMonth('ALL');
+      setFilterAction('TODOS');
+      setFilterType('TODOS');
+      setFilterCategoryMode('TODOS');
+      setStep(3);
+    } catch (err: any) {
+      console.error('Erro ao processar dados da planilha:', err);
+      alert(`Ocorreu um erro ao processar os dados da planilha: ${err?.message || 'Falha de leitura'}. Verifique os mapeamentos e tente novamente.`);
     }
-
-    const existingTitles = storage.getTitles();
-    const currentCounterparties = storage.getCounterparties();
-    const currentAccounts = storage.getChartAccounts();
-
-    const analyzed = analyzeContaAzulSpreadsheet(
-      rawSheetData,
-      availableHeaders,
-      mapping as any,
-      existingTitles,
-      currentCounterparties,
-      currentAccounts,
-      fallbackExpenseAccountId,
-      fallbackRevenueAccountId,
-      typeDetectionMode,
-      extraColumns,
-      fallbackDefaultType
-    );
-
-    setAnalyzedRows(analyzed);
-    setPartyOverrides({});
-    setSelectedMonth('ALL');
-    setStep(3);
   };
 
   // -------------------------------------------------------------
@@ -930,9 +944,9 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   // Linhas filtradas para exibição no Step 3 (por status, tipo, mês e categoria)
   const displayedRows = useMemo(() => {
     return analyzedRows.filter(r => {
-      // Filtro por Mês
+      // Filtro por Mês seguro
       if (selectedMonth !== 'ALL') {
-        const rowMonth = r.normalized.competencia || r.normalized.vencimento.substring(0, 7);
+        const rowMonth = getRowMonthKey(r?.normalized);
         if (rowMonth !== selectedMonth) return false;
       }
 
@@ -978,7 +992,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   // Ações de Lote no Mês
   const handleApproveMonth = (monthKey: string) => {
     setAnalyzedRows(prev => prev.map(r => {
-      const rowMonth = r.normalized.competencia || r.normalized.vencimento.substring(0, 7);
+      const rowMonth = getRowMonthKey(r?.normalized);
       if (monthKey === 'ALL' || rowMonth === monthKey) {
         if (r.action !== 'ERRO') return { ...r, isSelected: true };
       }
@@ -988,7 +1002,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
   const handleDeselectMonth = (monthKey: string) => {
     setAnalyzedRows(prev => prev.map(r => {
-      const rowMonth = r.normalized.competencia || r.normalized.vencimento.substring(0, 7);
+      const rowMonth = getRowMonthKey(r?.normalized);
       if (monthKey === 'ALL' || rowMonth === monthKey) {
         return { ...r, isSelected: false };
       }
@@ -998,7 +1012,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
   const handleSetMonthType = (monthKey: string, newType: 'RECEBER' | 'PAGAR') => {
     setAnalyzedRows(prev => prev.map(r => {
-      const rowMonth = r.normalized.competencia || r.normalized.vencimento.substring(0, 7);
+      const rowMonth = getRowMonthKey(r?.normalized);
       if (monthKey === 'ALL' || rowMonth === monthKey) {
         const norm = { ...r.normalized, tipo: newType, isManuallyEdited: true };
         const newFingerprint = generateTitleFingerprint(newType, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
@@ -2431,7 +2445,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                             <td className="py-2 px-3 min-w-[150px] max-w-[220px]">
                               <input
                                 type="text"
-                                value={row.normalized.titulo}
+                                value={row.normalized.titulo || ''}
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'titulo', e.target.value)}
                                 title="Editar título / documento"
                                 className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-bold text-[var(--text-primary)] transition-colors focus:outline-hidden"
@@ -2443,7 +2457,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               <div className="space-y-1">
                                 <input
                                   type="text"
-                                  value={row.normalized.fornecedor}
+                                  value={row.normalized.fornecedor || ''}
                                   onChange={(e) => handleInlineUpdate(row.rowNumber, 'fornecedor', e.target.value)}
                                   title="Editar fornecedor ou cliente"
                                   className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-semibold text-[var(--text-primary)] transition-colors focus:outline-hidden"
@@ -2465,7 +2479,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                             <td className="py-2 px-3 min-w-[220px] max-w-[320px]">
                               <textarea
                                 rows={2}
-                                value={row.normalized.descricao}
+                                value={row.normalized.descricao || ''}
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'descricao', e.target.value)}
                                 title="Editar descrição"
                                 className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal transition-colors focus:outline-hidden resize-none"
@@ -2477,18 +2491,18 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               <input
                                 type="text"
                                 placeholder="AAAA-MM"
-                                value={row.normalized.competencia}
+                                value={row.normalized.competencia || ''}
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'competencia', e.target.value)}
                                 title="Editar competência (AAAA-MM)"
                                 className="w-20 px-1.5 py-1 text-center font-mono font-bold text-xs text-amber-300 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden"
                               />
                             </td>
 
-                            {/* Vencimento (Editável Inline) */}
+                            {/* Vencimento (Editável Inline com Fallback Seguro para input date) */}
                             <td className="py-2 px-2 text-center w-32">
                               <input
                                 type="date"
-                                value={row.normalized.vencimento}
+                                value={row.normalized.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(row.normalized.vencimento) ? row.normalized.vencimento : ''}
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'vencimento', e.target.value)}
                                 title="Editar data de vencimento"
                                 className="w-28 px-1.5 py-1 text-center font-mono font-bold text-xs text-[var(--text-primary)] bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden"
@@ -2500,7 +2514,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                               <input
                                 type="number"
                                 step="0.01"
-                                value={row.normalized.valorOriginal}
+                                value={typeof row.normalized.valorOriginal === 'number' && !isNaN(row.normalized.valorOriginal) ? row.normalized.valorOriginal : 0}
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'valorOriginal', parseFloat(e.target.value) || 0)}
                                 title="Editar valor original"
                                 className={`w-24 px-1.5 py-1 text-right font-mono font-bold text-xs bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden ${
@@ -2511,12 +2525,12 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
                             {/* Principal Baixado */}
                             <td className="py-2 px-3 text-right text-blue-400 font-mono">
-                              {row.normalized.principalBaixado > 0 ? formatBRL(row.normalized.principalBaixado) : '-'}
+                              {(row.normalized.principalBaixado || 0) > 0 ? formatBRL(row.normalized.principalBaixado) : '-'}
                             </td>
 
                             {/* Saldo Restante */}
                             <td className="py-2 px-3 text-right font-bold text-[var(--text-primary)] font-mono">
-                              {formatBRL(row.normalized.saldoAtual)}
+                              {formatBRL(row.normalized.saldoAtual || 0)}
                             </td>
 
                             {/* Situação (Alternar Status com 1 Clique) */}
