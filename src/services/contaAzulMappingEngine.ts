@@ -719,24 +719,27 @@ export function analyzeContaAzulSpreadsheet(
       return;
     }
 
+    const isExplicitlyIgnored = (fieldKey: string) => columnMapping[fieldKey] === '__DONT_IMPORT__';
+
     const getVal = (fieldKey: string) => {
       const colName = columnMapping[fieldKey];
+      if (colName === '__DONT_IMPORT__') return undefined;
       return colName ? raw[colName] : undefined;
     };
 
     // 1. Vencimento e Data de Pagamento
     const rawVenc = getVal('vencimento');
-    let vencimento = normalizeToISODate(rawVenc);
+    let vencimento = isExplicitlyIgnored('vencimento') ? '' : normalizeToISODate(rawVenc);
 
     const rawDataPagto = getVal('dataPagamento');
-    const dataPagamento = normalizeToISODate(rawDataPagto);
+    const dataPagamento = isExplicitlyIgnored('dataPagamento') ? '' : normalizeToISODate(rawDataPagto);
 
     // 2. Emissão
     const rawEmissao = getVal('emissao');
-    const emissao = normalizeToISODate(rawEmissao, vencimento);
+    const emissao = isExplicitlyIgnored('emissao') ? '' : normalizeToISODate(rawEmissao, vencimento);
 
     // Fallback inteligente de vencimento se a coluna estiver em branco ou ausente
-    if (!vencimento) {
+    if (!vencimento && !isExplicitlyIgnored('vencimento')) {
       vencimento = dataPagamento || emissao || normalizeToISODate(getVal('previsaoCaixa'));
       if (vencimento) {
         warnings.push(`Data de vencimento inferida: ${vencimento}`);
@@ -746,22 +749,23 @@ export function analyzeContaAzulSpreadsheet(
     }
 
     // 3. Competência (mês/ano)
-    // Regra canônica: usa estritamente a coluna da planilha se mapeada/preenchida.
-    // Se não houver competência na linha, o fallback contábil de despesas repetidas/parcelas
-    // é o mês de VENCIMENTO da obrigação, e NUNCA a data de cadastro ou lançamento inicial!
     const rawComp = getVal('competencia');
-    const competencia = normalizeToCompetence(rawComp, vencimento || emissao);
+    const competencia = isExplicitlyIgnored('competencia') 
+      ? '' 
+      : normalizeToCompetence(rawComp, vencimento || emissao);
 
     // 4. Previsão de Caixa
     const rawPrev = getVal('previsaoCaixa');
-    const previsaoCaixa = normalizeToISODate(rawPrev, dataPagamento || vencimento);
+    const previsaoCaixa = isExplicitlyIgnored('previsaoCaixa') 
+      ? '' 
+      : normalizeToISODate(rawPrev, dataPagamento || vencimento);
 
     // 5. Valores
     const rawValOriginal = getVal('valorOriginal');
     let valorOriginal = normalizeCurrency(rawValOriginal);
 
     const rawBaixado = getVal('principalBaixado');
-    let principalBaixado = normalizeCurrency(rawBaixado);
+    let principalBaixado = isExplicitlyIgnored('principalBaixado') ? 0 : normalizeCurrency(rawBaixado);
 
     if (valorOriginal <= 0) {
       if (principalBaixado > 0) {
@@ -774,20 +778,19 @@ export function analyzeContaAzulSpreadsheet(
 
     let saldoAtual = 0;
     const rawSaldo = getVal('saldoAtual');
-    const hasRawSaldo = rawSaldo !== undefined && rawSaldo !== '' && rawSaldo !== null;
+    const hasRawSaldo = rawSaldo !== undefined && rawSaldo !== '' && rawSaldo !== null && !isExplicitlyIgnored('saldoAtual');
     if (hasRawSaldo) {
       saldoAtual = normalizeCurrency(rawSaldo);
     } else {
       saldoAtual = Math.max(0, Math.round((valorOriginal - principalBaixado) * 100) / 100);
     }
 
-    // 6. Separação de Tipo (Receita vs Despesa) e Filtro Estrito de Sinal
+    // 6. Separação de Tipo (Receita vs Despesa) e Filtro de Sinal
     const isRawNegative = isNegativeRawValue(rawValOriginal);
     const originalSign = isRawNegative ? -1 : 1;
     const rawTipo = getVal('tipo');
-    const rawCat = getVal('categoria');
+    const rawCat = isExplicitlyIgnored('categoria') ? '' : getVal('categoria');
     
-    // Se o valor bruto for negativo, é inerentemente PAGAR / Saída
     let tipo: TitleType = detectTitleType(
       rawTipo,
       rawValOriginal,
@@ -800,9 +803,9 @@ export function analyzeContaAzulSpreadsheet(
       tipo = 'PAGAR';
     }
 
-    // Filtro estrito solicitado pelo usuário:
+    // Filtro de Módulo:
     // No Contas a Receber: só importa valores positivos e que sejam aprovados de receber (rejeita negativos/despesas).
-    // No Contas a Pagar: só importa saídas/despesas (rejeita receitas de entrada).
+    // No Contas a Pagar: o padrão é Despesa/Pagar; só descarta se tiver tipo EXPLICITAMENTE mapeado como receita na planilha.
     let isTypeFilteredOut = false;
     let typeFilterReason: string | undefined;
 
@@ -813,10 +816,15 @@ export function analyzeContaAzulSpreadsheet(
         warnings.push('Filtro de Recebimento: Linha de valor negativo/despesa desconsiderada.');
       }
     } else if (fallbackDefaultType === 'PAGAR') {
-      if (!isRawNegative && tipo === 'RECEBER') {
+      const explicitTipoNorm = normalizeText(rawTipo);
+      const isExplicitRevenue = explicitTipoNorm.includes('receit') || explicitTipoNorm.includes('entrada') || explicitTipoNorm === 'cr';
+      if (isExplicitRevenue && tipo === 'RECEBER') {
         isTypeFilteredOut = true;
-        typeFilterReason = 'Lançamento de crédito/receita. No módulo de Contas a Pagar, apenas despesas e saídas a pagar são aceitas.';
-        warnings.push('Filtro de Pagamento: Linha de receita/crédito desconsiderada.');
+        typeFilterReason = 'Lançamento com tipo explícito de receita na planilha. No módulo de Contas a Pagar, apenas despesas e saídas são aceitas.';
+        warnings.push('Filtro de Pagamento: Linha de receita desconsiderada.');
+      } else {
+        // Assegura que em Contas a Pagar a linha seja tratada como despesa
+        tipo = 'PAGAR';
       }
     }
 
@@ -824,7 +832,7 @@ export function analyzeContaAzulSpreadsheet(
     const rawForn = getVal('fornecedor');
     const rawDesc = getVal('descricao');
     let contraparteName = rawForn ? String(rawForn).trim() : '';
-    if (!contraparteName) {
+    if (!contraparteName && !isExplicitlyIgnored('fornecedor')) {
       const fallbackName = rawDesc ? String(rawDesc).trim() : (rawCat ? String(rawCat).trim() : '');
       if (fallbackName) {
         contraparteName = fallbackName;
@@ -836,14 +844,17 @@ export function analyzeContaAzulSpreadsheet(
     }
 
     // 8. Descrição
-    const descricao = rawDesc ? String(rawDesc).trim() : `${tipo === 'RECEBER' ? 'Receita' : 'Despesa'} ${contraparteName} - Venc. ${vencimento}`;
+    let descricao = rawDesc ? String(rawDesc).trim() : '';
+    if (!descricao && !isExplicitlyIgnored('descricao')) {
+      descricao = `${tipo === 'RECEBER' ? 'Receita' : 'Despesa'} ${contraparteName || 'Lançamento'} - Venc. ${vencimento || 'A definir'}`;
+    }
 
     // 9. Título / Código de Referência (garantindo unicidade por linha)
     const rawTit = getVal('titulo');
     let titulo = rawTit ? String(rawTit).trim() : '';
     let externalId = titulo;
 
-    if (!titulo) {
+    if (!titulo && !isExplicitlyIgnored('titulo')) {
       const partySlug = normalizeText(contraparteName).replace(/[^a-z0-9]/g, '').substring(0, 8);
       const valCentavos = Math.round(valorOriginal * 100);
       const prefix = tipo === 'RECEBER' ? 'REC' : 'DESP';
@@ -863,6 +874,13 @@ export function analyzeContaAzulSpreadsheet(
       principalBaixado,
       hasRawSaldo
     );
+
+    // Se Data de Pagamento estiver preenchida e válida na planilha, considera como LIQUIDADO automaticamente
+    if (dataPagamento && /^\d{4}-\d{2}-\d{2}$/.test(dataPagamento) && situacao !== 'CANCELADO') {
+      situacao = 'LIQUIDADO';
+      principalBaixado = valorOriginal;
+      saldoAtual = 0;
+    }
 
     // Se o status for LIQUIDADO (ou pago), garantir que o valor pago seja igual ao valor original e saldo zerado
     if (situacao === 'LIQUIDADO') {

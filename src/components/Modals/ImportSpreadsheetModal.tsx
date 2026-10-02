@@ -97,6 +97,62 @@ interface ColumnMapping {
   centroCusto: string;
 }
 
+interface ImportErrorBoundaryProps {
+  children: React.ReactNode;
+  onReset?: () => void;
+}
+
+interface ImportErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ImportErrorBoundary extends React.Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
+  constructor(props: ImportErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ImportErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ImportErrorBoundary capturou falha de renderização:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-[var(--surface-card)] border border-rose-500/40 rounded-3xl p-8 max-w-lg mx-auto shadow-2xl text-center space-y-4 my-auto">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h3 className="text-base font-bold text-[var(--text-primary)]">
+            Inconsistência Temporária na Exibição
+          </h3>
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+            Houve uma falha ao renderizar os dados desta etapa: {this.state.error?.message || 'Formato não reconhecido'}. Seus dados originais não foram perdidos.
+          </p>
+          <div className="flex justify-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: undefined });
+                if (this.props.onReset) this.props.onReset();
+              }}
+              className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
+            >
+              Voltar ao Mapeamento de Colunas
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   isOpen,
   onClose,
@@ -567,10 +623,11 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   // -------------------------------------------------------------
   // Edição em Massa por Coluna (Step 3)
   // -------------------------------------------------------------
-  type BulkField = 'categoria' | 'competencia' | 'vencimento' | 'fornecedor' | 'descricao' | 'titulo' | 'valorOriginal' | 'tipo' | 'situacao';
+  type BulkField = 'categoria' | 'competencia' | 'vencimento' | 'dataPagamento' | 'fornecedor' | 'descricao' | 'titulo' | 'valorOriginal' | 'tipo' | 'situacao';
   const [bulkField, setBulkField] = useState<BulkField>('categoria');
   const [bulkCompetencia, setBulkCompetencia] = useState<string>('');
   const [bulkVencimento, setBulkVencimento] = useState<string>('');
+  const [bulkDataPagamento, setBulkDataPagamento] = useState<string>('');
   const [bulkFornecedor, setBulkFornecedor] = useState<string>('');
   const [bulkDescricao, setBulkDescricao] = useState<string>('');
   const [bulkTitulo, setBulkTitulo] = useState<string>('');
@@ -712,6 +769,31 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
         };
       }));
       summaryText = `Vencimento alterado para ${formatDateBR(isoVenc)} em ${selectedActiveCount} lançamento(s)!`;
+    } else if (bulkField === 'dataPagamento') {
+      const isoPagto = bulkDataPagamento ? normalizeToISODate(bulkDataPagamento) : '';
+      setAnalyzedRows(prev => prev.map(r => {
+        if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+        const isPaid = !!isoPagto;
+        const val = r.normalized.valorOriginal;
+        const norm: BaseSpreadsheetRow = {
+          ...r.normalized,
+          dataPagamento: isoPagto || undefined,
+          situacao: isPaid ? 'LIQUIDADO' : 'ABERTO',
+          principalBaixado: isPaid ? val : 0,
+          saldoAtual: isPaid ? 0 : val,
+          previsaoCaixa: isoPagto || r.normalized.vencimento,
+          isManuallyEdited: true
+        };
+        const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+        return {
+          ...r,
+          normalized: norm,
+          fingerprint: fp
+        };
+      }));
+      summaryText = isoPagto
+        ? `Data de pagamento definida como ${formatDateBR(isoPagto)} e situação alterada para LIQUIDADO em ${selectedActiveCount} lançamento(s)!`
+        : `Data de pagamento removida em ${selectedActiveCount} lançamento(s)!`;
     } else if (bulkField === 'fornecedor') {
       if (!bulkFornecedor.trim()) {
         alert('Informe o nome do fornecedor ou cliente.');
@@ -844,6 +926,66 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
     setBulkFeedbackMsg({ text: summaryText, type: 'success' });
     setTimeout(() => setBulkFeedbackMsg(null), 5000);
+  };
+
+  // Limpeza de Coluna em Massa (deixar em branco)
+  const handleClearBulkField = () => {
+    const selectedActiveCount = analyzedRows.filter(r => r.isSelected && r.action !== 'ERRO' && !r.isTypeFilteredOut).length;
+    if (selectedActiveCount === 0) {
+      alert('Nenhum lançamento ativo selecionado. Marque as caixas de seleção das linhas que deseja limpar.');
+      return;
+    }
+
+    setAnalyzedRows(prev => prev.map(r => {
+      if (!r.isSelected || r.action === 'ERRO' || r.isTypeFilteredOut) return r;
+      const norm: BaseSpreadsheetRow = { ...r.normalized, isManuallyEdited: true };
+
+      if (bulkField === 'titulo') norm.titulo = '';
+      if (bulkField === 'descricao') norm.descricao = '';
+      if (bulkField === 'competencia') norm.competencia = '';
+      if (bulkField === 'fornecedor') norm.fornecedor = '';
+      if (bulkField === 'dataPagamento') {
+        norm.dataPagamento = undefined;
+        norm.situacao = 'ABERTO';
+        norm.principalBaixado = 0;
+        norm.saldoAtual = norm.valorOriginal;
+      }
+
+      const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+      return { ...r, normalized: norm, fingerprint: fp };
+    }));
+
+    setBulkFeedbackMsg({ text: `Coluna "${bulkField}" limpa (deixada em branco) em ${selectedActiveCount} lançamento(s)!`, type: 'info' });
+    setTimeout(() => setBulkFeedbackMsg(null), 5000);
+  };
+
+  // Alteração inline rápida da data de pagamento com quitação automática
+  const handleInlinePaymentDateChange = (rowNumber: number, newDate: string) => {
+    setAnalyzedRows(prev => prev.map(r => {
+      if (r.rowNumber !== rowNumber) return r;
+
+      const iso = newDate ? normalizeToISODate(newDate) : '';
+      const isPaid = !!iso;
+      const val = r.normalized.valorOriginal;
+
+      const norm: BaseSpreadsheetRow = {
+        ...r.normalized,
+        dataPagamento: iso || undefined,
+        situacao: isPaid ? 'LIQUIDADO' : (r.normalized.situacao === 'LIQUIDADO' ? 'ABERTO' : r.normalized.situacao),
+        principalBaixado: isPaid ? val : 0,
+        saldoAtual: isPaid ? 0 : val,
+        previsaoCaixa: iso || r.normalized.vencimento,
+        isManuallyEdited: true
+      };
+
+      const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
+
+      return {
+        ...r,
+        normalized: norm,
+        fingerprint: fp
+      };
+    }));
   };
 
   // Edição rápida de célula inline na tabela
@@ -1480,6 +1622,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
 
         {/* Modal Body Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+          <ImportErrorBoundary onReset={() => setStep(2)}>
 
           {/* ========================================================= */}
           {/* STEP 1: UPLOAD & PRESET SELECTION */}
@@ -1772,14 +1915,17 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                                 onChange={(e) => setMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
                                 aria-label={`Mapeamento para ${field.label}`}
                                 className={`w-full px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-hidden ${
-                                  currentMappedCol
-                                    ? 'bg-amber-500/10 border-amber-400/40 text-amber-300'
-                                    : field.req
-                                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                                      : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)]'
+                                  currentMappedCol === '__DONT_IMPORT__'
+                                    ? 'bg-slate-500/15 border-slate-500/40 text-slate-400 font-bold'
+                                    : currentMappedCol
+                                      ? 'bg-amber-500/10 border-amber-400/40 text-amber-300'
+                                      : field.req
+                                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                                        : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)]'
                                 }`}
                               >
-                                <option value="">-- Não mapeado / Gerar automaticamente --</option>
+                                <option value="">-- Não mapeado / Automático --</option>
+                                <option value="__DONT_IMPORT__">🚫 (Não importar / Deixar em branco)</option>
                                 {availableHeaders.map(h => (
                                   <option key={h} value={h}>
                                     Coluna: {h}
@@ -1936,6 +2082,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       <option value="categoria">📁 Categoria (Plano de Contas)</option>
                       <option value="competencia">📅 Competência (Mês/Ano)</option>
                       <option value="vencimento">🗓️ Data de Vencimento</option>
+                      <option value="dataPagamento">💳 Data de Pagamento / Baixa</option>
                       <option value="fornecedor">🏢 Fornecedor / Cliente</option>
                       <option value="descricao">📝 Descrição / Histórico</option>
                       <option value="titulo">🏷️ Título / Referência</option>
@@ -1981,6 +2128,15 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                         type="date"
                         value={bulkVencimento}
                         onChange={(e) => setBulkVencimento(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono font-semibold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                      />
+                    )}
+
+                    {bulkField === 'dataPagamento' && (
+                      <input
+                        type="date"
+                        value={bulkDataPagamento}
+                        onChange={(e) => setBulkDataPagamento(e.target.value)}
                         className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono font-semibold text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
                       />
                     )}
@@ -2081,15 +2237,29 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                     )}
                   </div>
 
-                  {/* Botão de Aplicar em Massa */}
-                  <button
-                    type="button"
-                    onClick={handleApplyBulkEdit}
-                    className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Aplicar nas Selecionadas</span>
-                  </button>
+                  {/* Botões de Ação em Massa */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {['titulo', 'descricao', 'competencia', 'fornecedor', 'dataPagamento'].includes(bulkField) && (
+                      <button
+                        type="button"
+                        onClick={handleClearBulkField}
+                        title="Limpar e deixar em branco esta coluna para todas as linhas marcadas"
+                        className="px-3 py-2 bg-[var(--surface-elevated)] hover:bg-rose-500/15 text-rose-400 hover:text-rose-300 border border-[var(--border-subtle)] hover:border-rose-500/30 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Deixar em Branco</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkEdit}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Aplicar nas Selecionadas</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2340,6 +2510,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       <th className="py-2.5 px-3 min-w-[220px] max-w-[320px]">Descrição</th>
                       <th className="py-2.5 px-2 text-center w-24">Competência</th>
                       <th className="py-2.5 px-2 text-center w-32">Vencimento</th>
+                      <th className="py-2.5 px-2 text-center w-32">Data Pagto</th>
                       <th className="py-2.5 px-3 text-right w-28">Valor Original</th>
                       <th className="py-2.5 px-3 text-right w-24">Baixado</th>
                       <th className="py-2.5 px-3 text-right w-24">Saldo</th>
@@ -2356,7 +2527,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                   <tbody className="divide-y divide-[var(--border-subtle)] text-xs">
                     {displayedRows.length === 0 ? (
                       <tr>
-                        <td colSpan={13 + extraColumns.length} className="py-12 text-center text-xs text-[var(--text-secondary)] font-sans">
+                        <td colSpan={14 + extraColumns.length} className="py-12 text-center text-xs text-[var(--text-secondary)] font-sans">
                           Nenhum lançamento encontrado para os filtros selecionados.
                         </td>
                       </tr>
@@ -2506,6 +2677,21 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                                 onChange={(e) => handleInlineUpdate(row.rowNumber, 'vencimento', e.target.value)}
                                 title="Editar data de vencimento"
                                 className="w-28 px-1.5 py-1 text-center font-mono font-bold text-xs text-[var(--text-primary)] bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg transition-colors focus:outline-hidden"
+                              />
+                            </td>
+
+                            {/* Data de Pagamento / Quitação (Editável Inline com Quitação Automática) */}
+                            <td className="py-2 px-2 text-center w-32">
+                              <input
+                                type="date"
+                                value={row.normalized.dataPagamento && /^\d{4}-\d{2}-\d{2}$/.test(row.normalized.dataPagamento) ? row.normalized.dataPagamento : ''}
+                                onChange={(e) => handleInlinePaymentDateChange(row.rowNumber, e.target.value)}
+                                title="Data de pagamento / quitação efetiva"
+                                className={`w-28 px-1.5 py-1 text-center font-mono font-bold text-xs rounded-lg transition-colors focus:outline-hidden ${
+                                  row.normalized.dataPagamento
+                                    ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 focus:border-emerald-400'
+                                    : 'bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 text-[var(--text-secondary)]'
+                                }`}
                               />
                             </td>
 
@@ -2721,6 +2907,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
             </div>
           )}
 
+          </ImportErrorBoundary>
         </div>
 
         {/* Modal Footer Controls */}
@@ -2899,14 +3086,16 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
       />
 
       {/* Modal de Cruzamento e Criação de Dados Cadastrais */}
-      <ImportCrossReferenceModal
-        isOpen={showCrossReferenceModal}
-        onClose={() => setShowCrossReferenceModal(false)}
-        analyzedRows={analyzedRows}
-        counterparties={counterparties}
-        chartAccounts={chartAccounts}
-        onEntitiesCreated={handleRefreshEntities}
-      />
+      {showCrossReferenceModal && (
+        <ImportCrossReferenceModal
+          isOpen={showCrossReferenceModal}
+          onClose={() => setShowCrossReferenceModal(false)}
+          analyzedRows={analyzedRows}
+          counterparties={counterparties}
+          chartAccounts={chartAccounts}
+          onEntitiesCreated={handleRefreshEntities}
+        />
+      )}
 
     </div>
   );

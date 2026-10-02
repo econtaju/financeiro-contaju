@@ -39,6 +39,9 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
 
   // 1. Levantamento de Contrapartes da Planilha
   const partyStats = React.useMemo(() => {
+    if (!isOpen || !analyzedRows || analyzedRows.length === 0) {
+      return { items: [], matched: [], suggested: [], newParties: [] };
+    }
     const rows = analyzedRows || [];
     const map = new Map<string, {
       name: string;
@@ -49,20 +52,22 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
     }>();
 
     for (const r of rows) {
-      const name = r.normalized.fornecedor.trim();
+      const name = (r?.normalized?.fornecedor || '').trim();
       if (!name) continue;
+
+      const rowType = r?.normalized?.tipo || 'PAGAR';
 
       if (!map.has(name)) {
         map.set(name, {
           name,
-          types: new Set([r.normalized.tipo]),
+          types: new Set([rowType]),
           count: 1,
           matchedId: r.matchedCounterpartyId,
           suggestedId: r.suggestedCounterpartyId
         });
       } else {
         const item = map.get(name)!;
-        item.types.add(r.normalized.tipo);
+        item.types.add(rowType);
         item.count++;
       }
     }
@@ -73,10 +78,13 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
     const newParties = items.filter(i => !i.matchedId && !i.suggestedId);
 
     return { items, matched, suggested, newParties };
-  }, [analyzedRows]);
+  }, [analyzedRows, isOpen]);
 
   // 2. Levantamento de Categorias da Planilha
   const categoryStats = React.useMemo(() => {
+    if (!isOpen || !analyzedRows || analyzedRows.length === 0) {
+      return { items: [], matched: [], newCategories: [] };
+    }
     const rows = analyzedRows || [];
     const map = new Map<string, {
       name: string;
@@ -87,20 +95,22 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
     }>();
 
     for (const r of rows) {
-      const cat = r.normalized.categoria?.trim();
+      const cat = (r?.normalized?.categoria || '').trim();
       if (!cat) continue;
+
+      const rowType = r?.normalized?.tipo || 'PAGAR';
 
       if (!map.has(cat)) {
         map.set(cat, {
           name: cat,
-          types: new Set([r.normalized.tipo]),
+          types: new Set([rowType]),
           count: 1,
           matchedId: r.matchedChartAccountId,
           suggestedId: r.suggestedChartAccountId
         });
       } else {
         const item = map.get(cat)!;
-        item.types.add(r.normalized.tipo);
+        item.types.add(rowType);
         item.count++;
       }
     }
@@ -110,7 +120,7 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
     const newCategories = items.filter(i => !i.matchedId);
 
     return { items, matched, newCategories };
-  }, [analyzedRows]);
+  }, [analyzedRows, isOpen]);
 
   if (!isOpen) return null;
 
