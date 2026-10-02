@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, Component } from 'react';
 import { 
   Upload, 
   FileSpreadsheet, 
@@ -107,10 +107,11 @@ interface ImportErrorBoundaryState {
   error?: Error;
 }
 
-class ImportErrorBoundary extends React.Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
+class ImportErrorBoundary extends Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
+  public state: ImportErrorBoundaryState = { hasError: false };
+
   constructor(props: ImportErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): ImportErrorBoundaryState {
@@ -627,6 +628,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
   // -------------------------------------------------------------
   type BulkField = 'categoria' | 'competencia' | 'vencimento' | 'dataPagamento' | 'fornecedor' | 'descricao' | 'titulo' | 'valorOriginal' | 'tipo' | 'situacao';
   const [bulkField, setBulkField] = useState<BulkField>('categoria');
+  const [bulkCategoryId, setBulkCategoryId] = useState<string>('');
   const [bulkCompetencia, setBulkCompetencia] = useState<string>('');
   const [bulkVencimento, setBulkVencimento] = useState<string>('');
   const [bulkDataPagamento, setBulkDataPagamento] = useState<string>('');
@@ -811,7 +813,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         };
         const fp = generateTitleFingerprint(norm.tipo, norm.titulo, norm.fornecedor, norm.vencimento, norm.valorOriginal);
 
-        const matched = existingCounterparties.find(cp => 
+        const matched = counterparties.find(cp => 
           normalizeText(cp.name) === normalizeText(newPartyName) ||
           normalizeText(cp.tradeName || '') === normalizeText(newPartyName)
         );

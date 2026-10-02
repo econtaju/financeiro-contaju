@@ -226,7 +226,7 @@ class CategoryLearningService {
     // 2. Busca no histórico de títulos anteriores do sistema
     if (safeTitles.length > 0 && normParty) {
       const matchingTitles = safeTitles.filter(t => {
-        if (!t || t.type !== type || !t.chartAccountId) return false;
+        if (!t || t.type !== type || !t.accountId) return false;
         // Verifica se a contraparte ou o título bate
         const tParty = normalizeText(t.counterpartyId || '');
         const tDesc = normalizeText(t.description || '');
@@ -237,8 +237,8 @@ class CategoryLearningService {
         // Conta a categoria mais frequente entre os títulos encontrados
         const countMap: Record<string, number> = {};
         for (const mt of matchingTitles) {
-          if (mt.chartAccountId) {
-            countMap[mt.chartAccountId] = (countMap[mt.chartAccountId] || 0) + 1;
+          if (mt.accountId) {
+            countMap[mt.accountId] = (countMap[mt.accountId] || 0) + 1;
           }
         }
 
@@ -251,7 +251,7 @@ class CategoryLearningService {
           }
         }
 
-        const account = chartAccounts.find(a => a.id === bestAccountId);
+        const account = safeAccounts.find(a => a.id === bestAccountId);
         if (account) {
           return {
             chartAccountId: account.id,
