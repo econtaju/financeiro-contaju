@@ -56,7 +56,7 @@ console.log(`  • A Vencer (Futuro): ${formatBRL(payDueFuture.reduce((s, t) => 
 console.log(`- Total já Pago: ${formatBRL(payTotalSettledAmount)} (${paySettled.length} pagamentos realizados)\n`);
 
 // 3. CAIXA & SALDOS BANCÁRIOS
-const consolidatedCash = FinancialEngine.getConsolidatedCashBalance(INITIAL_BANK_ACCOUNTS, INITIAL_MOVEMENTS);
+const consolidatedCash = FinancialEngine.getConsolidatedCashBalance();
 
 console.log('🏦 3. SALDOS BANCÁRIOS CONSOLIDADOS (DISPONIBILIDADE IMEDIATA):');
 INITIAL_BANK_ACCOUNTS.forEach(b => {
@@ -67,9 +67,9 @@ console.log(`⭐ Saldo Consolidado Total de Caixa: ${formatBRL(consolidatedCash)
 
 // 4. CARTEIRA DE CONTRATOS & MRR
 const activeContracts = INITIAL_CONTRACTS.filter(c => c.status === 'ATIVO');
-const mrr = FinancialEngine.calculateMRR(INITIAL_CONTRACTS);
+const mrr = FinancialEngine.calculateMRR();
 const avgTicket = activeContracts.length > 0 ? mrr / activeContracts.length : 0;
-const clientMetrics = FinancialEngine.calculateClientMetrics(INITIAL_COUNTERPARTIES, INITIAL_CONTRACTS);
+const clientMetrics = FinancialEngine.calculateClientMetrics();
 
 console.log('💼 4. COMERCIAL - CONTRATOS RECORRENTES & MRR:');
 console.log(`- Clientes Cadastrados: ${clientMetrics.totalClients} (Ativos: ${clientMetrics.activeClients})`);

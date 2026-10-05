@@ -20,7 +20,8 @@ import {
   UserCheck,
   RotateCcw,
   Ban,
-  CheckCircle
+  CheckCircle,
+  Sparkles
 } from 'lucide-react';
 import { Counterparty, Contract, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';

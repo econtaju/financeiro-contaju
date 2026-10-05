@@ -1033,7 +1033,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     setRollbackConfirmId(null);
     if (res.success) {
       setAuditFeedbackMsg(`✓ ${res.message}`);
-      if (props.onSuccess) props.onSuccess();
+      if (onSuccess) onSuccess();
     } else {
       setAuditFeedbackMsg(`⚠️ ${res.message}`);
     }
@@ -2516,8 +2516,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           createdCount,
           updatedCount,
           settledCount,
-          totalAmountReceivables,
-          totalAmountPayables,
+          totalAmountReceivables: totalReceivables,
+          totalAmountPayables: totalPayables,
           createdTitleIds,
           updatedTitleIds,
           createdPartyIds: Object.values(createdPartyMap)
