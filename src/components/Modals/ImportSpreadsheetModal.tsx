@@ -137,14 +137,14 @@ function getSavedMappingTemplate(): SavedMappingTemplate | null {
   }
 }
 
-interface GroupedChartAccounts {
+export interface GroupedChartAccounts {
   groupName: string;
   shortName: string;
   badgeColor: string;
   accounts: ChartAccount[];
 }
 
-function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartAccounts[] {
+export function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartAccounts[] {
   const analytical = accounts.filter(a => a.isAnalytical);
 
   const groupDefs: { key: string; name: string; shortName: string; badgeColor: string; match: (acc: ChartAccount) => boolean }[] = [
@@ -244,7 +244,7 @@ function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartAccounts
 }
 
 // Modal Popover de Busca e Seleção Rápida de Categorias Agrupadas
-interface CategoryQuickSearchModalProps {
+export interface CategoryQuickSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectAccount: (accountId: string) => void;
@@ -254,7 +254,7 @@ interface CategoryQuickSearchModalProps {
   groupedAccounts: GroupedChartAccounts[];
 }
 
-const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> = ({
+export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> = ({
   isOpen,
   onClose,
   onSelectAccount,
@@ -291,24 +291,47 @@ const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> = ({
     return { ...g, accounts: matchingAccounts };
   }).filter(g => g.accounts.length > 0);
 
+  const totalMatchingAccounts = filteredGroups.reduce((acc, g) => acc + g.accounts.length, 0);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Se houver contas encontradas, seleciona a primeira imediatamente
+      const firstAccount = filteredGroups[0]?.accounts[0];
+      if (firstAccount) {
+        onSelectAccount(firstAccount.id);
+        onClose();
+      }
+    } else if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
-      <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden text-[var(--text-primary)]">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in">
+      <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden text-[var(--text-primary)]">
         
         {/* Header com barra de pesquisa */}
         <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] space-y-3 shrink-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
-                <Search className="w-4 h-4" />
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shadow-xs">
+                <Search className="w-4.5 h-4.5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  Pesquisar & Selecionar Categoria
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <span>Pesquisar Categoria por Nome ou Código</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    Plano de Contas
+                  </span>
                 </h3>
-                {targetDescription && (
-                  <p className="text-[11px] text-[var(--text-secondary)] truncate max-w-md">
-                    Lançamento: <strong className="text-[var(--text-primary)]">{targetDescription}</strong>
+                {targetDescription ? (
+                  <p className="text-[11px] text-[var(--text-secondary)] truncate max-w-lg mt-0.5">
+                    Lançamento atual: <strong className="text-[var(--text-primary)]">{targetDescription}</strong>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                    Escolha a conta contábil para categorizar os lançamentos selecionados
                   </p>
                 )}
               </div>
@@ -323,26 +346,32 @@ const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> = ({
             </button>
           </div>
 
-          {/* Campo de Busca Rápida */}
+          {/* Campo de Busca Rápida por Nome */}
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--text-secondary)]" />
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-amber-400" />
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Digite o código (ex: 7.1.04, 4.2) ou nome da conta (ex: Distribuição de Lucros, Honorários, Aluguel)..."
+              placeholder="Digite o nome da categoria (ex: Aluguel, Vale, Viagem, Salário) ou código (ex: 3.2, 1.1)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-amber-400 focus:outline-hidden font-medium"
+              onKeyDown={handleKeyDown}
+              className="w-full pl-9 pr-20 py-2 rounded-xl border border-amber-500/30 bg-[var(--surface-card)] text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30 focus:outline-hidden font-medium"
             />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold"
-              >
-                ✕
-              </button>
-            )}
+            <div className="absolute right-2 top-2 flex items-center space-x-1">
+              <span className="text-[10px] font-mono text-[var(--text-secondary)] px-1.5 py-0.5 bg-[var(--surface-elevated)] rounded border border-[var(--border-subtle)]">
+                {totalMatchingAccounts} contas
+              </span>
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Filtros Rápidos por Macro-Grupo */}
@@ -535,6 +564,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
   // Database lookups
   const bankAccounts = useMemo(() => storage.getBankAccounts(), []);
   const chartAccounts = useMemo(() => storage.getChartAccounts(), []);
+  const chartAccountsMap = useMemo(() => new Map(chartAccounts.map(a => [a.id, a])), [chartAccounts]);
   const counterparties = useMemo(() => storage.getCounterparties(), []);
   
   const defaultBank = bankAccounts[0]?.id || '';
@@ -2604,36 +2634,49 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                   <div className="flex-1 min-w-[260px]">
                     {bulkField === 'categoria' && (
                       <div className="flex items-center gap-2">
-                        <select
-                          value={bulkCategoryId || batchCategoryId}
-                          onChange={(e) => {
-                            setBulkCategoryId(e.target.value);
-                            setBatchCategoryId(e.target.value);
-                          }}
-                          aria-label="Nova categoria para aplicar em lote"
-                          className="flex-1 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-medium text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
-                        >
-                          <option value="">Selecione a categoria ou use a busca rápida ao lado...</option>
-                          {groupedAccounts.map(g => (
-                            <optgroup key={g.groupName} label={g.groupName}>
-                              {g.accounts.map(acc => (
-                                <option key={acc.id} value={acc.id}>
-                                  {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        {(() => {
+                          const activeBulkAccId = bulkCategoryId || batchCategoryId;
+                          const currentAcc = chartAccountsMap.get(activeBulkAccId || '');
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setCategorySearchTarget({ isBulk: true, currentAccountId: activeBulkAccId })}
+                              className="flex-1 px-3 py-1.5 rounded-xl border border-amber-500/40 bg-[var(--surface-elevated)] hover:border-amber-400 text-xs font-medium text-left flex items-center justify-between gap-2 transition-all cursor-pointer shadow-xs"
+                              title="Clique para abrir a pesquisa por nome e código contábil agrupada por categorias do plano de contas"
+                            >
+                              <span className="truncate">
+                                {currentAcc ? (
+                                  <span className="text-[var(--text-primary)] font-bold">
+                                    {currentAcc.code && <span className="text-amber-400 font-mono mr-1.5">[{currentAcc.code}]</span>}
+                                    {currentAcc.name}
+                                  </span>
+                                ) : (
+                                  <span className="text-[var(--text-secondary)] italic">
+                                    🔍 Clique para pesquisar e escolher a categoria por nome...
+                                  </span>
+                                )}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[10px] flex items-center gap-1 shrink-0">
+                                <Search className="w-3 h-3" />
+                                Pesquisar
+                              </span>
+                            </button>
+                          );
+                        })()}
 
-                        <button
-                          type="button"
-                          onClick={() => setCategorySearchTarget({ isBulk: true, currentAccountId: bulkCategoryId || batchCategoryId })}
-                          className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-                          title="Abrir busca rápida agrupada com pesquisa por nome ou código contábil"
-                        >
-                          <Search className="w-3.5 h-3.5" />
-                          <span>Buscar...</span>
-                        </button>
+                        {(bulkCategoryId || batchCategoryId) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkCategoryId('');
+                              setBatchCategoryId('');
+                            }}
+                            className="p-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-rose-400 hover:border-rose-400/40 text-xs cursor-pointer"
+                            title="Limpar categoria selecionada"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -3172,42 +3215,42 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                     />
                                   )}
 
-                                  <select
-                                    value={row.matchedChartAccountId || ''}
-                                    onChange={(e) => handleChangeRowCategory(row.rowNumber, e.target.value)}
-                                    aria-label={`Categoria da linha ${row.rowNumber}`}
-                                    className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium border transition-colors focus:outline-hidden ${
-                                      row.isFromMemory
-                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 focus:border-emerald-400 font-bold'
-                                        : row.normalized.isManuallyEdited
-                                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 focus:border-blue-400 font-medium'
-                                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400 font-medium'
-                                    }`}
-                                  >
-                                    {groupedAccounts.map(g => (
-                                      <optgroup key={g.groupName} label={g.groupName}>
-                                        {g.accounts.map(acc => (
-                                          <option key={acc.id} value={acc.id}>
-                                            {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    ))}
-                                  </select>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => setCategorySearchTarget({
-                                      rowNumber: row.rowNumber,
-                                      description: row.normalized.descricao || row.normalized.titulo,
-                                      currentAccountId: row.matchedChartAccountId,
-                                      type: row.normalized.tipo
-                                    })}
-                                    className="p-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-amber-500/20 text-amber-400 border border-[var(--border-subtle)] hover:border-amber-400/50 transition-colors shrink-0 cursor-pointer"
-                                    title="Pesquisar categoria com visualização agrupada por macro-grupos"
-                                  >
-                                    <Search className="w-3.5 h-3.5" />
-                                  </button>
+                                  {(() => {
+                                    const currentAcc = chartAccountsMap.get(row.matchedChartAccountId || '');
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => setCategorySearchTarget({
+                                          rowNumber: row.rowNumber,
+                                          description: row.normalized.descricao || row.normalized.titulo,
+                                          currentAccountId: row.matchedChartAccountId,
+                                          type: row.normalized.tipo
+                                        })}
+                                        className={`flex-1 py-1 px-2.5 rounded-lg text-xs font-medium border text-left flex items-center justify-between gap-1.5 transition-all cursor-pointer shadow-xs ${
+                                          row.isFromMemory
+                                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300 hover:border-emerald-400 font-bold'
+                                            : row.normalized.isManuallyEdited
+                                              ? 'bg-blue-500/10 border-blue-500/35 text-blue-300 hover:border-blue-400 font-medium'
+                                              : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] hover:border-amber-400/70 text-[var(--text-primary)] font-medium'
+                                        }`}
+                                        title="Clique para abrir a pesquisa por nome e código contábil (Plano de Contas Agrupado)"
+                                      >
+                                        <span className="truncate">
+                                          {currentAcc ? (
+                                            <>
+                                              {currentAcc.code && <span className="opacity-75 font-mono mr-1">[{currentAcc.code}]</span>}
+                                              <span>{currentAcc.name}</span>
+                                            </>
+                                          ) : (
+                                            <span className="text-amber-400 font-medium italic flex items-center gap-1">
+                                              <Search className="w-3 h-3" /> Selecionar categoria...
+                                            </span>
+                                          )}
+                                        </span>
+                                        <Search className="w-3.5 h-3.5 shrink-0 opacity-80 text-amber-400" />
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </td>

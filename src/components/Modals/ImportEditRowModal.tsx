@@ -11,10 +11,12 @@ import {
   Tag, 
   Layers, 
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Search
 } from 'lucide-react';
 import { AnalyzedImportRow, BaseSpreadsheetRow, ExtraColumnDefinition, generateTitleFingerprint } from '../../services/contaAzulMappingEngine';
 import { Counterparty, ChartAccount, BankAccount, TitleType } from '../../types';
+import { CategoryQuickSearchModal, getGroupedChartAccounts } from './ImportSpreadsheetModal';
 
 interface ImportEditRowModalProps {
   isOpen: boolean;
@@ -86,6 +88,9 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
 
   // Filtrar contas analíticas de acordo com o tipo
   const relevantAccounts = chartAccounts.filter(a => a.isAnalytical);
+  const [showCategorySearch, setShowCategorySearch] = useState(false);
+  const groupedAccounts = React.useMemo(() => getGroupedChartAccounts(chartAccounts), [chartAccounts]);
+  const currentAccount = chartAccounts.find(a => a.id === selectedAccountId);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,17 +367,29 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
               <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
                 Conta do Plano de Contas:
               </label>
-              <select
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl text-xs font-medium text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+              <button
+                type="button"
+                onClick={() => setShowCategorySearch(true)}
+                className="w-full px-3 py-2 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] hover:border-amber-400 rounded-xl text-xs font-medium text-left flex items-center justify-between transition-all cursor-pointer shadow-xs"
+                title="Pesquisar categoria contábil com agrupamento e caixa de busca por nome ou código"
               >
-                {relevantAccounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.code} - {acc.name} ({acc.nature})
-                  </option>
-                ))}
-              </select>
+                <span className="truncate">
+                  {currentAccount ? (
+                    <span className="text-[var(--text-primary)] font-bold">
+                      {currentAccount.code && <span className="text-amber-400 font-mono mr-1.5">[{currentAccount.code}]</span>}
+                      {currentAccount.name}
+                    </span>
+                  ) : (
+                    <span className="text-amber-400 italic flex items-center gap-1 font-semibold">
+                      <Search className="w-3.5 h-3.5" /> Clique para pesquisar e selecionar categoria...
+                    </span>
+                  )}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[10px] flex items-center gap-1 shrink-0 ml-2">
+                  <Search className="w-3 h-3" />
+                  Buscar
+                </span>
+              </button>
             </div>
           </div>
 
@@ -427,6 +444,22 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
         </form>
 
       </div>
+
+      {/* Modal de Busca Rápida de Categorias com Pesquisa por Nome e Macro-Grupos */}
+      {showCategorySearch && (
+        <CategoryQuickSearchModal
+          isOpen={showCategorySearch}
+          onClose={() => setShowCategorySearch(false)}
+          currentAccountId={selectedAccountId}
+          targetDescription={descricao || titulo}
+          targetType={tipo}
+          groupedAccounts={groupedAccounts}
+          onSelectAccount={(accId) => {
+            setSelectedAccountId(accId);
+            setShowCategorySearch(false);
+          }}
+        />
+      )}
     </div>
   );
 };
