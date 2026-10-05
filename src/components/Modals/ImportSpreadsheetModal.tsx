@@ -2260,10 +2260,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           const valOriginal = row.normalized.valorOriginal || 0;
           let principalReal = rawBaixado;
           let encargosJuros = 0;
+          let descontoFinanceiro = 0;
 
-          // Detecção Automática de Juros e Multas nas Quitações com Acréscimo
+          // Detecção Automática de Juros/Multas nas Quitações com Acréscimo OU Desconto Financeiro
           if (valOriginal > 0 && rawBaixado > (valOriginal + 0.01)) {
             encargosJuros = Math.round((rawBaixado - valOriginal) * 100) / 100;
+            principalReal = valOriginal;
+          } else if (valOriginal > 0 && rawBaixado > 0 && rawBaixado < (valOriginal - 0.01) && (row.normalized.situacao === 'LIQUIDADO' || row.normalized.saldoAtual === 0)) {
+            descontoFinanceiro = Math.round((valOriginal - rawBaixado) * 100) / 100;
             principalReal = valOriginal;
           }
 
@@ -2298,6 +2302,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             expectedBankAccountId: expectedBankId,
             notes: encargosJuros > 0
               ? `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}. [Quitação com acréscimo: R$ ${formatBRL(principalReal)} principal + R$ ${formatBRL(encargosJuros)} juros/multa].`
+              : descontoFinanceiro > 0
+              ? `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}. [Quitação com desconto: R$ ${formatBRL(valOriginal)} quitado com abatimento de R$ ${formatBRL(descontoFinanceiro)} (Líquido: R$ ${formatBRL(rawBaixado)})].`
               : `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}.`,
             createdAt: nowIso,
             updatedAt: nowIso
@@ -2320,7 +2326,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               bankAccountId: expectedBankId,
               components: {
                 principalSettled: principalReal,
-                discount: 0,
+                discount: descontoFinanceiro,
                 interest: encargosJuros,
                 fine: 0,
                 bankFee: 0,
@@ -2328,6 +2334,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               },
               notes: encargosJuros > 0
                 ? `Baixa com acréscimo importada (${fileName}). Principal: R$ ${formatBRL(principalReal)} + Juros/Multa: R$ ${formatBRL(encargosJuros)}.`
+                : descontoFinanceiro > 0
+                ? `Baixa com desconto importada (${fileName}). Principal amortizado: R$ ${formatBRL(valOriginal)} - Desconto: R$ ${formatBRL(descontoFinanceiro)} (Líquido: R$ ${formatBRL(rawBaixado)}).`
                 : `Baixa importada (${fileName}).`,
               isReversed: false,
               createdAt: nowIso,
@@ -2344,6 +2352,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               originReferenceId: settlementId,
               description: encargosJuros > 0
                 ? `Baixa importada ${row.normalized.titulo} - ${row.normalized.fornecedor} (Principal: R$ ${formatBRL(principalReal)} + Juros/Multa: R$ ${formatBRL(encargosJuros)})`
+                : descontoFinanceiro > 0
+                ? `Baixa com desconto importada ${row.normalized.titulo} - ${row.normalized.fornecedor} (Total: R$ ${formatBRL(valOriginal)} com Desconto: R$ ${formatBRL(descontoFinanceiro)})`
                 : `Baixa importada ${row.normalized.titulo} - ${row.normalized.fornecedor}`,
               counterpartyId: resolvedPartyId,
               accountId,
@@ -2386,6 +2396,9 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               const compPrincipal = Math.min(diffTotal, remainingPrincipal);
               const compInterest = Math.max(0, Math.round((diffTotal - compPrincipal) * 100) / 100);
 
+              const isSettledWithDiscount = (row.normalized.situacao === 'LIQUIDADO' || row.normalized.saldoAtual === 0) && row.normalized.principalBaixado < (row.normalized.valorOriginal - 0.01);
+              const compDiscount = isSettledWithDiscount ? Math.max(0, Math.round((row.normalized.valorOriginal - row.normalized.principalBaixado) * 100) / 100) : 0;
+
               settledCount++;
               const settlementId = `set-imp-upd-${Date.now()}-${row.rowNumber}`;
               const settlementDate = row.normalized.dataPagamento || row.normalized.previsaoCaixa || row.normalized.vencimento;
@@ -2398,7 +2411,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 bankAccountId: currentT.expectedBankAccountId || expectedBankId,
                 components: {
                   principalSettled: compPrincipal,
-                  discount: 0,
+                  discount: compDiscount,
                   interest: compInterest,
                   fine: 0,
                   bankFee: 0,
@@ -2406,6 +2419,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 },
                 notes: compInterest > 0
                   ? `Baixa complementar com juros/multa (${fileName}). Principal: R$ ${formatBRL(compPrincipal)} + Encargos: R$ ${formatBRL(compInterest)}.`
+                  : compDiscount > 0
+                  ? `Baixa complementar com desconto (${fileName}). Principal: R$ ${formatBRL(compPrincipal)} - Desconto: R$ ${formatBRL(compDiscount)}.`
                   : `Baixa atualizada via reimportação (${fileName}).`,
                 isReversed: false,
                 createdAt: nowIso,
@@ -2477,6 +2492,17 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         recordId: `import-${Date.now()}`,
         details: `Importação transacional de ${selectedRows.length} títulos da planilha "${fileName}". ${createdCount} criados (${receivablesCount} receitas, ${payablesCount} despesas), ${updatedCount} atualizados, ${settledCount} baixas e ${newPartiesCount} novas contrapartes cadastradas.`
       });
+
+      if (newPartiesCount > 0) {
+        storage.addAuditLog({
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'CADASTRO_FORNECEDOR',
+          module: 'Cadastros & Contrapartes',
+          recordId: `cp-batch-${Date.now()}`,
+          details: `Cadastro automático de ${newPartiesCount} novas contrapartes (clientes/fornecedores) identificadas e aprovadas na importação da planilha "${fileName}".`
+        });
+      }
 
       // Gravação no Histórico de Auditoria com Suporte a Rollback
       try {
@@ -4056,6 +4082,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                 const original = row.normalized.valorOriginal || 0;
                                 const hasSurcharge = original > 0 && baixado > original + 0.01;
                                 const diffJuros = hasSurcharge ? baixado - original : 0;
+                                const hasDiscount = original > 0 && baixado > 0 && baixado < original - 0.01 && (row.normalized.situacao === 'LIQUIDADO' || row.normalized.saldoAtual === 0);
+                                const diffDesconto = hasDiscount ? original - baixado : 0;
 
                                 if (baixado <= 0) return '-';
 
@@ -4068,6 +4096,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                         title={`Quitação com Acréscimo: Valor pago supera o valor original em R$ ${formatBRL(diffJuros)}. O sistema registrará automaticamente R$ ${formatBRL(original)} como principal e R$ ${formatBRL(diffJuros)} como Juros/Multa.`}
                                       >
                                         ⚡ +{formatBRL(diffJuros)} juros
+                                      </span>
+                                    )}
+                                    {hasDiscount && (
+                                      <span
+                                        className="text-[9px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1 py-0.2 rounded mt-0.5 flex items-center gap-0.5 whitespace-nowrap shadow-2xs"
+                                        title={`Quitação com Desconto: Título liquidado com abatimento de R$ ${formatBRL(diffDesconto)}. O sistema registrará R$ ${formatBRL(original)} de principal amortizado e R$ ${formatBRL(diffDesconto)} como Desconto Financeiro obtido/concedido.`}
+                                      >
+                                        🏷️ -{formatBRL(diffDesconto)} desc.
                                       </span>
                                     )}
                                   </div>

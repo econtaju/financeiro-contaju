@@ -78,12 +78,13 @@ export const SuppliersView: React.FC = () => {
         action: 'EDICAO_FORNECEDOR',
         module: 'Fornecedores',
         recordId: editingSupplier.id,
-        details: `Atualização de cadastro do fornecedor ${formData.name}.`
+        details: `Atualização de cadastro do fornecedor ${formData.name} (CNPJ/Doc: ${formData.document || 'Não informado'}, Status: ${formData.status || 'ATIVO'}).`
       });
     } else {
       const newSup: Counterparty = {
         id: `sup-${Date.now()}`,
         name: formData.name!,
+        tradeName: formData.tradeName || '',
         document: formData.document || '',
         type: 'FORNECEDOR',
         email: formData.email || '',
@@ -99,7 +100,7 @@ export const SuppliersView: React.FC = () => {
         action: 'CADASTRO_FORNECEDOR',
         module: 'Fornecedores',
         recordId: newSup.id,
-        details: `Cadastro de novo fornecedor ${newSup.name}.`
+        details: `Cadastro de novo fornecedor ${newSup.name} (CNPJ: ${newSup.document || 'N/A'}, Tel: ${newSup.phone || 'N/A'}, Email: ${newSup.email || 'N/A'}).`
       });
     }
 
@@ -220,17 +221,7 @@ export const SuppliersView: React.FC = () => {
                 </div>
               )}
 
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Razão Social / Nome *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name || ''}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full rounded border border-slate-300 px-3 py-1.5"
-                />
-              </div>
-
+              {/* 1. CNPJ com busca automática na Receita Federal no topo */}
               <div>
                 <CNPJInputField
                   id="supplier-cnpj-input"
@@ -254,6 +245,29 @@ export const SuppliersView: React.FC = () => {
                   label="CNPJ (Cadastro Fiscal) *"
                   required
                   placeholder="00.000.000/0000-00"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Razão Social / Nome *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name || ''}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Nome empresarial oficial"
+                  className="w-full rounded border border-slate-300 px-3 py-1.5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Nome Fantasia (Opcional)</label>
+                <input
+                  type="text"
+                  value={formData.tradeName || ''}
+                  onChange={e => setFormData({ ...formData, tradeName: e.target.value })}
+                  placeholder="Nome comercial da marca"
+                  className="w-full rounded border border-slate-300 px-3 py-1.5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 

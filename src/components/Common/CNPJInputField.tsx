@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, AlertTriangle, Building, Sparkles, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { CheckCircle2, AlertTriangle, Building, Sparkles, Loader2, ShieldAlert } from 'lucide-react';
 import { validateFiscalDocument, maskCNPJOrCPF } from '../../utils/cnpjValidator';
 import { lookupCNPJ, CNPJCompanyData } from '../../services/cnpjLookupService';
 
@@ -14,6 +14,7 @@ interface CNPJInputFieldProps {
   disabled?: boolean;
   className?: string;
   helpText?: string;
+  autoFetch?: boolean;
 }
 
 export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
@@ -26,11 +27,66 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
   placeholder = '00.000.000/0000-00',
   disabled = false,
   className = '',
-  helpText
+  helpText,
+  autoFetch = true
 }) => {
   const [isLoadingReceita, setIsLoadingReceita] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [successInfo, setSuccessInfo] = useState<string | null>(null);
+  const [situacaoAlert, setSituacaoAlert] = useState<string | null>(null);
+  const [lastSearchedDigits, setLastSearchedDigits] = useState<string>('');
+
   const validation = validateFiscalDocument(value || '');
+
+  const handleLookupReceita = async (explicitDigits?: string) => {
+    const raw = explicitDigits || (value || '').replace(/\D/g, '');
+    if (raw.length !== 14) return;
+
+    setIsLoadingReceita(true);
+    setFetchError(null);
+    setSuccessInfo(null);
+    setSituacaoAlert(null);
+
+    try {
+      const data = await lookupCNPJ(raw);
+      if (data) {
+        setLastSearchedDigits(raw);
+        setSuccessInfo(`Dados de "${data.razaoSocial || data.nomeFantasia}" importados da Receita Federal!`);
+        
+        if (!data.isRegular) {
+          setSituacaoAlert(`ALERTA: Situação ${data.situacaoCadastral} na Receita Federal (Empresa Inativa/Irregular)!`);
+        }
+
+        if (onDataFetched) {
+          onDataFetched(data);
+        }
+      } else {
+        setFetchError('CNPJ não localizado nas bases públicas da Receita Federal. Preencha os dados manualmente.');
+      }
+    } catch {
+      setFetchError('Falha temporária ao consultar dados na Receita Federal.');
+    } finally {
+      setIsLoadingReceita(false);
+    }
+  };
+
+  // Disparo automático quando o usuário completa ou cola os 14 dígitos válidos de CNPJ
+  useEffect(() => {
+    if (!autoFetch || !onDataFetched) return;
+    const cleanDigits = (value || '').replace(/\D/g, '');
+
+    if (cleanDigits.length === 14 && validation.isValid && validation.type === 'CNPJ') {
+      if (cleanDigits !== lastSearchedDigits && !isLoadingReceita) {
+        const timeoutId = setTimeout(() => {
+          handleLookupReceita(cleanDigits);
+        }, 350);
+        return () => clearTimeout(timeoutId);
+      }
+    } else {
+      setSuccessInfo(null);
+      setSituacaoAlert(null);
+    }
+  }, [value, validation.isValid, validation.type, autoFetch, lastSearchedDigits, isLoadingReceita]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -40,21 +96,10 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
     onChange(masked, valid.isValid);
   };
 
-  const handleLookupReceita = async () => {
-    if (!validation.isValid || validation.type !== 'CNPJ') return;
-    setIsLoadingReceita(true);
-    setFetchError(null);
-    try {
-      const data = await lookupCNPJ(value);
-      if (data && onDataFetched) {
-        onDataFetched(data);
-      } else if (!data) {
-        setFetchError('CNPJ não localizado na base pública da Receita Federal.');
-      }
-    } catch {
-      setFetchError('Falha temporária ao consultar dados na Receita Federal.');
-    } finally {
-      setIsLoadingReceita(false);
+  const handleBlur = () => {
+    const cleanDigits = (value || '').replace(/\D/g, '');
+    if (cleanDigits.length === 14 && validation.isValid && validation.type === 'CNPJ' && cleanDigits !== lastSearchedDigits) {
+      handleLookupReceita(cleanDigits);
     }
   };
 
@@ -69,14 +114,14 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
             <button
               type="button"
               disabled={isLoadingReceita || disabled}
-              onClick={handleLookupReceita}
-              className="inline-flex items-center text-[10px] font-bold text-amber-400 bg-amber-500/15 hover:bg-amber-500/25 px-2 py-0.5 rounded-full border border-amber-500/40 transition-colors cursor-pointer shadow-2xs"
+              onClick={() => handleLookupReceita()}
+              className="inline-flex items-center text-[10px] font-bold text-amber-400 bg-amber-500/15 hover:bg-amber-500/25 px-2.5 py-0.5 rounded-full border border-amber-500/40 transition-colors cursor-pointer shadow-2xs"
               title="Buscar Razão Social, CEP, Endereço e CNAE na Receita Federal"
             >
               {isLoadingReceita ? (
                 <>
                   <Loader2 className="w-3 h-3 mr-1 animate-spin text-amber-400" />
-                  Buscando Receita...
+                  Consultando Receita...
                 </>
               ) : (
                 <>
@@ -110,6 +155,7 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
           disabled={disabled}
           value={value || ''}
           onChange={handleChange}
+          onBlur={handleBlur}
           maxLength={18}
           placeholder={placeholder}
           className={`w-full rounded-xl border bg-[var(--surface-elevated)] text-[var(--text-primary)] px-3 py-2 font-mono text-xs focus:outline-none transition-all ${
@@ -124,6 +170,22 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
           <Building className="w-4 h-4 opacity-50" />
         </div>
       </div>
+
+      {/* Alerta de Irregularidade Fiscal (Opção 2 - CNPJ Baixado ou Inapto) */}
+      {situacaoAlert && (
+        <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-400 text-[11px] font-bold flex items-center gap-1.5 animate-in fade-in">
+          <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
+          <span>{situacaoAlert}</span>
+        </div>
+      )}
+
+      {/* Feedback de Sucesso */}
+      {successInfo && !situacaoAlert && (
+        <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-[11px] font-semibold flex items-center gap-1.5 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          <span>{successInfo}</span>
+        </div>
+      )}
 
       {/* Helper / validation message */}
       <div className="flex items-center justify-between text-[11px] pt-0.5">
@@ -140,7 +202,7 @@ export const CNPJInputField: React.FC<CNPJInputFieldProps> = ({
         ) : validation.status === 'valid' ? (
           <p className="text-emerald-400 font-medium flex items-center">
             <CheckCircle2 className="w-3 h-3 mr-1 flex-shrink-0" />
-            {validation.message}
+            {isLoadingReceita ? 'Consultando bases oficiais da Receita Federal...' : validation.message}
           </p>
         ) : (
           <p className="text-[var(--text-muted)] flex items-center">

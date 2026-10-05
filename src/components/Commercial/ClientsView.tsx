@@ -193,7 +193,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
         action: 'EDICAO_CLIENTE',
         module: 'Comercial & Clientes',
         recordId: editingClient.id,
-        details: `Atualização de dados cadastrais do cliente ${formData.name}.`
+        details: `Atualização cadastral do cliente ${formData.name} (CNPJ/CPF: ${formData.document || 'N/A'}, Status: ${formData.status || 'ATIVO'}, Tel: ${formData.phone || 'N/A'}).`
       });
     } else {
       const newClient: Counterparty = {
@@ -216,7 +216,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
         action: 'CADASTRO_CLIENTE',
         module: 'Comercial & Clientes',
         recordId: newClient.id,
-        details: `Cadastro do novo cliente ${newClient.name} (${newClient.document}).`
+        details: `Cadastro do novo cliente ${newClient.name} (CNPJ/CPF: ${newClient.document || 'N/A'}, Tel: ${newClient.phone || 'N/A'}, Email: ${newClient.email || 'N/A'}).`
       });
     }
 
@@ -609,6 +609,42 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                 </div>
               )}
 
+              {/* 1. CNPJ / CPF no topo com Auto-Preenchimento Oficial */}
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-500 dark:text-amber-400">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>CNPJ do Cliente (Auto-Preenchimento Oficial)</span>
+                  </span>
+                  <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-normal">
+                    Puxa dados da Receita Federal
+                  </span>
+                </div>
+                <CNPJInputField
+                  id="client-cnpj-input"
+                  value={formData.document || ''}
+                  onChange={(maskedVal) => {
+                    setFormData(prev => ({ ...prev, document: maskedVal }));
+                    if (docError) setDocError(null);
+                  }}
+                  onDataFetched={(receita) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      name: receita.razaoSocial || prev.name,
+                      tradeName: receita.nomeFantasia || prev.tradeName,
+                      document: receita.formattedCnpj,
+                      address: receita.enderecoCompleto || prev.address,
+                      phone: receita.telefone || prev.phone,
+                      email: receita.email || prev.email,
+                      notes: prev.notes ? `${prev.notes}\n[CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}]` : `CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}. Situação: ${receita.situacaoCadastral}.`
+                    }));
+                  }}
+                  label="Digite ou Cole o CNPJ *"
+                  required
+                  placeholder="00.000.000/0000-00"
+                />
+              </div>
+
               <div>
                 <label className="block font-semibold text-[var(--text-secondary)] mb-1">Razão Social / Nome Completo *</label>
                 <input
@@ -620,41 +656,14 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-[var(--text-secondary)] mb-1">Nome Fantasia</label>
-                  <input
-                    type="text"
-                    value={formData.tradeName || ''}
-                    onChange={e => setFormData({ ...formData, tradeName: e.target.value })}
-                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] px-3 py-2 focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-                <div>
-                  <CNPJInputField
-                    id="client-cnpj-input"
-                    value={formData.document || ''}
-                    onChange={(maskedVal) => {
-                      setFormData(prev => ({ ...prev, document: maskedVal }));
-                      if (docError) setDocError(null);
-                    }}
-                    onDataFetched={(receita) => {
-                      setFormData(prev => ({
-                        ...prev,
-                        name: receita.razaoSocial || prev.name,
-                        tradeName: receita.nomeFantasia || prev.tradeName,
-                        document: receita.formattedCnpj,
-                        address: receita.enderecoCompleto || prev.address,
-                        phone: receita.telefone || prev.phone,
-                        email: receita.email || prev.email,
-                        notes: prev.notes ? `${prev.notes}\n[CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}]` : `CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}. Situação: ${receita.situacaoCadastral}.`
-                      }));
-                    }}
-                    label="CNPJ (Cadastro Fiscal) *"
-                    required
-                    placeholder="00.000.000/0000-00"
-                  />
-                </div>
+              <div>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">Nome Fantasia</label>
+                <input
+                  type="text"
+                  value={formData.tradeName || ''}
+                  onChange={e => setFormData({ ...formData, tradeName: e.target.value })}
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] px-3 py-2 focus:outline-none focus:border-amber-400"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
