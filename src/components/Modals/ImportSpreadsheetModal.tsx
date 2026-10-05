@@ -2256,6 +2256,17 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           const titleId = `tit-imp-${Date.now()}-${row.rowNumber}-${Math.floor(Math.random() * 1000)}`;
           createdTitleIds.push(titleId);
 
+          const rawBaixado = row.normalized.principalBaixado || 0;
+          const valOriginal = row.normalized.valorOriginal || 0;
+          let principalReal = rawBaixado;
+          let encargosJuros = 0;
+
+          // Detecção Automática de Juros e Multas nas Quitações com Acréscimo
+          if (valOriginal > 0 && rawBaixado > (valOriginal + 0.01)) {
+            encargosJuros = Math.round((rawBaixado - valOriginal) * 100) / 100;
+            principalReal = valOriginal;
+          }
+
           const newTitle: FinancialTitle = {
             id: titleId,
             companyId: 'comp-1',
@@ -2276,16 +2287,18 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             issueDate: row.normalized.emissao,
             dueDate: row.normalized.vencimento,
             expectedCashDate: row.normalized.previsaoCaixa,
-            originalAmount: row.normalized.valorOriginal,
-            settledPrincipal: row.normalized.principalBaixado,
-            balancePrincipal: row.normalized.saldoAtual,
-            accruedInterest: 0,
+            originalAmount: valOriginal,
+            settledPrincipal: principalReal,
+            balancePrincipal: Math.max(0, valOriginal - principalReal),
+            accruedInterest: encargosJuros,
             accruedFine: 0,
             documentState: row.normalized.situacao === 'CANCELADO' ? 'CANCELADO' : 'CONFIRMADO',
             settlementState: row.normalized.situacao === 'LIQUIDADO' ? 'LIQUIDADO' : row.normalized.situacao === 'PARCIAL' ? 'PARCIAL' : 'ABERTO',
             originType: 'MANUAL',
             expectedBankAccountId: expectedBankId,
-            notes: `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}.`,
+            notes: encargosJuros > 0
+              ? `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}. [Quitação com acréscimo: R$ ${formatBRL(principalReal)} principal + R$ ${formatBRL(encargosJuros)} juros/multa].`
+              : `Importado de planilha (${fileName}). Título: ${row.normalized.titulo}.`,
             createdAt: nowIso,
             updatedAt: nowIso
           };
@@ -2294,7 +2307,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           createdCount++;
 
           // Se já possui baixa de principal, registra Settlement e Movimento Bancário
-          if (row.normalized.principalBaixado > 0) {
+          if (rawBaixado > 0) {
             settledCount++;
             const settlementId = `set-imp-${Date.now()}-${row.rowNumber}`;
             const settlementDate = row.normalized.dataPagamento || row.normalized.previsaoCaixa || row.normalized.vencimento;
@@ -2306,14 +2319,16 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               settlementDate,
               bankAccountId: expectedBankId,
               components: {
-                principalSettled: row.normalized.principalBaixado,
+                principalSettled: principalReal,
                 discount: 0,
-                interest: 0,
+                interest: encargosJuros,
                 fine: 0,
                 bankFee: 0,
-                netFinancialAmount: row.normalized.principalBaixado
+                netFinancialAmount: rawBaixado
               },
-              notes: `Baixa importada (${fileName}).`,
+              notes: encargosJuros > 0
+                ? `Baixa com acréscimo importada (${fileName}). Principal: R$ ${formatBRL(principalReal)} + Juros/Multa: R$ ${formatBRL(encargosJuros)}.`
+                : `Baixa importada (${fileName}).`,
               isReversed: false,
               createdAt: nowIso,
               createdBy: currentUser.name
@@ -2324,10 +2339,12 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               bankAccountId: expectedBankId,
               date: settlementDate,
               direction: isRevenue ? 'ENTRADA' : 'SAIDA',
-              amount: row.normalized.principalBaixado,
+              amount: rawBaixado,
               originType: 'BAIXA_TITULO',
               originReferenceId: settlementId,
-              description: `Baixa importada ${row.normalized.titulo} - ${row.normalized.fornecedor}`,
+              description: encargosJuros > 0
+                ? `Baixa importada ${row.normalized.titulo} - ${row.normalized.fornecedor} (Principal: R$ ${formatBRL(principalReal)} + Juros/Multa: R$ ${formatBRL(encargosJuros)})`
+                : `Baixa importada ${row.normalized.titulo} - ${row.normalized.fornecedor}`,
               counterpartyId: resolvedPartyId,
               accountId,
               cashFlowCategory: 'OPERACIONAL',
@@ -2362,9 +2379,13 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             updatedCount++;
             updatedTitleIds.push(currentT.id);
 
-            // Se o principal baixado aumentou, registra a baixa complementar
+            // Se o principal baixado aumentou, registra a baixa complementar separando acréscimo
             if (row.normalized.principalBaixado > currentT.settledPrincipal) {
-              const diffAmount = row.normalized.principalBaixado - currentT.settledPrincipal;
+              const diffTotal = row.normalized.principalBaixado - currentT.settledPrincipal;
+              const remainingPrincipal = Math.max(0, currentT.originalAmount - currentT.settledPrincipal);
+              const compPrincipal = Math.min(diffTotal, remainingPrincipal);
+              const compInterest = Math.max(0, Math.round((diffTotal - compPrincipal) * 100) / 100);
+
               settledCount++;
               const settlementId = `set-imp-upd-${Date.now()}-${row.rowNumber}`;
               const settlementDate = row.normalized.dataPagamento || row.normalized.previsaoCaixa || row.normalized.vencimento;
@@ -2376,14 +2397,16 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 settlementDate,
                 bankAccountId: currentT.expectedBankAccountId || expectedBankId,
                 components: {
-                  principalSettled: diffAmount,
+                  principalSettled: compPrincipal,
                   discount: 0,
-                  interest: 0,
+                  interest: compInterest,
                   fine: 0,
                   bankFee: 0,
-                  netFinancialAmount: diffAmount
+                  netFinancialAmount: diffTotal
                 },
-                notes: `Baixa atualizada via reimportação (${fileName}).`,
+                notes: compInterest > 0
+                  ? `Baixa complementar com juros/multa (${fileName}). Principal: R$ ${formatBRL(compPrincipal)} + Encargos: R$ ${formatBRL(compInterest)}.`
+                  : `Baixa atualizada via reimportação (${fileName}).`,
                 isReversed: false,
                 createdAt: nowIso,
                 createdBy: currentUser.name
@@ -2394,10 +2417,12 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 bankAccountId: currentT.expectedBankAccountId || expectedBankId,
                 date: settlementDate,
                 direction: isRevenue ? 'ENTRADA' : 'SAIDA',
-                amount: diffAmount,
+                amount: diffTotal,
                 originType: 'BAIXA_TITULO',
                 originReferenceId: settlementId,
-                description: `Baixa complementar importada ${row.normalized.titulo} - ${row.normalized.fornecedor}`,
+                description: compInterest > 0
+                  ? `Baixa complementar importada ${row.normalized.titulo} - ${row.normalized.fornecedor} (inclui R$ ${formatBRL(compInterest)} juros/multa)`
+                  : `Baixa complementar importada ${row.normalized.titulo} - ${row.normalized.fornecedor}`,
                 counterpartyId: resolvedPartyId,
                 accountId,
                 cashFlowCategory: 'OPERACIONAL',
@@ -4026,7 +4051,28 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
 
                             {/* Principal Baixado */}
                             <td className="py-2 px-3 text-right text-blue-400 font-mono">
-                              {(row.normalized.principalBaixado || 0) > 0 ? formatBRL(row.normalized.principalBaixado) : '-'}
+                              {(() => {
+                                const baixado = row.normalized.principalBaixado || 0;
+                                const original = row.normalized.valorOriginal || 0;
+                                const hasSurcharge = original > 0 && baixado > original + 0.01;
+                                const diffJuros = hasSurcharge ? baixado - original : 0;
+
+                                if (baixado <= 0) return '-';
+
+                                return (
+                                  <div className="flex flex-col items-end">
+                                    <span>{formatBRL(baixado)}</span>
+                                    {hasSurcharge && (
+                                      <span
+                                        className="text-[9px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded mt-0.5 flex items-center gap-0.5 whitespace-nowrap shadow-2xs"
+                                        title={`Quitação com Acréscimo: Valor pago supera o valor original em R$ ${formatBRL(diffJuros)}. O sistema registrará automaticamente R$ ${formatBRL(original)} como principal e R$ ${formatBRL(diffJuros)} como Juros/Multa.`}
+                                      >
+                                        ⚡ +{formatBRL(diffJuros)} juros
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {/* Saldo Restante */}

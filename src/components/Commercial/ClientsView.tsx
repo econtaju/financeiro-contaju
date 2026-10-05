@@ -638,6 +638,18 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                       setFormData(prev => ({ ...prev, document: maskedVal }));
                       if (docError) setDocError(null);
                     }}
+                    onDataFetched={(receita) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        name: receita.razaoSocial || prev.name,
+                        tradeName: receita.nomeFantasia || prev.tradeName,
+                        document: receita.formattedCnpj,
+                        address: receita.enderecoCompleto || prev.address,
+                        phone: receita.telefone || prev.phone,
+                        email: receita.email || prev.email,
+                        notes: prev.notes ? `${prev.notes}\n[CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}]` : `CNAE: ${receita.cnaeCodigo} - ${receita.cnaeDescricao}. Situação: ${receita.situacaoCadastral}.`
+                      }));
+                    }}
                     label="CNPJ (Cadastro Fiscal) *"
                     required
                     placeholder="00.000.000/0000-00"

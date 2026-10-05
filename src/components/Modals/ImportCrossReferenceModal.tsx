@@ -11,11 +11,15 @@ import {
   Building2, 
   TrendingUp, 
   TrendingDown,
-  Sparkles
+  Sparkles,
+  Loader2,
+  Globe
 } from 'lucide-react';
 import { AnalyzedImportRow } from '../../services/contaAzulMappingEngine';
 import { Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
+import { lookupCNPJ } from '../../services/cnpjLookupService';
+import { cleanDocumentDigits, isValidCNPJ, maskCNPJOnly } from '../../utils/cnpjValidator';
 
 interface ImportCrossReferenceModalProps {
   isOpen: boolean;
@@ -36,6 +40,9 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
 }) => {
   const [activeTab, setActiveTab] = useState<'PARTIES' | 'CATEGORIES'>('PARTIES');
   const [createdFeedback, setCreatedFeedback] = useState<string | null>(null);
+  const [autoFetchReceita, setAutoFetchReceita] = useState(true);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState<string | null>(null);
 
   // 1. Levantamento de Contrapartes da Planilha
   const partyStats = React.useMemo(() => {
@@ -45,6 +52,7 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
     const rows = analyzedRows || [];
     const map = new Map<string, {
       name: string;
+      document?: string;
       types: Set<'RECEBER' | 'PAGAR'>;
       count: number;
       matchedId?: string;
@@ -55,11 +63,13 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
       const name = (r?.normalized?.fornecedor || '').trim();
       if (!name) continue;
 
+      const doc = (r?.normalized?.documento || '').trim();
       const rowType = r?.normalized?.tipo || 'PAGAR';
 
       if (!map.has(name)) {
         map.set(name, {
           name,
+          document: doc,
           types: new Set([rowType]),
           count: 1,
           matchedId: r.matchedCounterpartyId,
@@ -67,6 +77,7 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
         });
       } else {
         const item = map.get(name)!;
+        if (!item.document && doc) item.document = doc;
         item.types.add(rowType);
         item.count++;
       }
@@ -124,36 +135,77 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
 
   if (!isOpen) return null;
 
-  // Criar todas as novas contrapartes no banco
-  const handleCreateAllMissingParties = () => {
+  // Criar todas as novas contrapartes no banco com auto-preenchimento opcional via Receita Federal
+  const handleCreateAllMissingParties = async () => {
     if (partyStats.newParties.length === 0) return;
+
+    setIsEnriching(true);
+    setEnrichStatus('Iniciando cadastro...');
 
     const currentList = storage.getCounterparties();
     const nowIso = new Date().toISOString();
     const created: Counterparty[] = [];
+    let enrichedCount = 0;
 
-    for (const item of partyStats.newParties) {
+    for (let i = 0; i < partyStats.newParties.length; i++) {
+      const item = partyStats.newParties[i];
       const isClient = item.types.has('RECEBER') && !item.types.has('PAGAR');
       const isSupplier = item.types.has('PAGAR') && !item.types.has('RECEBER');
       const partyType: 'CLIENTE' | 'FORNECEDOR' | 'AMBOS' = isClient ? 'CLIENTE' : isSupplier ? 'FORNECEDOR' : 'AMBOS';
 
+      let finalName = item.name;
+      let finalTradeName = item.name;
+      let finalDoc = item.document ? maskCNPJOnly(item.document) : '00.000.000/0000-00';
+      let finalEmail = 'financeiro@empresa.com.br';
+      let finalPhone = '(11) 99999-0000';
+      let finalAddress: string | undefined = undefined;
+      let finalNotes = `Criado automaticamente no cruzamento da importação de planilha.`;
+
+      // Se tiver CNPJ identificado ou se o nome trouxer dígitos de CNPJ, consulta a Receita Federal
+      const candidateDigits = cleanDocumentDigits(item.document || item.name);
+      if (autoFetchReceita && candidateDigits.length === 14 && isValidCNPJ(candidateDigits)) {
+        setEnrichStatus(`Consultando Receita Federal (${i + 1}/${partyStats.newParties.length}): ${item.name}...`);
+        try {
+          const receitaData = await lookupCNPJ(candidateDigits);
+          if (receitaData) {
+            enrichedCount++;
+            finalName = receitaData.razaoSocial || item.name;
+            finalTradeName = receitaData.nomeFantasia || finalName;
+            finalDoc = receitaData.formattedCnpj;
+            finalAddress = receitaData.enderecoCompleto;
+            if (receitaData.telefone) finalPhone = receitaData.telefone;
+            if (receitaData.email) finalEmail = receitaData.email;
+            finalNotes = `Situação: ${receitaData.situacaoCadastral} • CNAE: ${receitaData.cnaeCodigo} - ${receitaData.cnaeDescricao} • Cadastro auto-preenchido via Receita Federal (BrasilAPI).`;
+          }
+        } catch (e) {
+          console.warn('Erro ao consultar CNPJ:', e);
+        }
+      }
+
       const newParty: Counterparty = {
-        id: `cp-auto-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        id: `cp-auto-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
         type: partyType,
-        name: item.name,
-        tradeName: item.name,
-        document: '00.000.000/0000-00',
-        email: 'financeiro@empresa.com.br',
-        phone: '(11) 99999-0000',
+        name: finalName,
+        tradeName: finalTradeName,
+        document: finalDoc,
+        email: finalEmail,
+        phone: finalPhone,
+        address: finalAddress,
         status: 'ATIVO',
-        notes: `Criado automaticamente no cruzamento da importação de planilha.`,
+        notes: finalNotes,
         createdAt: nowIso
       };
       created.push(newParty);
     }
 
     storage.saveCounterparties([...currentList, ...created]);
-    setCreatedFeedback(`${created.length} novas contrapartes cadastradas com sucesso!`);
+    setIsEnriching(false);
+    setEnrichStatus(null);
+    if (enrichedCount > 0) {
+      setCreatedFeedback(`${created.length} novas contrapartes cadastradas com sucesso! (${enrichedCount} preenchidas oficialmente com Razão Social, CEP e CNAE da Receita Federal)`);
+    } else {
+      setCreatedFeedback(`${created.length} novas contrapartes cadastradas com sucesso!`);
+    }
     onEntitiesCreated();
   };
 
@@ -292,17 +344,47 @@ export const ImportCrossReferenceModal: React.FC<ImportCrossReferenceModalProps>
                   </p>
                 </div>
 
-                {partyStats.newParties.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleCreateAllMissingParties}
-                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1.5 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Cadastrar Todos ({partyStats.newParties.length})</span>
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none bg-[var(--surface-card)] px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)]">
+                    <input
+                      type="checkbox"
+                      checked={autoFetchReceita}
+                      onChange={e => setAutoFetchReceita(e.target.checked)}
+                      className="rounded text-amber-500 focus:ring-amber-500"
+                    />
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Auto-Preencher via Receita Federal (CNPJ)</span>
+                  </label>
+
+                  {partyStats.newParties.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isEnriching}
+                      onClick={handleCreateAllMissingParties}
+                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+                    >
+                      {isEnriching ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Consultando & Criando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Cadastrar Todos ({partyStats.newParties.length})</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {isEnriching && enrichStatus && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-400 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-400" />
+                  <span>{enrichStatus}</span>
+                </div>
+              )}
 
               <div className="divide-y divide-[var(--border-subtle)] border border-[var(--border-subtle)] rounded-xl overflow-hidden bg-[var(--surface-elevated)]">
                 {partyStats.items.map(item => {
