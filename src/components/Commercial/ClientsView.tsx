@@ -22,8 +22,10 @@ import {
   Ban,
   CheckCircle,
   Sparkles,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Counterparty, Contract, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
@@ -232,6 +234,74 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
     setSelectedContractForModal(contractId);
   };
 
+  // Exportação da base de clientes para Excel (.xlsx)
+  const handleExportClients = () => {
+    if (clients.length === 0) {
+      alert('Nenhum cliente para exportar com base nos filtros atuais.');
+      return;
+    }
+
+    const exportRows = clients.map(client => {
+      const clientContracts = contracts.filter(c => c.customerId === client.id);
+      const activeContracts = clientContracts.filter(c => c.status === 'ATIVO');
+      const clientMRR = activeContracts.reduce((sum, c) => sum + (c.monthlyTotal || 0), 0);
+      const clientOpenReceivables = titles
+        .filter(t => t.counterpartyId === client.id && t.balancePrincipal > 0)
+        .reduce((sum, t) => sum + t.balancePrincipal, 0);
+
+      return {
+        'Razão Social / Nome': client.name,
+        'Nome Fantasia': client.tradeName || '',
+        'CNPJ / CPF': client.document || '',
+        'Status': client.status,
+        'E-mail Financeiro': client.email || '',
+        'Telefone / WhatsApp': client.phone || '',
+        'Endereço Comercial': client.address || '',
+        'Contratos Ativos': activeContracts.length,
+        'MRR Mensal (R$)': clientMRR,
+        'Saldo a Receber Aberto (R$)': clientOpenReceivables,
+        'Data de Cadastro': client.createdAt || '',
+        'Observações': client.notes || ''
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+
+    ws['!cols'] = [
+      { wch: 36 }, // Razão Social / Nome
+      { wch: 25 }, // Nome Fantasia
+      { wch: 20 }, // CNPJ / CPF
+      { wch: 12 }, // Status
+      { wch: 30 }, // E-mail
+      { wch: 18 }, // Telefone
+      { wch: 40 }, // Endereço
+      { wch: 16 }, // Contratos Ativos
+      { wch: 18 }, // MRR Mensal
+      { wch: 26 }, // Saldo a Receber
+      { wch: 16 }, // Data de Cadastro
+      { wch: 40 }  // Observações
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Clientes_Contaju');
+    const todayStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `clientes_contaju_exportacao_${todayStr}.xlsx`);
+
+    // Log de Auditoria
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXPORTACAO_RELATORIO',
+      module: 'Comercial & Clientes',
+      recordId: `exp-cli-${Date.now()}`,
+      details: `Exportação em planilha Excel de ${clients.length} clientes da carteira comercial.`
+    });
+
+    setToastMessage(`✓ ${clients.length} cliente(s) exportados com sucesso para Excel!`);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
   return (
     <div className="space-y-6">
       
@@ -247,7 +317,16 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleExportClients}
+            className="px-3.5 py-2 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-amber-400/50 rounded-xl text-xs font-semibold transition-all flex items-center shadow-2xs cursor-pointer active:scale-95"
+            title="Exportar clientes exibidos para planilha Excel (.xlsx)"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-blue-400" />
+            Exportar (.xlsx)
+          </button>
+
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="px-3.5 py-2 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-amber-400/50 rounded-xl text-xs font-semibold transition-all flex items-center shadow-2xs cursor-pointer active:scale-95"
@@ -759,9 +838,13 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
       <ImportClientsModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onSuccess={(createdCount, updatedCount) => {
-          setToastMessage(`✓ Importação concluída! ${createdCount} novo(s) cliente(s) cadastrado(s) e ${updatedCount} atualizado(s).`);
-          setTimeout(() => setToastMessage(''), 5000);
+        onSuccess={(createdCount, updatedCount, contractsCount) => {
+          let msg = `✓ Importação concluída! ${createdCount} novo(s) cliente(s) cadastrado(s) e ${updatedCount} atualizado(s).`;
+          if (contractsCount > 0) {
+            msg += ` ${contractsCount} contrato(s) ativo(s) gerados automaticamente!`;
+          }
+          setToastMessage(msg);
+          setTimeout(() => setToastMessage(''), 6000);
         }}
       />
 

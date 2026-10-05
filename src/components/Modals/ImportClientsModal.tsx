@@ -20,14 +20,16 @@ import {
   UserPlus
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Counterparty } from '../../types';
+import { Counterparty, Contract } from '../../types';
 import { storage } from '../../services/storageService';
 import { maskCNPJOrCPF, validateFiscalDocument } from '../../utils/cnpjValidator';
+import { lookupCNPJ } from '../../services/cnpjLookupService';
+import { formatBRL } from '../../services/financialEngine';
 
 export interface ImportClientsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (createdCount: number, updatedCount: number) => void;
+  onSuccess: (createdCount: number, updatedCount: number, contractsCount: number) => void;
 }
 
 export interface ParsedClientRow {
@@ -46,6 +48,15 @@ export interface ParsedClientRow {
   existingClient?: Counterparty;
   isInternalDuplicate?: boolean;
   validationError?: string;
+  // Campos de Contrato Recorrente Integrado
+  contractMonthly?: number;
+  contractDueDay?: number;
+  contractBillingMethod?: 'BOLETO' | 'PIX' | 'TRANSFERENCIA' | 'OUTRO';
+  contractDescription?: string;
+  // Enriquecimento Oficial via Receita Federal
+  receitaEnriched?: boolean;
+  receitaSituacao?: string;
+  receitaCnae?: string;
 }
 
 export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
@@ -56,6 +67,8 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedClientRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEnrichingReceita, setIsEnrichingReceita] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{ current: number; total: number } | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'CRIAR' | 'ATUALIZAR' | 'IGNORAR'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,6 +88,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         'Telefone': '(11) 98765-4321',
         'Endereco': 'Av. Paulista, 1000, Bela Vista, São Paulo - SP',
         'Status': 'ATIVO',
+        'Valor_Contrato_Mensal': 3500.00,
+        'Dia_Vencimento': 15,
+        'Forma_Cobranca': 'BOLETO',
+        'Objeto_Contrato': 'Assessoria Contábil, BPO Financeiro e Folha',
         'Observacoes': 'Cliente corporativo de desenvolvimento de software. Regime: Simples Nacional.'
       },
       {
@@ -85,6 +102,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         'Telefone': '(21) 99887-6655',
         'Endereco': 'Rua das Flores, 250, Sala 301, Centro, Rio de Janeiro - RJ',
         'Status': 'ATIVO',
+        'Valor_Contrato_Mensal': 2200.00,
+        'Dia_Vencimento': 10,
+        'Forma_Cobranca': 'PIX',
+        'Objeto_Contrato': 'Contabilidade Consultiva e Conciliação',
         'Observacoes': 'Contrato recorrente de serviços contábeis e BPO Financeiro.'
       },
       {
@@ -95,6 +116,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         'Telefone': '(31) 98712-3456',
         'Endereco': 'Rua da Bahia, 500, Lourdes, Belo Horizonte - MG',
         'Status': 'ATIVO',
+        'Valor_Contrato_Mensal': 850.00,
+        'Dia_Vencimento': 20,
+        'Forma_Cobranca': 'PIX',
+        'Objeto_Contrato': 'Consultoria Tributária PF & IRPF',
         'Observacoes': 'Pessoa Física - Profissional autônomo (Advogado). Declaração IRPF anual.'
       },
       {
@@ -105,6 +130,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         'Telefone': '(19) 3234-5678',
         'Endereco': 'Rua Tiradentes, 88, Vila Nova, Campinas - SP',
         'Status': 'ATIVO',
+        'Valor_Contrato_Mensal': 1800.00,
+        'Dia_Vencimento': 5,
+        'Forma_Cobranca': 'BOLETO',
+        'Objeto_Contrato': 'Gestão Fiscal e Emissão de Folha',
         'Observacoes': 'Comércio varejista de alimentos. Emissão de notas e conciliação bancária diária.'
       }
     ];
@@ -120,6 +149,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
       { wch: 18 }, // Telefone
       { wch: 45 }, // Endereco
       { wch: 12 }, // Status
+      { wch: 20 }, // Valor_Contrato_Mensal
+      { wch: 16 }, // Dia_Vencimento
+      { wch: 16 }, // Forma_Cobranca
+      { wch: 40 }, // Objeto_Contrato
       { wch: 45 }  // Observacoes
     ];
 
@@ -132,14 +165,18 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
       { 'Campo': 'Telefone', 'Obrigatorio': 'NÃO', 'Descricao': 'Telefone fixo ou WhatsApp comercial para contato.' },
       { 'Campo': 'Endereco', 'Obrigatorio': 'NÃO', 'Descricao': 'Endereço completo (Rua, Número, Bairro, Cidade - UF).' },
       { 'Campo': 'Status', 'Obrigatorio': 'NÃO', 'Descricao': 'Digite ATIVO ou INATIVO. Se não informado, assume ATIVO por padrão.' },
+      { 'Campo': 'Valor_Contrato_Mensal', 'Obrigatorio': 'OPCIONAL', 'Descricao': 'Se preenchido (ex: 2500.00), o sistema já cria o Contrato Ativo vinculado a este cliente no módulo Comercial!' },
+      { 'Campo': 'Dia_Vencimento', 'Obrigatorio': 'OPCIONAL', 'Descricao': 'Dia do mês para vencimento da mensalidade (1 a 31). Padrão: 10.' },
+      { 'Campo': 'Forma_Cobranca', 'Obrigatorio': 'OPCIONAL', 'Descricao': 'BOLETO, PIX, TRANSFERENCIA ou OUTRO.' },
+      { 'Campo': 'Objeto_Contrato', 'Obrigatorio': 'OPCIONAL', 'Descricao': 'Descrição dos serviços contratados (ex: Assessoria Contábil e BPO).' },
       { 'Campo': 'Observacoes', 'Obrigatorio': 'NÃO', 'Descricao': 'Notas livres, regime tributário, CNAE ou particularidades do cliente.' }
     ];
 
     const wsInstructions = XLSX.utils.json_to_sheet(instructionsData);
     wsInstructions['!cols'] = [
-      { wch: 22 },
+      { wch: 25 },
       { wch: 15 },
-      { wch: 70 }
+      { wch: 80 }
     ];
 
     const wb = XLSX.utils.book_new();
@@ -195,6 +232,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         let rawAddress = '';
         let rawStatus = 'ATIVO';
         let rawNotes = '';
+        let rawMonthly = 0;
+        let rawDueDay = 10;
+        let rawBilling: 'BOLETO' | 'PIX' | 'TRANSFERENCIA' | 'OUTRO' = 'BOLETO';
+        let rawContractDesc = '';
 
         for (const [key, val] of Object.entries(row)) {
           const cleanedKey = cleanHeader(key);
@@ -214,6 +255,19 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
             rawAddress = rawAddress || strVal;
           } else if (cleanedKey.includes('status') || cleanedKey.includes('situacao')) {
             rawStatus = strVal.toUpperCase().includes('INA') ? 'INATIVO' : 'ATIVO';
+          } else if (cleanedKey.includes('valorcontrato') || cleanedKey.includes('mensal') || cleanedKey.includes('mrr') || cleanedKey === 'valor') {
+            const num = parseFloat(strVal.replace(/[R$\s.]/g, '').replace(',', '.'));
+            if (!isNaN(num) && num > 0) rawMonthly = num;
+          } else if (cleanedKey.includes('diavenc') || cleanedKey.includes('vencimento')) {
+            const dayNum = parseInt(strVal.replace(/\D/g, ''), 10);
+            if (!isNaN(dayNum) && dayNum >= 1 && dayNum <= 31) rawDueDay = dayNum;
+          } else if (cleanedKey.includes('cobranca') || cleanedKey.includes('formapag')) {
+            const upper = strVal.toUpperCase();
+            if (upper.includes('PIX')) rawBilling = 'PIX';
+            else if (upper.includes('TRANS')) rawBilling = 'TRANSFERENCIA';
+            else rawBilling = 'BOLETO';
+          } else if (cleanedKey.includes('objeto') || cleanedKey.includes('descricaocontrato')) {
+            rawContractDesc = strVal;
           } else if (cleanedKey.includes('obs') || cleanedKey.includes('nota') || cleanedKey.includes('notes')) {
             rawNotes = rawNotes || strVal;
           }
@@ -268,7 +322,11 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
           action: defaultAction,
           existingClient: existing,
           isInternalDuplicate: isInternalDup,
-          validationError: !docValidation.isValid ? 'Documento fiscal (CNPJ/CPF) com dígitos verificadores inválidos.' : undefined
+          validationError: !docValidation.isValid ? 'Documento fiscal (CNPJ/CPF) com dígitos verificadores inválidos.' : undefined,
+          contractMonthly: rawMonthly > 0 ? rawMonthly : undefined,
+          contractDueDay: rawMonthly > 0 ? rawDueDay : undefined,
+          contractBillingMethod: rawMonthly > 0 ? rawBilling : undefined,
+          contractDescription: rawMonthly > 0 ? (rawContractDesc || 'Prestação de Serviços Contábeis e Consultivos') : undefined
         });
       });
 
@@ -315,6 +373,56 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
     }));
   };
 
+  // 3. Enriquecimento Oficial em Lote via Receita Federal
+  const handleEnrichFromReceita = async () => {
+    const eligibleRows = parsedRows.filter(r => r.docType === 'CNPJ' && r.isDocValid && !r.receitaEnriched && r.action !== 'IGNORAR');
+    if (eligibleRows.length === 0) {
+      alert('Nenhum cliente com CNPJ válido pendente de consulta na Receita Federal.');
+      return;
+    }
+
+    setIsEnrichingReceita(true);
+    setEnrichProgress({ current: 0, total: eligibleRows.length });
+
+    const updatedRows = [...parsedRows];
+
+    for (let i = 0; i < eligibleRows.length; i++) {
+      const row = eligibleRows[i];
+      const digits = (row.document || '').replace(/\D/g, '');
+      setEnrichProgress({ current: i + 1, total: eligibleRows.length });
+
+      try {
+        const data = await lookupCNPJ(digits);
+        if (data) {
+          const idx = updatedRows.findIndex(r => r.rowNumber === row.rowNumber);
+          if (idx !== -1) {
+            const current = updatedRows[idx];
+            updatedRows[idx] = {
+              ...current,
+              name: data.razaoSocial || current.name,
+              tradeName: data.nomeFantasia || current.tradeName,
+              address: data.enderecoCompleto || current.address,
+              phone: current.phone || data.telefone,
+              email: current.email || data.email,
+              receitaEnriched: true,
+              receitaSituacao: data.situacaoCadastral,
+              receitaCnae: data.cnaeCodigo ? `${data.cnaeCodigo} - ${data.cnaeDescricao}` : undefined,
+              notes: current.notes
+                ? `${current.notes} [CNAE: ${data.cnaeCodigo} | Situação RFB: ${data.situacaoCadastral}]`
+                : `CNAE: ${data.cnaeCodigo} - ${data.cnaeDescricao}. Situação RFB: ${data.situacaoCadastral}.`
+            };
+          }
+        }
+      } catch (e) {
+        console.warn(`Falha na consulta RFB para linha ${row.rowNumber}:`, e);
+      }
+    }
+
+    setParsedRows(updatedRows);
+    setIsEnrichingReceita(false);
+    setEnrichProgress(null);
+  };
+
   // Confirmação final da importação
   const handleConfirmImport = () => {
     const rowsToProcess = parsedRows.filter(r => r.action !== 'IGNORAR');
@@ -324,6 +432,7 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
     }
 
     const currentCounterparties = storage.getCounterparties();
+    const currentContracts = storage.getContracts();
     const currentUser = storage.getCurrentUser();
     const nowIso = new Date().toISOString();
     const todayStr = nowIso.split('T')[0];
@@ -331,10 +440,13 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
     let createdCount = 0;
     let updatedCount = 0;
     const updatedList = [...currentCounterparties];
+    const newContracts: Contract[] = [];
 
     rowsToProcess.forEach(row => {
+      let resolvedPartyId = '';
+
       if (row.action === 'ATUALIZAR' && row.existingClient) {
-        // Atualiza cliente existente mantendo seu ID
+        resolvedPartyId = row.existingClient.id;
         const idx = updatedList.findIndex(c => c.id === row.existingClient?.id);
         if (idx !== -1) {
           const current = updatedList[idx];
@@ -354,9 +466,9 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
           updatedCount++;
         }
       } else if (row.action === 'CRIAR') {
-        // Cria novo cliente
+        resolvedPartyId = `cli-imp-${Date.now()}-${row.rowNumber}-${Math.floor(Math.random() * 1000)}`;
         const newClient: Counterparty = {
-          id: `cli-imp-${Date.now()}-${row.rowNumber}-${Math.floor(Math.random() * 1000)}`,
+          id: resolvedPartyId,
           type: 'CLIENTE',
           name: row.name,
           tradeName: row.tradeName || '',
@@ -373,10 +485,35 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
         updatedList.push(newClient);
         createdCount++;
       }
+
+      // Vínculo Automático de Contrato Recorrente
+      if (resolvedPartyId && row.contractMonthly && row.contractMonthly > 0) {
+        newContracts.push({
+          id: `ctr-imp-cli-${Date.now()}-${row.rowNumber}`,
+          contractNumber: `CTR-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`,
+          customerId: resolvedPartyId,
+          description: row.contractDescription || 'Prestação de Serviços Contábeis e Consultivos',
+          items: [],
+          monthlyTotal: row.contractMonthly,
+          startDate: todayStr,
+          entryDate: todayStr,
+          periodicity: 'MENSAL',
+          dueDay: row.contractDueDay && row.contractDueDay >= 1 && row.contractDueDay <= 31 ? row.contractDueDay : 10,
+          dueRule: 'NEXT_MONTH',
+          billingMethod: row.contractBillingMethod || 'BOLETO',
+          status: 'ATIVO',
+          contractType: 'RECORRENTE',
+          isRecurring: true,
+          createdAt: nowIso
+        });
+      }
     });
 
     // Salva no storage
     storage.saveCounterparties(updatedList);
+    if (newContracts.length > 0) {
+      storage.saveContracts([...currentContracts, ...newContracts]);
+    }
 
     // Registra trilha de auditoria detalhada
     storage.addAuditLog({
@@ -385,10 +522,10 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
       action: 'CADASTRO_CLIENTE',
       module: 'Comercial & Clientes',
       recordId: `import-cli-${Date.now()}`,
-      details: `Importação em lote de clientes via planilha "${file?.name || 'Arquivo'}": ${createdCount} novos cadastros realizados e ${updatedCount} clientes existentes atualizados.`
+      details: `Importação em lote de clientes via planilha "${file?.name || 'Arquivo'}": ${createdCount} novos cadastros realizados, ${updatedCount} atualizados e ${newContracts.length} contratos ativos gerados.`
     });
 
-    onSuccess(createdCount, updatedCount);
+    onSuccess(createdCount, updatedCount, newContracts.length);
     onClose();
   };
 
@@ -675,8 +812,23 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-[var(--text-secondary)] text-[11px]">Ações em massa:</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    disabled={isEnrichingReceita}
+                    onClick={handleEnrichFromReceita}
+                    className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg font-bold transition-all text-[11px] flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                    title="Consultar dados cadastrais na Receita Federal para completar automaticamente Razão Social oficial, Endereço, Contatos e CNAE"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isEnrichingReceita ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isEnrichingReceita 
+                        ? `Consultando Receita Federal (${enrichProgress?.current}/${enrichProgress?.total})...` 
+                        : 'Enriquecer via Receita Federal'}
+                    </span>
+                  </button>
+
+                  <span className="text-[var(--text-secondary)] text-[11px] ml-1">Ações em lote:</span>
                   <button
                     type="button"
                     onClick={() => handleBulkAction('CRIAR')}
@@ -710,6 +862,7 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
                         <th className="py-2.5 px-3 w-12 text-center">Linha</th>
                         <th className="py-2.5 px-3">Razão Social / Nome</th>
                         <th className="py-2.5 px-3">CNPJ / CPF</th>
+                        <th className="py-2.5 px-3">Contrato Integrado</th>
                         <th className="py-2.5 px-3">Contato (Email / Fone)</th>
                         <th className="py-2.5 px-3">Status</th>
                         <th className="py-2.5 px-3 text-center w-36">Ação Desejada</th>
@@ -718,7 +871,7 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
                     <tbody className="divide-y divide-[var(--border-subtle)]">
                       {filteredRows.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="py-10 text-center text-xs text-[var(--text-secondary)]">
+                          <td colSpan={7} className="py-10 text-center text-xs text-[var(--text-secondary)]">
                             Nenhum cliente corresponde ao filtro selecionado.
                           </td>
                         </tr>
@@ -752,6 +905,11 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
                                     Fantasia: {row.tradeName}
                                   </div>
                                 )}
+                                {row.receitaEnriched && (
+                                  <div className="text-[9px] text-amber-300 font-semibold flex items-center gap-1 mt-0.5">
+                                    <span>🏛️ Validado na Receita Federal ({row.receitaSituacao || 'ATIVA'})</span>
+                                  </div>
+                                )}
                                 {row.existingClient && (
                                   <div className="text-[10px] text-blue-400 font-semibold flex items-center gap-1 mt-0.5">
                                     <span>⚠️ Já cadastrado no sistema ({row.existingClient.name})</span>
@@ -776,6 +934,22 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
                                   </div>
                                 ) : (
                                   <span className="text-[var(--text-secondary)] text-[10px]">Não informado</span>
+                                )}
+                              </td>
+
+                              {/* Coluna Contrato Integrado */}
+                              <td className="py-2 px-3">
+                                {row.contractMonthly && row.contractMonthly > 0 ? (
+                                  <div className="space-y-0.5">
+                                    <span className="inline-flex items-center text-[10px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                                      📄 R$ {formatBRL(row.contractMonthly)}/mês
+                                    </span>
+                                    <div className="text-[9px] text-[var(--text-secondary)]">
+                                      Venc. dia {row.contractDueDay || 10} • {row.contractBillingMethod || 'BOLETO'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-[var(--text-secondary)]">-</span>
                                 )}
                               </td>
 
@@ -858,6 +1032,11 @@ export const ImportClientsModal: React.FC<ImportClientsModalProps> = ({
             {file ? (
               <span>
                 Pronto para processar <strong>{toCreateCount + toUpdateCount}</strong> clientes ({toCreateCount} novos, {toUpdateCount} atualizações)
+                {parsedRows.some(r => r.action !== 'IGNORAR' && r.contractMonthly && r.contractMonthly > 0) && (
+                  <span className="text-amber-400 font-bold ml-1.5">
+                    • {parsedRows.filter(r => r.action !== 'IGNORAR' && r.contractMonthly && r.contractMonthly > 0).length} contrato(s) recorrente(s) serão gerados
+                  </span>
+                )}
               </span>
             ) : (
               <span>Utilize a planilha modelo para garantir correspondência total das colunas.</span>
