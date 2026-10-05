@@ -3253,9 +3253,9 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                       </th>
                       <th className="py-2.5 px-2.5 w-16 text-center">Ação</th>
                       <th className="py-2.5 px-2.5 w-24 text-center">Tipo</th>
-                      <th className="py-2.5 px-3 min-w-[280px]">Categoria (Plano & Memória IA)</th>
                       <th className="py-2.5 px-3 min-w-[180px] max-w-[240px]">Fornecedor / Cliente</th>
                       <th className="py-2.5 px-3 min-w-[220px] max-w-[320px]">Descrição</th>
+                      <th className="py-2.5 px-3 min-w-[280px]">Categoria (Plano & Memória IA)</th>
                       <th className="py-2.5 px-3 min-w-[150px] max-w-[220px]">Título / Doc</th>
                       <th className="py-2.5 px-2 text-center w-24">Competência</th>
                       <th className="py-2.5 px-2 text-center w-32">Vencimento</th>
@@ -3362,7 +3362,41 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                               </button>
                             </td>
 
-                            {/* Categoria / Plano de Contas & Memória IA (NO LUGAR DO TÍTULO / DOC) */}
+                            {/* Fornecedor / Cliente (Editável Inline) */}
+                            <td className="py-2 px-3 min-w-[180px] max-w-[240px]">
+                              <div className="space-y-1">
+                                <input
+                                  type="text"
+                                  value={row.normalized.fornecedor || ''}
+                                  onChange={(e) => handleInlineUpdate(row.rowNumber, 'fornecedor', e.target.value)}
+                                  title="Editar fornecedor ou cliente"
+                                  className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-semibold text-[var(--text-primary)] transition-colors focus:outline-hidden"
+                                />
+                                {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
+                                  <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 inline-block">
+                                    Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
+                                  </span>
+                                )}
+                                {row.counterpartyResolution === 'SUGESTAO' && (
+                                  <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
+                                    Sugerido
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Descrição (Editável Inline com Textarea e Quebra de Linha) */}
+                            <td className="py-2 px-3 min-w-[220px] max-w-[320px]">
+                              <textarea
+                                rows={2}
+                                value={row.normalized.descricao || ''}
+                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'descricao', e.target.value)}
+                                title="Editar descrição"
+                                className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal transition-colors focus:outline-hidden resize-none"
+                              />
+                            </td>
+
+                            {/* Categoria / Plano de Contas & Memória IA (NO LUGAR DO TÍTULO / DOC, ENTRE DESCRIÇÃO E VENCIMENTO/VALOR) */}
                             <td className="py-2 px-3 min-w-[280px]">
                               {row.isTypeFilteredOut ? (
                                 <span 
@@ -3442,41 +3476,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                               )}
                             </td>
 
-                            {/* Fornecedor / Cliente (Editável Inline) */}
-                            <td className="py-2 px-3 min-w-[180px] max-w-[240px]">
-                              <div className="space-y-1">
-                                <input
-                                  type="text"
-                                  value={row.normalized.fornecedor || ''}
-                                  onChange={(e) => handleInlineUpdate(row.rowNumber, 'fornecedor', e.target.value)}
-                                  title="Editar fornecedor ou cliente"
-                                  className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-semibold text-[var(--text-primary)] transition-colors focus:outline-hidden"
-                                />
-                                {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
-                                  <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 inline-block">
-                                    Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
-                                  </span>
-                                )}
-                                {row.counterpartyResolution === 'SUGESTAO' && (
-                                  <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
-                                    Sugerido
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Descrição (Editável Inline com Textarea e Quebra de Linha) */}
-                            <td className="py-2 px-3 min-w-[220px] max-w-[320px]">
-                              <textarea
-                                rows={2}
-                                value={row.normalized.descricao || ''}
-                                onChange={(e) => handleInlineUpdate(row.rowNumber, 'descricao', e.target.value)}
-                                title="Editar descrição"
-                                className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal transition-colors focus:outline-hidden resize-none"
-                              />
-                            </td>
-
-                            {/* Título / Documento (Editável Inline com Quebra de Linha - MOVIDO PARA APÓS DESCRIÇÃO) */}
+                            {/* Título / Documento (Editável Inline com Quebra de Linha) */}
                             <td className="py-2 px-3 min-w-[150px] max-w-[220px]">
                               <input
                                 type="text"
