@@ -243,6 +243,125 @@ export function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartA
   return result;
 }
 
+export interface AccountGroupStyle {
+  borderLeft: string;
+  bgSubtle: string;
+  badgeStyle: string;
+  groupLabel: string;
+}
+
+export function getAccountGroupBadgeStyle(acc?: ChartAccount | null): AccountGroupStyle {
+  if (!acc) {
+    return {
+      borderLeft: 'border-l-4 border-l-slate-500',
+      bgSubtle: 'bg-slate-500/5',
+      badgeStyle: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+      groupLabel: 'Sem Categoria'
+    };
+  }
+
+  const code = acc.code || '';
+  const nature = acc.nature || '';
+  const name = acc.name.toLowerCase();
+
+  // 1. Receitas de Serviços / Faturamento (Verde)
+  if (code.startsWith('1.1') || nature === 'RECEITA_SERVICO') {
+    return {
+      borderLeft: 'border-l-4 border-l-emerald-500',
+      bgSubtle: 'bg-emerald-500/10 hover:bg-emerald-500/15',
+      badgeStyle: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      groupLabel: 'Receita'
+    };
+  }
+
+  // 2. Deduções da Receita (Rosa)
+  if (code.startsWith('1.2') || nature === 'DEDUCAO_RECEITA') {
+    return {
+      borderLeft: 'border-l-4 border-l-rose-500',
+      bgSubtle: 'bg-rose-500/10 hover:bg-rose-500/15',
+      badgeStyle: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      groupLabel: 'Dedução'
+    };
+  }
+
+  // 3. Custos Operacionais (Âmbar)
+  if (code.startsWith('3.') || nature === 'CUSTO_SERVICO') {
+    return {
+      borderLeft: 'border-l-4 border-l-amber-500',
+      bgSubtle: 'bg-amber-500/10 hover:bg-amber-500/15',
+      badgeStyle: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      groupLabel: 'Custo'
+    };
+  }
+
+  // 4.1 Pessoal (Índigo)
+  if (code.startsWith('4.1') || nature === 'DESPESA_PESSOAL') {
+    return {
+      borderLeft: 'border-l-4 border-l-indigo-500',
+      bgSubtle: 'bg-indigo-500/10 hover:bg-indigo-500/15',
+      badgeStyle: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+      groupLabel: 'Pessoal'
+    };
+  }
+
+  // 4.2 Administrativas & TI (Sky)
+  if (code.startsWith('4.2') || nature === 'DESPESA_ADMINISTRATIVA') {
+    return {
+      borderLeft: 'border-l-4 border-l-sky-500',
+      bgSubtle: 'bg-sky-500/10 hover:bg-sky-500/15',
+      badgeStyle: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+      groupLabel: 'Admin & TI'
+    };
+  }
+
+  // 4.3 Comerciais & Marketing (Ciano)
+  if (code.startsWith('4.3') || nature === 'DESPESA_COMERCIAL') {
+    return {
+      borderLeft: 'border-l-4 border-l-cyan-500',
+      bgSubtle: 'bg-cyan-500/10 hover:bg-cyan-500/15',
+      badgeStyle: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      groupLabel: 'Comercial'
+    };
+  }
+
+  // 7. Sócios & Distribuição de Lucros (Roxo)
+  if (code.startsWith('7.') || nature === 'FINANCIAMENTO_SOCIO' || name.includes('lucro') || acc.id === 'acc-7.1.04') {
+    return {
+      borderLeft: 'border-l-4 border-l-purple-500',
+      bgSubtle: 'bg-purple-500/10 hover:bg-purple-500/15',
+      badgeStyle: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+      groupLabel: 'Sócios & Lucros'
+    };
+  }
+
+  // 6. Tributos (Laranja)
+  if (code.startsWith('6.') || nature === 'TRIBUTO_LUCRO') {
+    return {
+      borderLeft: 'border-l-4 border-l-orange-500',
+      bgSubtle: 'bg-orange-500/10 hover:bg-orange-500/15',
+      badgeStyle: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+      groupLabel: 'Tributos'
+    };
+  }
+
+  // 5. Resultado Financeiro (Azul)
+  if (code.startsWith('5.') || nature.includes('FINANCEIR')) {
+    return {
+      borderLeft: 'border-l-4 border-l-blue-500',
+      bgSubtle: 'bg-blue-500/10 hover:bg-blue-500/15',
+      badgeStyle: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+      groupLabel: 'Financeiro'
+    };
+  }
+
+  return {
+    borderLeft: 'border-l-4 border-l-slate-400',
+    bgSubtle: 'bg-slate-500/10 hover:bg-slate-500/15',
+    badgeStyle: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+    groupLabel: 'Outras'
+  };
+}
+
 // Modal Popover de Busca e Seleção Rápida de Categorias Agrupadas
 export interface CategoryQuickSearchModalProps {
   isOpen: boolean;
@@ -607,6 +726,12 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     isBulk?: boolean;
   } | null>(null);
   const [savedTemplateBanner, setSavedTemplateBanner] = useState<string | null>(null);
+  const [cascadeSuggestion, setCascadeSuggestion] = useState<{
+    partyName: string;
+    targetAccountId: string;
+    targetAccountName: string;
+    otherRowNumbers: number[];
+  } | null>(null);
 
   // Colunas Extras Customizadas
   const [extraColumns, setExtraColumns] = useState<ExtraColumnDefinition[]>([]);
@@ -1041,12 +1166,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
       const valorOriginal = r.normalized.valorOriginal;
       const principalBaixado = isCurrentlyPaid ? 0 : valorOriginal;
       const saldoAtual = isCurrentlyPaid ? valorOriginal : 0;
+      const dataPagamento = !isCurrentlyPaid ? (r.normalized.dataPagamento || r.normalized.vencimento) : undefined;
 
       const updatedNormalized: BaseSpreadsheetRow = {
         ...r.normalized,
         situacao: newSituacao,
         principalBaixado,
         saldoAtual,
+        dataPagamento,
         isManuallyEdited: true
       };
 
@@ -1091,6 +1218,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     const targetAccount = chartAccounts.find(a => a.id === newAccountId);
     if (!targetAccount) return;
 
+    // Atualiza a linha selecionada
     setAnalyzedRows(prev => prev.map(r => {
       if (r.rowNumber !== rowNumber) return r;
       return {
@@ -1107,6 +1235,59 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         memoryReason: 'Ajustado manualmente nesta sessão (será gravado na memória de IA)'
       };
     }));
+
+    // Auto-Preenchimento em Cascata por Fornecedor/Cliente na Tabela:
+    // Identifica se existem outros lançamentos deste mesmo Fornecedor/Cliente com categorias diferentes
+    const currentRow = analyzedRows.find(r => r.rowNumber === rowNumber);
+    const partyName = (currentRow?.normalized?.fornecedor || '').trim();
+
+    if (partyName && partyName.length >= 2) {
+      const normParty = normalizeText(partyName);
+      const otherMatchingRows = analyzedRows.filter(r => 
+        r.rowNumber !== rowNumber &&
+        !r.isTypeFilteredOut &&
+        r.action !== 'ERRO' &&
+        normalizeText(r.normalized.fornecedor || '') === normParty &&
+        r.matchedChartAccountId !== newAccountId
+      );
+
+      if (otherMatchingRows.length > 0) {
+        setCascadeSuggestion({
+          partyName,
+          targetAccountId: targetAccount.id,
+          targetAccountName: targetAccount.name,
+          otherRowNumbers: otherMatchingRows.map(r => r.rowNumber)
+        });
+      }
+    }
+  };
+
+  const handleApplyCascade = () => {
+    if (!cascadeSuggestion) return;
+    const { targetAccountId, targetAccountName, otherRowNumbers, partyName } = cascadeSuggestion;
+
+    setAnalyzedRows(prev => prev.map(r => {
+      if (!otherRowNumbers.includes(r.rowNumber)) return r;
+      return {
+        ...r,
+        matchedChartAccountId: targetAccountId,
+        matchedChartAccountName: targetAccountName,
+        normalized: {
+          ...r.normalized,
+          categoria: targetAccountName,
+          isManuallyEdited: true
+        },
+        categoryResolution: 'MATCH_PLANO',
+        isFromMemory: true,
+        memoryReason: `Cascata automática por fornecedor: "${partyName}"`,
+        memoryConfidence: 0.98
+      };
+    }));
+
+    const appliedCount = otherRowNumbers.length;
+    setCascadeSuggestion(null);
+    setSavedTemplateBanner(`✓ Categoria "${targetAccountName}" aplicada com sucesso a todos os outros ${appliedCount} lançamentos de "${partyName}"!`);
+    setTimeout(() => setSavedTemplateBanner(null), 6000);
   };
 
   const handleApplyBatchCategory = () => {
@@ -3217,6 +3398,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
 
                                   {(() => {
                                     const currentAcc = chartAccountsMap.get(row.matchedChartAccountId || '');
+                                    const groupStyle = getAccountGroupBadgeStyle(currentAcc);
+
                                     return (
                                       <button
                                         type="button"
@@ -3226,28 +3409,32 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                           currentAccountId: row.matchedChartAccountId,
                                           type: row.normalized.tipo
                                         })}
-                                        className={`flex-1 py-1 px-2.5 rounded-lg text-xs font-medium border text-left flex items-center justify-between gap-1.5 transition-all cursor-pointer shadow-xs ${
-                                          row.isFromMemory
-                                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300 hover:border-emerald-400 font-bold'
-                                            : row.normalized.isManuallyEdited
-                                              ? 'bg-blue-500/10 border-blue-500/35 text-blue-300 hover:border-blue-400 font-medium'
-                                              : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] hover:border-amber-400/70 text-[var(--text-primary)] font-medium'
+                                        className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium border text-left flex items-center justify-between gap-1.5 transition-all cursor-pointer shadow-xs ${groupStyle.borderLeft} ${groupStyle.bgSubtle} border-[var(--border-subtle)] hover:border-amber-400/80 ${
+                                          row.isFromMemory ? 'ring-1 ring-emerald-500/30' : ''
                                         }`}
-                                        title="Clique para abrir a pesquisa por nome e código contábil (Plano de Contas Agrupado)"
+                                        title={`Grupo: ${groupStyle.groupLabel}\nClique para abrir a pesquisa por nome e código contábil`}
                                       >
-                                        <span className="truncate">
-                                          {currentAcc ? (
-                                            <>
-                                              {currentAcc.code && <span className="opacity-75 font-mono mr-1">[{currentAcc.code}]</span>}
-                                              <span>{currentAcc.name}</span>
-                                            </>
-                                          ) : (
-                                            <span className="text-amber-400 font-medium italic flex items-center gap-1">
-                                              <Search className="w-3 h-3" /> Selecionar categoria...
-                                            </span>
-                                          )}
-                                        </span>
-                                        <Search className="w-3.5 h-3.5 shrink-0 opacity-80 text-amber-400" />
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          {/* Badge com cor suave por Macro-Grupo Contábil */}
+                                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border uppercase shrink-0 ${groupStyle.badgeStyle}`}>
+                                            {groupStyle.groupLabel}
+                                          </span>
+
+                                          <span className="truncate text-[var(--text-primary)]">
+                                            {currentAcc ? (
+                                              <>
+                                                {currentAcc.code && <span className="opacity-70 font-mono mr-1">[{currentAcc.code}]</span>}
+                                                <span className="font-semibold">{currentAcc.name}</span>
+                                              </>
+                                            ) : (
+                                              <span className="text-amber-400 font-medium italic flex items-center gap-1">
+                                                <Search className="w-3 h-3" /> Selecionar categoria...
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+
+                                        <Search className="w-3.5 h-3.5 shrink-0 opacity-70 text-amber-400" />
                                       </button>
                                     );
                                   })()}
@@ -3705,6 +3892,55 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             }
           }}
         />
+      )}
+
+      {/* Toast Flutuante de Auto-Preenchimento em Cascata por Fornecedor/Cliente */}
+      {cascadeSuggestion && (
+        <div className="fixed bottom-24 right-8 z-70 max-w-md p-4 rounded-2xl bg-[var(--surface-card)] border-2 border-amber-400/90 shadow-2xl animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30 shadow-xs">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <span>Auto-Preenchimento em Cascata</span>
+                  <span className="px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-300 font-black text-[9px] border border-amber-500/40">
+                    {cascadeSuggestion.otherRowNumbers.length} outros
+                  </span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setCascadeSuggestion(null)}
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-0.5"
+                  title="Fechar sugestão"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                Você definiu a categoria <strong className="text-amber-400">"{cascadeSuggestion.targetAccountName}"</strong> para <strong className="text-[var(--text-primary)]">"{cascadeSuggestion.partyName}"</strong>. Deseja aplicar para todos os outros <strong className="text-[var(--text-primary)]">{cascadeSuggestion.otherRowNumbers.length}</strong> lançamentos deste mesmo Fornecedor/Cliente?
+              </p>
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleApplyCascade}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Sim, Aplicar a Todos ({cascadeSuggestion.otherRowNumbers.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCascadeSuggestion(null)}
+                  className="px-2.5 py-1.5 rounded-xl bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Apenas Esta Linha
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

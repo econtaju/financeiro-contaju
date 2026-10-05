@@ -748,7 +748,7 @@ export function analyzeContaAzulSpreadsheet(
     let vencimento = isExplicitlyIgnored('vencimento') ? '' : normalizeToISODate(rawVenc);
 
     const rawDataPagto = getVal('dataPagamento');
-    const dataPagamento = isExplicitlyIgnored('dataPagamento') ? '' : normalizeToISODate(rawDataPagto);
+    let dataPagamento = isExplicitlyIgnored('dataPagamento') ? '' : normalizeToISODate(rawDataPagto);
 
     // 2. Emissão
     const rawEmissao = getVal('emissao');
@@ -898,12 +898,31 @@ export function analyzeContaAzulSpreadsheet(
       saldoAtual = 0;
     }
 
+    // Validação Prévia de Títulos com Saldo Zero mas Situação "Aberto":
+    // Caso a planilha venha com saldo zerado, valor baixado igual ao total ou data de pagamento preenchida,
+    // força o status para LIQUIDADO, prevenindo títulos quitados de constarem como pendentes no fluxo de caixa.
+    if (situacao !== 'CANCELADO' && valorOriginal > 0) {
+      const isZeroBalance = hasRawSaldo && saldoAtual <= 0.01;
+      const isFullyPaid = principalBaixado !== undefined && principalBaixado >= valorOriginal - 0.05 && principalBaixado > 0;
+      if (isZeroBalance || isFullyPaid) {
+        situacao = 'LIQUIDADO';
+        principalBaixado = valorOriginal;
+        saldoAtual = 0;
+        if (!dataPagamento && vencimento) {
+          dataPagamento = vencimento;
+        }
+      }
+    }
+
     // Se o status for LIQUIDADO (ou pago), garantir que o valor pago seja igual ao valor original e saldo zerado
     if (situacao === 'LIQUIDADO') {
       if (principalBaixado <= 0) {
         principalBaixado = valorOriginal;
       }
       saldoAtual = 0;
+      if (!dataPagamento && vencimento) {
+        dataPagamento = vencimento;
+      }
     } else if (situacao === 'PARCIAL') {
       if (principalBaixado <= 0 && saldoAtual > 0 && saldoAtual < valorOriginal) {
         principalBaixado = Math.round((valorOriginal - saldoAtual) * 100) / 100;
