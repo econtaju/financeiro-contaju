@@ -32,7 +32,8 @@ import {
   Presentation,
   Activity,
   CheckCircle2,
-  Printer
+  Printer,
+  Network
 } from 'lucide-react';
 import { ReportingEngine, DREMatrix, DRELineItem } from '../../services/reportingEngine';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
@@ -50,6 +51,7 @@ import { DRECashReconciliationEngine, DRECashReconciliationSummary } from '../..
 export interface DREViewProps {
   isFocusMode?: boolean;
   onToggleFocusMode?: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 type ValueDisplayMode = 'INTEIRO' | 'CENTAVOS' | 'MILHARES';
@@ -110,7 +112,7 @@ const Sparkline: React.FC<SparklineProps> = ({ values, width = 46, height = 15, 
   );
 };
 
-export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode }) => {
+export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode, onNavigate }) => {
   const currentYear = new Date().getFullYear();
   const { period } = useGlobalPeriod();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -672,6 +674,19 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
             <Download className="w-4 h-4 mr-1.5 text-[var(--text-secondary)]" />
             CSV
           </button>
+
+          {/* Atalho direto para Configuração e Mapeamento do Plano de Contas */}
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('PLANO_CONTAS')}
+              className="px-3 py-2 bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 hover:bg-amber-500/20 rounded-xl text-xs font-bold transition-all flex items-center shadow-xs cursor-pointer"
+              title="Acessar o Plano de Contas Gerencial para criar, clonar ou vincular novas contas às linhas da DRE"
+            >
+              <Network className="w-4 h-4 mr-1.5 text-amber-500" />
+              Plano de Contas
+            </button>
+          )}
 
           {/* Modo Foco */}
           {onToggleFocusMode && (

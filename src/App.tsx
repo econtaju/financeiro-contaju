@@ -225,7 +225,7 @@ function AppContent() {
 
       // Management & Reports
       case 'DRE':
-        return <DREView isFocusMode={isFocusMode} onToggleFocusMode={() => setIsFocusMode(prev => !prev)} />;
+        return <DREView isFocusMode={isFocusMode} onToggleFocusMode={() => setIsFocusMode(prev => !prev)} onNavigate={setCurrentScreen} />;
       case 'FLUXO_CAIXA':
         return <CashFlowView isFocusMode={isFocusMode} onToggleFocusMode={() => setIsFocusMode(prev => !prev)} />;
       case 'PLANEJAMENTO_ORCAMENTARIO':
