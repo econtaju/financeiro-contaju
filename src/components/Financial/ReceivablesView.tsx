@@ -33,9 +33,9 @@ import {
   MessageCircle,
   Lock
 } from 'lucide-react';
-import { FinancialTitle, Settlement } from '../../types';
+import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts } from '../../services/financialEngine';
 import { CreditRiskService, CustomerRiskProfile, RiskLevel } from '../../services/creditRiskService';
 import { matchesSearch } from '../../utils/searchUtils';
 import { SettlementModal } from '../Modals/SettlementModal';
@@ -270,6 +270,84 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     return CreditRiskService.getPortfolioRiskOverview(today);
   }, [titles, refreshKey, today]);
 
+  // Estatísticas e agrupamento de categorias ativas com receita no período selecionado
+  const categoryStats = useMemo(() => {
+    try {
+      const counts: Record<string, { count: number; totalAmount: number }> = {};
+      let unclassifiedCount = 0;
+      let unclassifiedTotal = 0;
+
+      periodTitles.forEach(t => {
+        if (!t || t.documentState === 'CANCELADO') return;
+        const accId = t.chartAccountId || t.accountId;
+        const amt = Number(t.originalAmount) || 0;
+        if (!accId) {
+          unclassifiedCount++;
+          unclassifiedTotal += amt;
+        } else {
+          if (!counts[accId]) {
+            counts[accId] = { count: 0, totalAmount: 0 };
+          }
+          counts[accId].count++;
+          counts[accId].totalAmount += amt;
+        }
+      });
+
+      // Contas analíticas de receita do plano de contas
+      const revenueAccounts = getFilteredChartAccounts(chartAccounts, 'RECEBER');
+      const inPeriodMap = new Map<string, { account: ChartAccount; count: number; totalAmount: number }>();
+
+      revenueAccounts.forEach(acc => {
+        const stat = counts[acc.id];
+        if (stat && stat.count > 0) {
+          inPeriodMap.set(acc.id, {
+            account: acc,
+            count: stat.count,
+            totalAmount: Math.round(stat.totalAmount * 100) / 100
+          });
+        }
+      });
+
+      // Garantir inclusão de qualquer conta com lançamentos a receber no período
+      Object.keys(counts).forEach(accId => {
+        if (!inPeriodMap.has(accId)) {
+          const acc = chartAccounts.find(a => a && a.id === accId);
+          if (acc) {
+            inPeriodMap.set(accId, {
+              account: acc,
+              count: counts[accId].count,
+              totalAmount: Math.round(counts[accId].totalAmount * 100) / 100
+            });
+          }
+        }
+      });
+
+      const inPeriod = Array.from(inPeriodMap.values());
+      inPeriod.sort((a, b) => b.count - a.count || a.account.code.localeCompare(b.account.code, undefined, { numeric: true }));
+
+      const others = revenueAccounts
+        .filter(acc => !inPeriodMap.has(acc.id))
+        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
+      return {
+        inPeriod,
+        others,
+        unclassifiedCount,
+        unclassifiedTotal: Math.round(unclassifiedTotal * 100) / 100,
+        totalTitlesInPeriod: periodTitles.filter(t => t && t.documentState !== 'CANCELADO').length
+      };
+    } catch (err) {
+      console.error('Erro ao calcular estatísticas de categorias no período em Receber:', err);
+      return {
+        inPeriod: [],
+        others: [],
+        unclassifiedCount: 0,
+        unclassifiedTotal: 0,
+        totalTitlesInPeriod: 0
+      };
+    }
+  }, [periodTitles, chartAccounts]);
+
   // Filtering
   const filteredTitles = useMemo(() => {
     try {
@@ -295,9 +373,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           if (p?.riskLevel !== riskFilter) return false;
         }
 
-        // Category filter
-        if (categoryFilter !== 'ALL' && t.chartAccountId !== categoryFilter && t.accountId !== categoryFilter) {
-          return false;
+        // Category filter (específico, não classificado ou todos)
+        if (categoryFilter !== 'ALL') {
+          if (categoryFilter === 'SEM_CATEGORIA') {
+            const hasCategory = Boolean(t.chartAccountId || t.accountId);
+            if (hasCategory) return false;
+          } else if (t.chartAccountId !== categoryFilter && t.accountId !== categoryFilter) {
+            return false;
+          }
         }
 
         // Counterparty filter
@@ -800,6 +883,43 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
             className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 dark:bg-[#131720] text-slate-900 dark:text-slate-100 placeholder-slate-400"
           />
         </div>
+
+        {/* Seletor Rápido de Categoria Mobile */}
+        <div className="flex items-center gap-2 pt-1">
+          <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+            Categoria:
+          </label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#131720] text-slate-900 dark:text-slate-100"
+          >
+            <option value="ALL">Todas as Categorias ({categoryStats.totalTitlesInPeriod})</option>
+            {categoryStats.unclassifiedCount > 0 && (
+              <option value="SEM_CATEGORIA" className="font-bold text-amber-600 dark:text-amber-400">
+                ⚠️ Não Classificados ({categoryStats.unclassifiedCount})
+              </option>
+            )}
+            {categoryStats.inPeriod.length > 0 && (
+              <optgroup label="No Período Selecionado">
+                {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+                  <option key={account.id} value={account.id}>
+                    {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {categoryStats.others.length > 0 && (
+              <optgroup label="Outras do Plano">
+                {categoryStats.others.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </div>
       </div>
 
       {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Desktop & Tablet) */}
@@ -1014,36 +1134,75 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         </div>
 
         {/* Row 2: Advanced Dropdown Filters (Category, Client, Bank Account) */}
-        <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs items-center">
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs items-center">
           
           {/* Categoria / Plano de Contas */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-              Plano de Contas / Categoria:
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Plano de Contas / Receita:
+              </label>
+              {categoryFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('ALL')}
+                  className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-semibold cursor-pointer"
+                  title="Remover filtro de categoria"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className={`w-full px-2.5 py-1.5 rounded-lg border text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors ${
+                categoryFilter !== 'ALL'
+                  ? 'border-emerald-500 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-200 font-bold'
+                  : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100'
+              }`}
             >
-              <option value="ALL">Todas as Categorias</option>
-              {chartAccounts.filter(a => a.type === 'RECEITA').map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.code} - {acc.name}
+              <option value="ALL">
+                Todas as Receitas ({categoryStats.totalTitlesInPeriod} no período)
+              </option>
+
+              {categoryStats.unclassifiedCount > 0 && (
+                <option value="SEM_CATEGORIA" className="font-bold text-amber-600 dark:text-amber-400">
+                  ⚠️ Não Classificados (Sem Categoria) ({categoryStats.unclassifiedCount} títulos • {formatBRL(categoryStats.unclassifiedTotal)})
                 </option>
-              ))}
+              )}
+
+              {categoryStats.inPeriod.length > 0 && (
+                <optgroup label={`⚡ Categorias com Receitas no Período Selecionado (${categoryStats.inPeriod.length})`}>
+                  {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+                    <option key={account.id} value={account.id}>
+                      {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {categoryStats.others.length > 0 && (
+                <optgroup label={`📋 Outras Categorias do Plano de Contas (${categoryStats.others.length})`}>
+                  {categoryStats.others.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.code} - {acc.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
           {/* Cliente / Contraparte */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Cliente:
             </label>
             <select
               value={counterpartyFilter}
               onChange={(e) => setCounterpartyFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             >
               <option value="ALL">Todos os Clientes</option>
               {counterparties.map(c => (
@@ -1056,13 +1215,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
           {/* Banco / Conta Prevista */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Conta Bancária / Caixa Previsto:
             </label>
             <select
               value={bankFilter}
               onChange={(e) => setBankFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             >
               <option value="ALL">Todas as Contas</option>
               {bankAccounts.map(b => (
@@ -1079,10 +1238,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
               <button
                 type="button"
                 onClick={handleClearFilters}
-                className="w-full sm:w-auto px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 border border-slate-300"
+                className="w-full sm:w-auto px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 border border-slate-300 dark:border-slate-700 cursor-pointer shadow-2xs"
                 title="Limpar todos os filtros selecionados"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                 Limpar Filtros
               </button>
             ) : (
@@ -1093,6 +1252,56 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           </div>
         </div>
 
+        {/* Chip / Banner de Filtro de Categoria Ativo com Ação de Selecionar Todos para Classificar */}
+        {categoryFilter !== 'ALL' && (
+          <div className="pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-900 dark:text-emerald-200 animate-fade-in shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white uppercase tracking-wider">
+                  Filtro de Categoria
+                </span>
+                <span className="font-bold">
+                  {categoryFilter === 'SEM_CATEGORIA' 
+                    ? '⚠️ Não Classificados (Sem Categoria)' 
+                    : (() => {
+                        const acc = chartAccounts.find(a => a.id === categoryFilter);
+                        return acc ? `${acc.code} - ${acc.name}` : categoryFilter;
+                      })()
+                  }
+                </span>
+                <span className="text-[11px] text-slate-600 dark:text-slate-400 font-mono">
+                  ({filteredTitles.length} lançamentos • {formatBRL(filteredTitles.reduce((acc, t) => acc + (t.balancePrincipal || t.originalAmount || 0), 0))})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {filteredTitles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedIds(filteredTitles.map(t => t.id));
+                      setToastMessage({
+                        type: 'info',
+                        text: `${filteredTitles.length} títulos desta categoria selecionados! Você pode classificá-los em lote usando a barra de ações.`
+                      });
+                    }}
+                    className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
+                    title="Selecionar todos os títulos filtrados para classificar ou editar em lote"
+                  >
+                    Selecionar Todos ({filteredTitles.length})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('ALL')}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                  title="Limpar filtro de categoria"
+                >
+                  ✕ Limpar Filtro
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Banner of current list & Global Period Banner */}
