@@ -21,12 +21,14 @@ import {
   RotateCcw,
   Ban,
   CheckCircle,
-  Sparkles
+  Sparkles,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Counterparty, Contract, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { ClientFinancialHistoryModal } from './ClientFinancialHistoryModal';
+import { ImportClientsModal } from '../Modals/ImportClientsModal';
 import { CNPJInputField } from '../Common/CNPJInputField';
 import { validateFiscalDocument } from '../../utils/cnpjValidator';
 import { matchesSearch } from '../../utils/searchUtils';
@@ -48,6 +50,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
   const [selectedClient, setSelectedClient] = useState<Counterparty | null>(null);
   const [selectedContractForModal, setSelectedContractForModal] = useState<string | undefined>(undefined);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Counterparty | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
 
@@ -244,13 +247,24 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
           </p>
         </div>
 
-        <button
-          onClick={handleOpenNew}
-          className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-[#071321] rounded-xl text-xs font-bold transition-all shadow-[0_0_12px_rgba(245,158,11,0.25)] flex items-center"
-        >
-          <Plus className="w-4 h-4 mr-1.5" />
-          Novo Cliente
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3.5 py-2 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-subtle)] hover:border-amber-400/50 rounded-xl text-xs font-semibold transition-all flex items-center shadow-2xs cursor-pointer active:scale-95"
+            title="Importar múltiplos clientes a partir de planilha Excel (.xlsx) ou CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-400" />
+            Importar Planilha
+          </button>
+
+          <button
+            onClick={handleOpenNew}
+            className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-[#071321] rounded-xl text-xs font-bold transition-all shadow-[0_0_12px_rgba(245,158,11,0.25)] flex items-center cursor-pointer active:scale-95"
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Novo Cliente
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards de Clientes */}
@@ -740,6 +754,16 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
           </div>
         </div>
       )}
+
+      {/* Modal de Importação de Clientes em Lote */}
+      <ImportClientsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={(createdCount, updatedCount) => {
+          setToastMessage(`✓ Importação concluída! ${createdCount} novo(s) cliente(s) cadastrado(s) e ${updatedCount} atualizado(s).`);
+          setTimeout(() => setToastMessage(''), 5000);
+        }}
+      />
 
     </div>
   );
