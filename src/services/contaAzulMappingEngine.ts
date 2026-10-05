@@ -82,6 +82,12 @@ export interface AnalyzedImportRow {
   typeFilterReason?: string;
   // Controle de aprovação/seleção na UI
   isSelected: boolean;
+  // Detecção de Duplicidade Interna no Próprio Arquivo
+  isInternalDuplicate?: boolean;
+  internalDuplicateGroupKey?: string;
+  internalDuplicateCount?: number;
+  internalDuplicateRowNumbers?: number[];
+  isInternalDuplicateOriginal?: boolean;
 }
 
 export interface MonthSummary {
@@ -1143,6 +1149,46 @@ export function analyzeContaAzulSpreadsheet(
       typeFilterReason,
       isSelected: action !== 'ERRO' && action !== 'IGNORAR_IDENTICO' && !isTypeFilteredOut
     });
+  });
+
+  // 14. Destaque Visual para Lançamentos com Possível Duplicidade no Próprio Arquivo
+  // Identifica linhas que possuem o mesmo tipo, fornecedor, vencimento e valor dentro do próprio lote importado
+  const internalDupGroups = new Map<string, number[]>();
+
+  result.forEach(r => {
+    if (r.action === 'ERRO' || r.isTypeFilteredOut) return;
+    const forn = normalizeText(r.normalized.fornecedor || '');
+    const val = (r.normalized.valorOriginal || 0).toFixed(2);
+    const venc = r.normalized.vencimento || '';
+    const tipo = r.normalized.tipo;
+    if (!forn || !venc || Number(val) <= 0) return;
+
+    const dupKey = `${tipo}|${forn}|${venc}|${val}`;
+    const list = internalDupGroups.get(dupKey) || [];
+    list.push(r.rowNumber);
+    internalDupGroups.set(dupKey, list);
+  });
+
+  result.forEach(r => {
+    const forn = normalizeText(r.normalized.fornecedor || '');
+    const val = (r.normalized.valorOriginal || 0).toFixed(2);
+    const venc = r.normalized.vencimento || '';
+    const tipo = r.normalized.tipo;
+    const dupKey = `${tipo}|${forn}|${venc}|${val}`;
+    const group = internalDupGroups.get(dupKey);
+
+    if (group && group.length > 1) {
+      const isOriginal = group[0] === r.rowNumber;
+      r.isInternalDuplicate = true;
+      r.internalDuplicateGroupKey = dupKey;
+      r.internalDuplicateCount = group.length;
+      r.internalDuplicateRowNumbers = group;
+      r.isInternalDuplicateOriginal = isOriginal;
+
+      // Adiciona warning explícito
+      const otherRows = group.filter(n => n !== r.rowNumber);
+      r.warnings.push(`Possível duplicidade interna no arquivo: coincide com a(s) linha(s) ${otherRows.join(', ')} (mesmo fornecedor, vencimento e valor).`);
+    }
   });
 
   return result;

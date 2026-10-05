@@ -137,6 +137,84 @@ function getSavedMappingTemplate(): SavedMappingTemplate | null {
   }
 }
 
+const SAVED_PROFILES_STORAGE_KEY = 'contaju_saved_custom_mapping_profiles_v1';
+
+export interface CustomMappingProfile {
+  id: string;
+  name: string; // Ex: "Extrato Banco Inter", "Relatório Conta Azul Vendas", "Planilha Folha de Pagamento"
+  createdAt: string;
+  updatedAt: string;
+  mapping: ColumnMapping;
+  headersSignature?: string;
+  extraColumns?: ExtraColumnDefinition[];
+  fallbackExpenseAccountId?: string;
+  fallbackRevenueAccountId?: string;
+  typeDetectionMode?: TypeDetectionMode;
+  defaultType?: TitleType;
+}
+
+export function getCustomMappingProfiles(): CustomMappingProfile[] {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SAVED_PROFILES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomMappingProfile(profile: Omit<CustomMappingProfile, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): CustomMappingProfile {
+  const existing = getCustomMappingProfiles();
+  const nowIso = new Date().toISOString();
+  let savedItem: CustomMappingProfile;
+
+  if (profile.id) {
+    const idx = existing.findIndex(p => p.id === profile.id);
+    if (idx >= 0) {
+      savedItem = {
+        ...existing[idx],
+        ...profile,
+        id: profile.id,
+        updatedAt: nowIso
+      };
+      existing[idx] = savedItem;
+    } else {
+      savedItem = {
+        ...profile,
+        id: profile.id,
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      existing.push(savedItem);
+    }
+  } else {
+    savedItem = {
+      ...profile,
+      id: `profile-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+    existing.push(savedItem);
+  }
+
+  try {
+    localStorage.setItem(SAVED_PROFILES_STORAGE_KEY, JSON.stringify(existing));
+  } catch (e) {
+    console.warn('Falha ao persistir perfis de mapeamento:', e);
+  }
+  return savedItem;
+}
+
+export function deleteCustomMappingProfile(id: string): void {
+  const existing = getCustomMappingProfiles();
+  const filtered = existing.filter(p => p.id !== id);
+  try {
+    localStorage.setItem(SAVED_PROFILES_STORAGE_KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('Falha ao excluir perfil de mapeamento:', e);
+  }
+}
+
 export interface GroupedChartAccounts {
   groupName: string;
   shortName: string;
@@ -733,6 +811,15 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     otherRowNumbers: number[];
   } | null>(null);
 
+  // Perfis de Mapeamento com Nome Customizado
+  const [customProfiles, setCustomProfiles] = useState<CustomMappingProfile[]>(() => getCustomMappingProfiles());
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
+  const [showSaveProfileModal, setShowSaveProfileModal] = useState<boolean>(false);
+  const [newProfileName, setNewProfileName] = useState<string>('');
+
+  // Filtro de Duplicadas Internas no Próprio Arquivo (Step 3)
+  const [filterDuplicatesOnly, setFilterDuplicatesOnly] = useState<boolean>(false);
+
   // Colunas Extras Customizadas
   const [extraColumns, setExtraColumns] = useState<ExtraColumnDefinition[]>([]);
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
@@ -789,6 +876,111 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     saveMappingTemplate(mapping, availableHeaders, extraColumns);
     setSavedTemplateBanner('Modelo de colunas memorizado com sucesso! Próximas importações usarão este padrão automaticamente.');
     setTimeout(() => setSavedTemplateBanner(null), 5000);
+  };
+
+  // Manipulação de Perfis de Mapeamento com Nome Customizado
+  const handleSaveCurrentProfile = () => {
+    const trimmed = newProfileName.trim();
+    if (!trimmed) {
+      alert('Por favor, informe um nome para o perfil (ex: Extrato Banco Inter, Relatório Conta Azul Vendas).');
+      return;
+    }
+
+    const saved = saveCustomMappingProfile({
+      name: trimmed,
+      mapping,
+      headersSignature: availableHeaders && availableHeaders.length > 0 ? availableHeaders.slice().sort().join('|') : undefined,
+      extraColumns,
+      fallbackExpenseAccountId,
+      fallbackRevenueAccountId,
+      typeDetectionMode,
+      defaultType: fallbackDefaultType
+    });
+
+    const updatedList = getCustomMappingProfiles();
+    setCustomProfiles(updatedList);
+    setSelectedProfileId(saved.id);
+    setShowSaveProfileModal(false);
+    setNewProfileName('');
+    setSavedTemplateBanner(`✓ Perfil de mapeamento "${saved.name}" salvo com sucesso!`);
+    setTimeout(() => setSavedTemplateBanner(null), 5000);
+  };
+
+  const handleApplyCustomProfile = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    if (!profileId) return;
+
+    const profile = customProfiles.find(p => p.id === profileId);
+    if (!profile) return;
+
+    let matchCount = 0;
+    const newMapping = { ...mapping };
+
+    (Object.keys(profile.mapping) as (keyof ColumnMapping)[]).forEach(k => {
+      const col = profile.mapping[k];
+      if (col && availableHeaders.includes(col)) {
+        newMapping[k] = col;
+        matchCount++;
+      } else if (col) {
+        newMapping[k] = col;
+      }
+    });
+
+    setMapping(newMapping);
+    if (profile.extraColumns && profile.extraColumns.length > 0) {
+      setExtraColumns(profile.extraColumns);
+    }
+    if (profile.fallbackExpenseAccountId) {
+      setFallbackExpenseAccountId(profile.fallbackExpenseAccountId);
+    }
+    if (profile.fallbackRevenueAccountId) {
+      setFallbackRevenueAccountId(profile.fallbackRevenueAccountId);
+    }
+    if (profile.typeDetectionMode) {
+      setTypeDetectionMode(profile.typeDetectionMode);
+    }
+
+    setSavedTemplateBanner(`✓ Perfil "${profile.name}" aplicado com sucesso (${matchCount} colunas vinculadas)!`);
+    setTimeout(() => setSavedTemplateBanner(null), 5000);
+  };
+
+  const handleDeleteCustomProfile = (profileId: string) => {
+    const profile = customProfiles.find(p => p.id === profileId);
+    if (!profile) return;
+    if (!confirm(`Deseja realmente excluir o perfil de mapeamento "${profile.name}"?`)) return;
+
+    deleteCustomMappingProfile(profileId);
+    const updated = getCustomMappingProfiles();
+    setCustomProfiles(updated);
+    if (selectedProfileId === profileId) {
+      setSelectedProfileId('');
+    }
+    setSavedTemplateBanner(`Perfil "${profile.name}" excluído.`);
+    setTimeout(() => setSavedTemplateBanner(null), 4000);
+  };
+
+  // Detecção e Ações de Duplicidade Interna no Próprio Arquivo
+  const internalDuplicateStats = useMemo(() => {
+    const dups = analyzedRows.filter(r => r.isInternalDuplicate && !r.isTypeFilteredOut && r.action !== 'ERRO');
+    const groups = new Set(dups.map(r => r.internalDuplicateGroupKey).filter(Boolean));
+    return {
+      totalDuplicates: dups.length,
+      groupCount: groups.size,
+      redundantCount: dups.filter(r => !r.isInternalDuplicateOriginal).length
+    };
+  }, [analyzedRows]);
+
+  const handleDeselectRedundantDuplicates = () => {
+    let deselectedCount = 0;
+    setAnalyzedRows(prev => prev.map(r => {
+      if (r.isInternalDuplicate && !r.isInternalDuplicateOriginal && r.isSelected) {
+        deselectedCount++;
+        return { ...r, isSelected: false };
+      }
+      return r;
+    }));
+    setSavedTemplateBanner(`✓ ${deselectedCount} cópias de lançamentos duplicados foram desmarcadas (mantendo a 1ª ocorrência de cada)!`);
+    setTimeout(() => setSavedTemplateBanner(null), 6000);
   };
 
   const handleApplySavedTemplate = () => {
@@ -1748,9 +1940,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         return false;
       }
 
+      // Filtro para Ver Apenas Duplicadas Internas no Próprio Arquivo
+      if (filterDuplicatesOnly && !r.isInternalDuplicate) {
+        return false;
+      }
+
       return true;
     });
-  }, [analyzedRows, filterAction, filterType, selectedMonth, filterCategoryMode]);
+  }, [analyzedRows, filterAction, filterType, selectedMonth, filterCategoryMode, filterDuplicatesOnly]);
 
   // Toggle seleção individual
   const toggleRow = (rowNumber: number) => {
@@ -2432,19 +2629,68 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                   <span className="text-xs text-[var(--text-secondary)]">({rawSheetData.length} linhas detectadas)</span>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-[var(--text-secondary)]">Preset:</span>
+                <div className="flex items-center flex-wrap gap-2">
+                  <span className="text-xs text-[var(--text-secondary)] font-semibold">Perfil de Mapeamento:</span>
+                  
+                  {/* Dropdown de Modelos do Sistema e Meus Perfis Salvos */}
                   <select
-                    value={selectedPreset}
-                    onChange={(e) => applyPresetMapping(availableHeaders, e.target.value as any)}
-                    aria-label="Preset de mapeamento"
-                    className="px-2.5 py-1 rounded-lg bg-[var(--surface-card)] border border-[var(--border-subtle)] text-xs font-bold text-amber-400 focus:outline-hidden"
+                    value={selectedProfileId ? `custom:${selectedProfileId}` : selectedPreset}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith('custom:')) {
+                        const profId = val.replace('custom:', '');
+                        handleApplyCustomProfile(profId);
+                      } else {
+                        setSelectedProfileId('');
+                        applyPresetMapping(availableHeaders, val as any);
+                      }
+                    }}
+                    aria-label="Perfil de mapeamento"
+                    className="px-2.5 py-1.5 rounded-xl bg-[var(--surface-card)] border border-amber-500/40 text-xs font-bold text-amber-400 focus:outline-hidden cursor-pointer"
                   >
-                    <option value="CONTA_AZUL">Conta Azul (Recomendado)</option>
-                    <option value="PLANILHA_BASE">Planilha-Base Anual</option>
-                    <option value="CONTAJU">Modelo Contaju</option>
-                    <option value="CUSTOM">Personalizado</option>
+                    <optgroup label="Modelos Padrão do Sistema">
+                      <option value="CONTA_AZUL">Conta Azul (Recomendado)</option>
+                      <option value="PLANILHA_BASE">Planilha-Base Anual</option>
+                      <option value="CONTAJU">Modelo Contaju</option>
+                      <option value="CUSTOM">Personalizado (Manual)</option>
+                    </optgroup>
+
+                    {customProfiles.length > 0 && (
+                      <optgroup label="Meus Perfis Salvos">
+                        {customProfiles.map(p => (
+                          <option key={p.id} value={`custom:${p.id}`}>
+                            ⭐ {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
+
+                  {/* Botão para Salvar Novo Perfil Customizado */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewProfileName('');
+                      setShowSaveProfileModal(true);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    title="Salvar o mapeamento atual com um nome personalizado para carregar em futuras importações em 1 clique"
+                  >
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                    <span>Salvar Como Novo Perfil...</span>
+                  </button>
+
+                  {/* Botão de Excluir Perfil Customizado */}
+                  {selectedProfileId && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCustomProfile(selectedProfileId)}
+                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs transition-colors cursor-pointer"
+                      title="Excluir este perfil personalizado salvo"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3187,6 +3433,35 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  {/* Filtro e Destaque de Duplicatas Internas no Próprio Arquivo */}
+                  {internalDuplicateStats.totalDuplicates > 0 && (
+                    <div className="flex items-center space-x-1.5 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/30">
+                      <button
+                        type="button"
+                        onClick={() => setFilterDuplicatesOnly(prev => !prev)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                          filterDuplicatesOnly
+                            ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-300'
+                            : 'text-amber-300 hover:bg-amber-500/20'
+                        }`}
+                        title="Filtrar apenas lançamentos repetidos dentro deste mesmo arquivo"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        <span>⚠️ {internalDuplicateStats.totalDuplicates} Duplicatas no Arquivo</span>
+                      </button>
+                      {internalDuplicateStats.redundantCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleDeselectRedundantDuplicates}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border border-amber-500/40 transition-colors cursor-pointer"
+                          title="Desmarca automaticamente as ocorrências extras preservando a 1ª linha de cada lançamento repetido"
+                        >
+                          Desmarcar Cópias ({internalDuplicateStats.redundantCount})
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Botões de Ação Rápida */}
@@ -3289,6 +3564,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                           <tr 
                             key={row.rowNumber} 
                             className={`hover:bg-[var(--surface-elevated)]/50 transition-colors ${
+                              row.isInternalDuplicate ? 'bg-amber-500/10 border-l-4 border-l-amber-400 hover:bg-amber-500/20 ' : ''
+                            }${
                               row.isTypeFilteredOut ? 'bg-rose-500/5 opacity-40' :
                               row.action === 'ERRO' ? 'bg-rose-500/5 opacity-70' :
                               row.action === 'IGNORAR_IDENTICO' ? 'opacity-50' : 
@@ -3308,7 +3585,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                             </td>
 
                             {/* Badge de Ação */}
-                            <td className="py-2 px-2.5 text-center">
+                            <td className="py-2 px-2.5 text-center flex flex-col items-center justify-center gap-1">
                               {row.action === 'CRIAR' && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                                   Novo
@@ -3332,6 +3609,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                               {row.action === 'ERRO' && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={row.errors.join('; ')}>
                                   Erro
+                                </span>
+                              )}
+                              {row.isInternalDuplicate && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow-xs cursor-help"
+                                  title={`Duplicata no próprio arquivo (${row.internalDuplicateCount}x com mesmo valor, vencimento e fornecedor): Linhas ${row.internalDuplicateRowNumbers?.join(', ')}${row.isInternalDuplicateOriginal ? ' (Esta é a 1ª ocorrência)' : ' (Cópia excedente)'}`}
+                                >
+                                  ⚠️ Dup {row.internalDuplicateCount}x
                                 </span>
                               )}
                             </td>
@@ -3938,6 +4223,91 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                   Apenas Esta Linha
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Salvar Perfil de Mapeamento Customizado */}
+      {showSaveProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl w-full max-w-md p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <BookmarkCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">Salvar Perfil de Mapeamento</h3>
+                  <p className="text-[11px] text-[var(--text-secondary)]">Grave as colunas e configurações atuais para reutilizar depois</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveProfileModal(false);
+                  setNewProfileName('');
+                }}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
+                  Nome do Perfil:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Ex: Extrato Banco Inter, Relatório Conta Azul Vendas, Folha de Pagamento"
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveCurrentProfile();
+                    } else if (e.key === 'Escape') {
+                      setShowSaveProfileModal(false);
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] focus:border-amber-400 rounded-xl text-xs font-medium text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-hidden"
+                />
+              </div>
+
+              <div className="p-3 bg-[var(--surface-elevated)]/60 rounded-xl border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] space-y-1">
+                <div className="font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  O que será gravado neste perfil:
+                </div>
+                <p>• Mapeamento de todas as colunas ({Object.values(mapping).filter(Boolean).length} colunas mapeadas)</p>
+                <p>• Categorias padrão de receitas e despesas configuradas</p>
+                <p>• Modo de detecção de tipo ({typeDetectionMode}) e colunas extras</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[var(--border-subtle)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveProfileModal(false);
+                  setNewProfileName('');
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCurrentProfile}
+                disabled={!newProfileName.trim()}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 transition-colors shadow-sm cursor-pointer flex items-center space-x-1.5"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Salvar Perfil</span>
+              </button>
             </div>
           </div>
         </div>
