@@ -645,7 +645,15 @@ export const CONTA_AZUL_COLUMN_PATTERNS = {
     'emissão', 'emissao', 'data do documento', 'data documento'
   ],
   vencimento: ['data de vencimento', 'data vencimento', 'dt vencimento', 'dt. vencimento', 'dt venc', 'dt. venc', 'vencimento', 'vcto', 'vcto.', 'dt vcto', 'dt. vcto', 'data do vencimento', 'data limite'],
-  dataPagamento: ['data de pagamento', 'data do pagamento', 'data pagamento', 'dt pagamento', 'dt. pagamento', 'data pagto', 'dt pagto', 'dt. pagto', 'data da baixa', 'data baixa', 'dt baixa', 'dt. baixa', 'data de liquidação', 'data liquidação', 'data de quitação', 'data quitação', 'data de recebimento', 'data do recebimento', 'data recebimento', 'dt recebimento', 'pago em', 'recebido em'],
+  dataPagamento: [
+    'data de pagamento', 'data do pagamento', 'data pagamento', 'dt pagamento', 'dt. pagamento',
+    'data pagto', 'dt pagto', 'dt. pagto', 'data da baixa', 'data baixa', 'dt baixa', 'dt. baixa',
+    'data de liquidação', 'data liquidação', 'data de quitação', 'data quitação',
+    'data da liquidação', 'data da liquidacao', 'data liquidacao', 'data da quitação', 'data da quitacao', 'data quitacao',
+    'data de recebimento', 'data do recebimento', 'data recebimento', 'dt recebimento',
+    'pago em', 'recebido em', 'pagamento em', 'liquidado em', 'quitado em',
+    'data pgto', 'dt pgto', 'pagamento', 'data da compensação', 'data compensação'
+  ],
   previsaoCaixa: ['data prevista de pagamento', 'data prevista de recebimento', 'data prevista', 'dt prevista', 'previsão de pagamento', 'previsao de pagamento', 'previsão de recebimento', 'previsao de recebimento', 'previsão caixa', 'previsao caixa', 'previsão', 'previsao'],
   valorOriginal: ['valor original', 'valor total', 'valor da parcela', 'valor bruto', 'valor do documento', 'valor documento', 'valor previsto', 'valor (r$)', 'valor r$', 'valor', 'total (r$)', 'total'],
   principalBaixado: ['principal baixado', 'valor pago', 'valor recebido', 'valor baixado', 'total pago', 'total recebido', 'valor liquidado', 'total baixado', 'total liquidado', 'vlr pago', 'vl pago', 'vl. pago', 'vlr. pago', 'vlr baixado', 'vl baixado', 'vl. baixado', 'valor quitado'],

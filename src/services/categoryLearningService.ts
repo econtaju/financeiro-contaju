@@ -99,7 +99,7 @@ class CategoryLearningService {
           type,
           chartAccountId,
           chartAccountName,
-          confidence: 0.92,
+          confidence: 0.95,
           timesApplied: 1,
           lastUsedAt: new Date().toISOString(),
           source
@@ -107,11 +107,44 @@ class CategoryLearningService {
       }
     }
 
-    // 2. Se a descrição contiver termos fortes específicos (ex: "energia eletrica", "aluguel", "internet")
-    if (normDesc && normDesc !== normParty && normDesc.length >= 4) {
+    // 2. Regra baseada na Descrição Completa (se for recorrente/específica)
+    if (normDesc && normDesc.length >= 4) {
+      const existingDescIdx = currentRules.findIndex(
+        r => r.term === normDesc && r.type === type
+      );
+
+      if (existingDescIdx >= 0) {
+        const existing = currentRules[existingDescIdx];
+        currentRules[existingDescIdx] = {
+          ...existing,
+          chartAccountId,
+          chartAccountName,
+          timesApplied: existing.timesApplied + 1,
+          lastUsedAt: new Date().toISOString(),
+          confidence: Math.min(0.99, existing.confidence + 0.05),
+          source
+        };
+      } else {
+        currentRules.push({
+          id: `rule-desc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          term: normDesc,
+          counterpartyNormalized: normParty || '',
+          type,
+          chartAccountId,
+          chartAccountName,
+          confidence: 0.96,
+          timesApplied: 1,
+          lastUsedAt: new Date().toISOString(),
+          source
+        });
+      }
+    }
+
+    // 3. Palavras-chave relevantes da descrição
+    if (normDesc && normDesc.length >= 4) {
       const keywords = this.extractKeywords(normDesc);
       for (const kw of keywords) {
-        if (kw.length < 4) continue;
+        if (kw.length < 4 || kw === normDesc) continue;
         const kwIdx = currentRules.findIndex(
           r => r.term === kw && r.type === type
         );
@@ -132,7 +165,7 @@ class CategoryLearningService {
             type,
             chartAccountId,
             chartAccountName,
-            confidence: 0.85,
+            confidence: 0.88,
             timesApplied: 1,
             lastUsedAt: new Date().toISOString(),
             source
@@ -180,6 +213,27 @@ class CategoryLearningService {
     const rules = Array.isArray(rawRules) ? rawRules : [];
     const safeAccounts = (Array.isArray(chartAccounts) ? chartAccounts : []).filter(Boolean);
     const safeTitles = (Array.isArray(existingTitles) ? existingTitles : []).filter(Boolean);
+
+    // 0. Prioridade Máxima: Regra aprendida por Descrição Completa Exata
+    if (normDesc) {
+      const matchByDesc = rules.find(
+        r => r && r.type === type && r.term === normDesc
+      );
+      if (matchByDesc) {
+        const account = safeAccounts.find(a => a.id === matchByDesc.chartAccountId);
+        if (account) {
+          return {
+            chartAccountId: account.id,
+            chartAccountName: account.name,
+            confidence: matchByDesc.confidence || 0.98,
+            isFromMemory: true,
+            source: 'MEMORIA_DESCRICAO',
+            matchedRuleId: matchByDesc.id,
+            reason: `Enquadrado por memória da descrição "${description}"`
+          };
+        }
+      }
+    }
 
     // 1. Busca nas regras explícitas aprendidas por Contraparte
     if (normParty) {

@@ -31,7 +31,11 @@ import {
   Sparkles,
   Brain,
   Zap,
-  CheckCheck
+  CheckCheck,
+  Maximize2,
+  Minimize2,
+  Search,
+  BookmarkCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storage } from '../../services/storageService';
@@ -97,6 +101,358 @@ interface ColumnMapping {
   centroCusto: string;
 }
 
+const SAVED_MAPPING_STORAGE_KEY = 'contaju_saved_import_mapping_template';
+
+interface SavedMappingTemplate {
+  name: string;
+  updatedAt: string;
+  mapping: ColumnMapping;
+  headersSignature?: string;
+  extraColumns?: ExtraColumnDefinition[];
+}
+
+function saveMappingTemplate(mapping: ColumnMapping, headers?: string[], extraCols?: ExtraColumnDefinition[]): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+  try {
+    const template: SavedMappingTemplate = {
+      name: 'Modelo de Colunas Padrão Contaju',
+      updatedAt: new Date().toISOString(),
+      mapping,
+      headersSignature: headers && headers.length > 0 ? headers.slice().sort().join('|') : undefined,
+      extraColumns: extraCols
+    };
+    localStorage.setItem(SAVED_MAPPING_STORAGE_KEY, JSON.stringify(template));
+  } catch (e) {
+    console.warn('Falha ao salvar template de mapeamento:', e);
+  }
+}
+
+function getSavedMappingTemplate(): SavedMappingTemplate | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(SAVED_MAPPING_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+interface GroupedChartAccounts {
+  groupName: string;
+  shortName: string;
+  badgeColor: string;
+  accounts: ChartAccount[];
+}
+
+function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartAccounts[] {
+  const analytical = accounts.filter(a => a.isAnalytical);
+
+  const groupDefs: { key: string; name: string; shortName: string; badgeColor: string; match: (acc: ChartAccount) => boolean }[] = [
+    {
+      key: '1',
+      name: '1. RECEITAS DE SERVIÇOS E FATURAMENTO',
+      shortName: 'Receitas',
+      badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+      match: (acc) => (acc.code || '').startsWith('1.1') || acc.nature === 'RECEITA_SERVICO'
+    },
+    {
+      key: '2',
+      name: '2. DEDUÇÕES DA RECEITA (IMPOSTOS & ABATIMENTOS)',
+      shortName: 'Deduções',
+      badgeColor: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+      match: (acc) => (acc.code || '').startsWith('1.2') || acc.nature === 'DEDUCAO_RECEITA'
+    },
+    {
+      key: '3',
+      name: '3. CUSTOS OPERACIONAIS (SERVIÇOS PRESTADOS)',
+      shortName: 'Custos',
+      badgeColor: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+      match: (acc) => (acc.code || '').startsWith('3.') || acc.nature === 'CUSTO_SERVICO'
+    },
+    {
+      key: '4.1',
+      name: '4.1 DESPESAS COM PESSOAL (FOLHA, BENEFÍCIOS & PRÓ-LABORE)',
+      shortName: 'Pessoal',
+      badgeColor: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+      match: (acc) => (acc.code || '').startsWith('4.1') || acc.nature === 'DESPESA_PESSOAL'
+    },
+    {
+      key: '4.2',
+      name: '4.2 DESPESAS ADMINISTRATIVAS & TI (ALUGUEL, SOFTWARES, CONTADOR)',
+      shortName: 'Administrativas & TI',
+      badgeColor: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+      match: (acc) => (acc.code || '').startsWith('4.2') || acc.nature === 'DESPESA_ADMINISTRATIVA'
+    },
+    {
+      key: '4.3',
+      name: '4.3 DESPESAS COMERCIAIS & MARKETING (PUBLICIDADE, TRÁFEGO)',
+      shortName: 'Comerciais & Mkt',
+      badgeColor: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+      match: (acc) => (acc.code || '').startsWith('4.3') || acc.nature === 'DESPESA_COMERCIAL'
+    },
+    {
+      key: '5',
+      name: '5. RESULTADO FINANCEIRO (JUROS, TARIFAS & RENDIMENTOS)',
+      shortName: 'Financeiro',
+      badgeColor: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+      match: (acc) => (acc.code || '').startsWith('5.') || acc.nature === 'RESULTADO_FINANCEIRO' || acc.nature === 'DESPESA_FINANCEIRA' || acc.nature === 'RECEITA_FINANCEIRA'
+    },
+    {
+      key: '6',
+      name: '6. TRIBUTOS SOBRE O LUCRO (SIMPLES, IRPJ, CSLL)',
+      shortName: 'Tributos',
+      badgeColor: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+      match: (acc) => (acc.code || '').startsWith('6.') || acc.nature === 'TRIBUTO_LUCRO'
+    },
+    {
+      key: '7',
+      name: '7. FINANCIAMENTOS, SÓCIOS & DISTRIBUIÇÃO DE LUCROS',
+      shortName: 'Sócios & Lucros',
+      badgeColor: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+      match: (acc) => (acc.code || '').startsWith('7.') || acc.nature === 'FINANCIAMENTO_SOCIO' || acc.id === 'acc-7.1.04' || acc.name.toLowerCase().includes('lucro')
+    }
+  ];
+
+  const matchedAccountIds = new Set<string>();
+  const result: GroupedChartAccounts[] = [];
+
+  for (const def of groupDefs) {
+    const matched = analytical.filter(a => !matchedAccountIds.has(a.id) && def.match(a));
+    matched.forEach(a => matchedAccountIds.add(a.id));
+    if (matched.length > 0) {
+      result.push({
+        groupName: def.name,
+        shortName: def.shortName,
+        badgeColor: def.badgeColor,
+        accounts: matched.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+      });
+    }
+  }
+
+  // Contas residuais
+  const leftovers = analytical.filter(a => !matchedAccountIds.has(a.id));
+  if (leftovers.length > 0) {
+    result.push({
+      groupName: 'OUTRAS CONTAS E OPERAÇÕES',
+      shortName: 'Outras',
+      badgeColor: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+      accounts: leftovers.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    });
+  }
+
+  return result;
+}
+
+// Modal Popover de Busca e Seleção Rápida de Categorias Agrupadas
+interface CategoryQuickSearchModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelectAccount: (accountId: string) => void;
+  currentAccountId?: string;
+  targetDescription?: string;
+  targetType?: TitleType;
+  groupedAccounts: GroupedChartAccounts[];
+}
+
+const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> = ({
+  isOpen,
+  onClose,
+  onSelectAccount,
+  currentAccountId,
+  targetDescription,
+  targetType,
+  groupedAccounts
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeGroupFilter, setActiveGroupFilter] = useState<string>('TODOS');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearchTerm('');
+      setActiveGroupFilter('TODOS');
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+
+  const filteredGroups = groupedAccounts.map(g => {
+    if (activeGroupFilter !== 'TODOS' && g.shortName !== activeGroupFilter) {
+      return { ...g, accounts: [] };
+    }
+    const matchingAccounts = g.accounts.filter(a => {
+      if (!normalizedQuery) return true;
+      const text = `${a.code || ''} ${a.name || ''} ${a.nature || ''}`.toLowerCase();
+      return text.includes(normalizedQuery);
+    });
+    return { ...g, accounts: matchingAccounts };
+  }).filter(g => g.accounts.length > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
+      <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden text-[var(--text-primary)]">
+        
+        {/* Header com barra de pesquisa */}
+        <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] space-y-3 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                <Search className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  Pesquisar & Selecionar Categoria
+                </h3>
+                {targetDescription && (
+                  <p className="text-[11px] text-[var(--text-secondary)] truncate max-w-md">
+                    Lançamento: <strong className="text-[var(--text-primary)]">{targetDescription}</strong>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Campo de Busca Rápida */}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--text-secondary)]" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Digite o código (ex: 7.1.04, 4.2) ou nome da conta (ex: Distribuição de Lucros, Honorários, Aluguel)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-amber-400 focus:outline-hidden font-medium"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-bold"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Filtros Rápidos por Macro-Grupo */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setActiveGroupFilter('TODOS')}
+              className={`px-2 py-0.5 rounded-md font-bold transition-colors ${
+                activeGroupFilter === 'TODOS'
+                  ? 'bg-amber-400 text-slate-950 shadow-xs'
+                  : 'bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+              }`}
+            >
+              Todas
+            </button>
+            {groupedAccounts.map(g => (
+              <button
+                key={g.shortName}
+                type="button"
+                onClick={() => setActiveGroupFilter(g.shortName)}
+                className={`px-2 py-0.5 rounded-md font-semibold transition-colors ${
+                  activeGroupFilter === g.shortName
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                    : 'bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+                }`}
+              >
+                {g.shortName}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Lista Agrupada com Rolagem */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {filteredGroups.length === 0 ? (
+            <div className="py-12 text-center text-xs text-[var(--text-secondary)]">
+              Nenhuma conta contábil encontrada para o termo "{searchTerm}".
+            </div>
+          ) : (
+            filteredGroups.map(group => (
+              <div key={group.groupName} className="space-y-1.5">
+                <div className="flex items-center space-x-2 px-1">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${group.badgeColor}`}>
+                    {group.groupName}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-secondary)]">
+                    ({group.accounts.length} contas)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {group.accounts.map(acc => {
+                    const isSelected = acc.id === currentAccountId;
+
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectAccount(acc.id);
+                          onClose();
+                        }}
+                        className={`p-2 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-bold shadow-xs'
+                            : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] hover:border-amber-400/50 hover:bg-[var(--surface-card)] text-[var(--text-primary)]'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <span className="font-mono text-[10px] text-amber-400/90 font-bold block">
+                            {acc.code || 'Conta'}
+                          </span>
+                          <span className="text-xs truncate block font-medium">
+                            {acc.name}
+                          </span>
+                        </div>
+
+                        {isSelected && (
+                          <span className="text-xs font-bold text-amber-400 shrink-0">
+                            ✓ Ativa
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Rodapé do Modal de Busca */}
+        <div className="p-3 bg-[var(--surface-elevated)] border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-[var(--text-secondary)] shrink-0">
+          <span>
+            Pressione <strong>Esc</strong> para fechar ou clique na categoria desejada para selecionar.
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 rounded-lg bg-[var(--surface-card)] border border-[var(--border-subtle)] font-bold text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
 interface ImportErrorBoundaryProps {
   children: React.ReactNode;
   onReset?: () => void;
@@ -108,8 +464,8 @@ interface ImportErrorBoundaryState {
 }
 
 class ImportErrorBoundary extends React.Component<ImportErrorBoundaryProps, ImportErrorBoundaryState> {
-  public state: ImportErrorBoundaryState = { hasError: false };
-  public override props: ImportErrorBoundaryProps;
+  props: ImportErrorBoundaryProps;
+  state: ImportErrorBoundaryState = { hasError: false };
 
   constructor(props: ImportErrorBoundaryProps) {
     super(props);
@@ -210,6 +566,18 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     }
   }, [isOpen, defaultType]);
 
+  // Visualização e Modal de Categorias Inteligente
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(true);
+  const groupedAccounts = useMemo(() => getGroupedChartAccounts(chartAccounts), [chartAccounts]);
+  const [categorySearchTarget, setCategorySearchTarget] = useState<{
+    rowNumber?: number;
+    description?: string;
+    currentAccountId?: string;
+    type?: TitleType;
+    isBulk?: boolean;
+  } | null>(null);
+  const [savedTemplateBanner, setSavedTemplateBanner] = useState<string | null>(null);
+
   // Colunas Extras Customizadas
   const [extraColumns, setExtraColumns] = useState<ExtraColumnDefinition[]>([]);
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
@@ -260,6 +628,33 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     totalReceivables: number;
     totalPayables: number;
   } | null>(null);
+
+  // Ações de Template Memorizado
+  const handleSaveCurrentMappingTemplate = () => {
+    saveMappingTemplate(mapping, availableHeaders, extraColumns);
+    setSavedTemplateBanner('Modelo de colunas memorizado com sucesso! Próximas importações usarão este padrão automaticamente.');
+    setTimeout(() => setSavedTemplateBanner(null), 5000);
+  };
+
+  const handleApplySavedTemplate = () => {
+    const saved = getSavedMappingTemplate();
+    if (!saved) {
+      alert('Nenhum modelo de mapeamento memorizado anteriormente.');
+      return;
+    }
+    const newMapping = { ...mapping };
+    let matchCount = 0;
+    (Object.keys(saved.mapping) as (keyof ColumnMapping)[]).forEach(k => {
+      const col = saved.mapping[k];
+      if (col && availableHeaders.includes(col)) {
+        newMapping[k] = col;
+        matchCount++;
+      }
+    });
+    setMapping(newMapping);
+    setSavedTemplateBanner(`Modelo memorizado aplicado com sucesso (${matchCount} colunas vinculadas)!`);
+    setTimeout(() => setSavedTemplateBanner(null), 5000);
+  };
 
   // -------------------------------------------------------------
   // Preset Mapping Applicator
@@ -461,6 +856,26 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         setRawSheetData(jsonData);
 
         applyPresetMapping(finalHeaders, selectedPreset);
+
+        // Auto-carrega modelo previamente memorizado pelo usuário se compatível
+        const savedTpl = getSavedMappingTemplate();
+        if (savedTpl) {
+          let matchCount = 0;
+          const mergedMapping = { ...mapping };
+          (Object.keys(savedTpl.mapping) as (keyof ColumnMapping)[]).forEach(k => {
+            const col = savedTpl.mapping[k];
+            if (col && finalHeaders.includes(col)) {
+              mergedMapping[k] = col;
+              matchCount++;
+            }
+          });
+
+          if (matchCount >= 2) {
+            setMapping(mergedMapping);
+            setSavedTemplateBanner(`Modelo memorizado detectado e aplicado (${matchCount} colunas correspondentes)!`);
+          }
+        }
+
         setStep(2);
       } catch (err) {
         console.error('Erro ao ler planilha:', err);
@@ -1508,6 +1923,13 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         console.warn('Falha ao gravar aprendizado de categorias:', e);
       }
 
+      // Memoriza modelo de colunas automaticamente para próximas importações
+      try {
+        saveMappingTemplate(mapping, availableHeaders, extraColumns);
+      } catch (e) {
+        console.warn('Falha ao memorizar template de mapeamento:', e);
+      }
+
       // Registro de Auditoria
       storage.addAuditLog({
         userName: currentUser.name,
@@ -1542,13 +1964,19 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-1 sm:p-2 md:p-3 overflow-y-auto animate-in fade-in">
-      <div className={`bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xl w-full flex flex-col max-h-[96vh] h-[95vh] overflow-hidden text-[var(--text-primary)] transition-all duration-200 ${
-        step === 3 ? 'max-w-[98vw] 2xl:max-w-[1780px]' : 'max-w-6xl'
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in ${
+      isFullscreen ? 'p-0' : 'p-1 sm:p-2 md:p-3'
+    }`}>
+      <div className={`bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xl w-full flex flex-col overflow-hidden text-[var(--text-primary)] transition-all duration-200 ${
+        isFullscreen
+          ? 'w-screen h-screen max-w-[100vw] max-h-[100vh] rounded-none'
+          : step === 3
+            ? 'max-w-[99vw] 2xl:max-w-[1850px] max-h-[96vh] h-[95vh] rounded-2xl'
+            : 'max-w-6xl max-h-[96vh] h-[95vh] rounded-2xl'
       }`}>
         
         {/* Modal Top Header */}
-        <div className="p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center shrink-0">
+        <div className="p-3 sm:p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shadow-xs">
               <FileSpreadsheet className="w-5 h-5" />
@@ -1561,6 +1989,11 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                   Separação por Mês & Cruzamento Cadastral
                 </span>
+                {isFullscreen && (
+                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                    Modo Tela Inteira
+                  </span>
+                )}
               </div>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 Mapeamento flexível, resumos mensais em tempo real, edição inline antes da aprovação e campos personalizados.
@@ -1568,12 +2001,24 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)] transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-1.5">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Restaurar tamanho de janela' : 'Expandir para Tela Inteira (evitar cortes de colunas)'}
+              className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-amber-400 hover:bg-[var(--surface-card)] transition-colors cursor-pointer"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)] transition-colors cursor-pointer"
+              title="Fechar importador"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Stepper Wizard Progress Bar */}
@@ -1857,6 +2302,52 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                 </div>
               </div>
 
+              {/* Barra de Ações Rápidas de Mapeamento & Modelo Memorizado */}
+              <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center space-x-2">
+                  <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-black">
+                    💾
+                  </span>
+                  <div>
+                    <span className="text-xs font-bold text-[var(--text-primary)]">
+                      Modelo & Inteligência de Colunas
+                    </span>
+                    <p className="text-[10px] text-[var(--text-secondary)]">
+                      Memorize o cabeçalho desta planilha para preenchimento automático nas próximas importações
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleApplySavedTemplate}
+                    className="px-3 py-1.5 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-amber-400 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Preencher mapeamento usando o modelo gravado anteriormente"
+                  >
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                    <span>⚡ Restaurar Modelo Salvo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveCurrentMappingTemplate}
+                    className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Gravar este mapeamento como modelo padrão no navegador"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>💾 Memorizar este Mapeamento</span>
+                  </button>
+                </div>
+              </div>
+
+              {savedTemplateBanner && (
+                <div className="p-3 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{savedTemplateBanner}</span>
+                </div>
+              )}
+
               {/* Tabela de Mapeamento Canônico */}
               <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
                 <div className="p-3 bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] flex items-center justify-between">
@@ -1865,7 +2356,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                       Mapeamento de Cabeçalhos da Planilha
                     </span>
                     <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                      Vincule as colunas do seu arquivo aos campos do sistema
+                      Vincule as colunas do seu arquivo aos campos do sistema. Inclui coluna para Data de Pagamento / Baixa!
                     </p>
                   </div>
 
@@ -1879,12 +2370,12 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                   </button>
                 </div>
 
-                <div className="max-h-[300px] overflow-y-auto">
+                <div className="max-h-[500px] overflow-y-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-secondary)] bg-[var(--surface-card)]">
-                        <th className="py-2.5 px-4 w-44">Campo no Sistema</th>
-                        <th className="py-2.5 px-4 w-64">Coluna na Planilha Importada</th>
+                      <tr className="border-b border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-secondary)] bg-[var(--surface-card)] sticky top-0 z-10">
+                        <th className="py-2.5 px-4 w-52">Campo no Sistema</th>
+                        <th className="py-2.5 px-4 w-72">Coluna na Planilha Importada</th>
                         <th className="py-2.5 px-4">Regra de Tratamento</th>
                       </tr>
                     </thead>
@@ -1894,27 +2385,36 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                         { key: 'titulo', label: 'Título / Referência', req: false, treatment: 'Identificador único ou gerado automaticamente' },
                         { key: 'fornecedor', label: 'Fornecedor / Cliente', req: true, treatment: 'Cruzamento com clientes/fornecedores cadastrados' },
                         { key: 'descricao', label: 'Descrição', req: false, treatment: 'Histórico descritivo do lançamento' },
+                        { key: 'categoria', label: 'Categoria / DRE', req: false, treatment: 'Cruzamento com Plano de Contas analítico' },
                         { key: 'competencia', label: 'Competência', req: false, treatment: 'Formato AAAA-MM para relatórios mensais' },
                         { key: 'emissao', label: 'Data de Emissão', req: false, treatment: 'Data do documento contábil' },
                         { key: 'vencimento', label: 'Data de Vencimento', req: true, treatment: 'Data limite para pagamento ou recebimento' },
-                        { key: 'dataPagamento', label: 'Data do Pagamento / Baixa', req: false, treatment: 'Data da quitação ou liquidação efetiva' },
+                        { key: 'dataPagamento', label: 'Data do Pagamento / Baixa', req: false, isHighlight: true, treatment: 'Data de quitação efetiva (títulos já pagos geram baixa e movimento automaticamente)' },
                         { key: 'previsaoCaixa', label: 'Previsão de Caixa', req: false, treatment: 'Data de realização financeira projetada' },
                         { key: 'valorOriginal', label: 'Valor Original', req: true, treatment: 'Valor bruto contratado ou faturado' },
                         { key: 'principalBaixado', label: 'Principal Baixado', req: false, treatment: 'Valor já liquidado / pago / recebido' },
                         { key: 'saldoAtual', label: 'Saldo em Aberto', req: false, treatment: 'Valor restante calculado (Original - Baixado)' },
                         { key: 'situacao', label: 'Situação / Status', req: false, treatment: 'Aberto, Parcial, Liquidado ou Cancelado' },
-                        { key: 'categoria', label: 'Categoria / DRE', req: false, treatment: 'Cruzamento com Plano de Contas' },
                         { key: 'centroCusto', label: 'Centro de Custo', req: false, treatment: 'Unidade de negócio ou centro de custos' },
                         { key: 'banco', label: 'Banco / Conta', req: false, treatment: 'Conta bancária de liquidação' }
                       ].map(field => {
                         const currentMappedCol = (mapping as any)[field.key] || '';
                         return (
-                          <tr key={field.key} className="hover:bg-[var(--surface-elevated)]/40 transition-colors">
+                          <tr key={field.key} className={`transition-colors ${
+                            field.isHighlight 
+                              ? 'bg-emerald-500/5 hover:bg-emerald-500/10' 
+                              : 'hover:bg-[var(--surface-elevated)]/40'
+                          }`}>
                             <td className="py-2.5 px-4 font-semibold text-[var(--text-primary)]">
-                              <span className="flex items-center">
-                                {field.label}
-                                {field.req && <span className="text-rose-400 ml-1 font-bold">*</span>}
-                              </span>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span>{field.label}</span>
+                                {field.req && <span className="text-rose-400 font-bold">*</span>}
+                                {field.isHighlight && (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                    💳 Já Pago
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
                             <td className="py-2.5 px-4">
@@ -2103,22 +2603,38 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                   {/* Input do Novo Valor com base na Coluna */}
                   <div className="flex-1 min-w-[260px]">
                     {bulkField === 'categoria' && (
-                      <select
-                        value={bulkCategoryId || batchCategoryId}
-                        onChange={(e) => {
-                          setBulkCategoryId(e.target.value);
-                          setBatchCategoryId(e.target.value);
-                        }}
-                        aria-label="Nova categoria para aplicar em lote"
-                        className="w-full px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-medium text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
-                      >
-                        <option value="">Selecione a categoria analítica para aplicar...</option>
-                        {chartAccounts.filter(a => a.isAnalytical).map(acc => (
-                          <option key={acc.id} value={acc.id}>
-                            {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={bulkCategoryId || batchCategoryId}
+                          onChange={(e) => {
+                            setBulkCategoryId(e.target.value);
+                            setBatchCategoryId(e.target.value);
+                          }}
+                          aria-label="Nova categoria para aplicar em lote"
+                          className="flex-1 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-medium text-[var(--text-primary)] focus:border-amber-400 focus:outline-hidden"
+                        >
+                          <option value="">Selecione a categoria ou use a busca rápida ao lado...</option>
+                          {groupedAccounts.map(g => (
+                            <optgroup key={g.groupName} label={g.groupName}>
+                              {g.accounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>
+                                  {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() => setCategorySearchTarget({ isBulk: true, currentAccountId: bulkCategoryId || batchCategoryId })}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                          title="Abrir busca rápida agrupada com pesquisa por nome ou código contábil"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          <span>Buscar...</span>
+                        </button>
+                      </div>
                     )}
 
                     {bulkField === 'competencia' && (
@@ -2516,14 +3032,16 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                       <th className="py-2.5 px-3 min-w-[150px] max-w-[220px]">Título / Doc</th>
                       <th className="py-2.5 px-3 min-w-[180px] max-w-[240px]">Fornecedor / Cliente</th>
                       <th className="py-2.5 px-3 min-w-[220px] max-w-[320px]">Descrição</th>
+                      <th className="py-2.5 px-3 min-w-[280px]">Categoria (Plano & Memória IA)</th>
                       <th className="py-2.5 px-2 text-center w-24">Competência</th>
                       <th className="py-2.5 px-2 text-center w-32">Vencimento</th>
-                      <th className="py-2.5 px-2 text-center w-32">Data Pagto</th>
+                      <th className="py-2.5 px-2 text-center w-32 bg-emerald-500/10 text-emerald-300 font-bold border-x border-emerald-500/20">
+                        💳 Data Pagto
+                      </th>
                       <th className="py-2.5 px-3 text-right w-28">Valor Original</th>
                       <th className="py-2.5 px-3 text-right w-24">Baixado</th>
                       <th className="py-2.5 px-3 text-right w-24">Saldo</th>
                       <th className="py-2.5 px-2.5 text-center w-24">Situação</th>
-                      <th className="py-2.5 px-3 min-w-[260px]">Plano de Contas & Memória IA</th>
                       {extraColumns.map(col => (
                         <th key={col.id} className="py-2.5 px-3 text-[var(--text-secondary)]">
                           {col.label}
@@ -2665,6 +3183,80 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                               />
                             </td>
 
+                            {/* Categoria / Plano de Contas & Memória IA (POSICIONADO LOGO APÓS DESCRIÇÃO) */}
+                            <td className="py-2 px-3 min-w-[280px]">
+                              {row.isTypeFilteredOut ? (
+                                <span 
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 block truncate"
+                                  title={row.typeFilterReason}
+                                >
+                                  🚫 Descartado ({row.normalized.tipo === 'RECEBER' ? 'Receita' : 'Despesa'})
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  {/* Indicador de Memória / IA */}
+                                  {row.isFromMemory ? (
+                                    <span 
+                                      title={`🧠 Enquadrado pela Memória de IA do Sistema!\nMotivo: ${row.memoryReason || 'Padrão anterior similar'}\nConfiança: ${Math.round((row.memoryConfidence || 0.9) * 100)}%`}
+                                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-help"
+                                    >
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border border-emerald-300 shadow-xs shadow-emerald-500/50 items-center justify-center text-[7px] text-slate-950 font-black">
+                                        ✓
+                                      </span>
+                                    </span>
+                                  ) : row.normalized.isManuallyEdited ? (
+                                    <span 
+                                      title="✏️ Categoria ajustada manualmente nesta sessão. Será gravada na memória de IA ao concluir a importação!"
+                                      className="inline-flex rounded-full h-3 w-3 bg-blue-500 border border-blue-300 shrink-0 cursor-help"
+                                    />
+                                  ) : (
+                                    <span 
+                                      title="⚙️ Categoria padrão do plano de contas. Altere para enquadrar na categoria correta."
+                                      className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-500 border border-slate-400 shrink-0 cursor-help"
+                                    />
+                                  )}
+
+                                  <select
+                                    value={row.matchedChartAccountId || ''}
+                                    onChange={(e) => handleChangeRowCategory(row.rowNumber, e.target.value)}
+                                    aria-label={`Categoria da linha ${row.rowNumber}`}
+                                    className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium border transition-colors focus:outline-hidden ${
+                                      row.isFromMemory
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 focus:border-emerald-400'
+                                        : row.normalized.isManuallyEdited
+                                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 focus:border-blue-400'
+                                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400'
+                                    }`}
+                                  >
+                                    {groupedAccounts.map(g => (
+                                      <optgroup key={g.groupName} label={g.groupName}>
+                                        {g.accounts.map(acc => (
+                                          <option key={acc.id} value={acc.id}>
+                                            {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    ))}
+                                  </select>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setCategorySearchTarget({
+                                      rowNumber: row.rowNumber,
+                                      description: row.normalized.descricao || row.normalized.titulo,
+                                      currentAccountId: row.matchedChartAccountId,
+                                      type: row.normalized.tipo
+                                    })}
+                                    className="p-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-amber-500/20 text-amber-400 border border-[var(--border-subtle)] hover:border-amber-400/50 transition-colors shrink-0 cursor-pointer"
+                                    title="Pesquisar categoria com visualização agrupada por macro-grupos"
+                                  >
+                                    <Search className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
                             {/* Competência (Editável Inline) */}
                             <td className="py-2 px-2 text-center w-24">
                               <input
@@ -2697,7 +3289,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                 title="Data de pagamento / quitação efetiva"
                                 className={`w-28 px-1.5 py-1 text-center font-mono font-bold text-xs rounded-lg transition-colors focus:outline-hidden ${
                                   row.normalized.dataPagamento
-                                    ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 focus:border-emerald-400'
+                                    ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 focus:border-emerald-400 font-black'
                                     : 'bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 text-[var(--text-secondary)]'
                                 }`}
                               />
@@ -2742,62 +3334,6 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                               >
                                 {row.normalized.situacao}
                               </button>
-                            </td>
-
-                            {/* Plano de Contas & Memória IA */}
-                            <td className="py-2 px-3 min-w-[260px]">
-                              {row.isTypeFilteredOut ? (
-                                <span 
-                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 block truncate"
-                                  title={row.typeFilterReason}
-                                >
-                                  🚫 Descartado ({row.normalized.tipo === 'RECEBER' ? 'Receita' : 'Despesa'})
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  {/* Indicador de Memória / IA */}
-                                  {row.isFromMemory ? (
-                                    <span 
-                                      title={`🧠 Enquadrado pela Memória de IA do Sistema!\nMotivo: ${row.memoryReason || 'Padrão anterior similar'}\nConfiança: ${Math.round((row.memoryConfidence || 0.9) * 100)}%`}
-                                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-help"
-                                    >
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border border-emerald-300 shadow-xs shadow-emerald-500/50 items-center justify-center text-[7px] text-slate-950 font-black">
-                                        ✓
-                                      </span>
-                                    </span>
-                                  ) : row.normalized.isManuallyEdited ? (
-                                    <span 
-                                      title="✏️ Categoria ajustada manualmente nesta sessão. Será gravada na memória de IA ao concluir a importação!"
-                                      className="inline-flex rounded-full h-3 w-3 bg-blue-500 border border-blue-300 shrink-0 cursor-help"
-                                    />
-                                  ) : (
-                                    <span 
-                                      title="⚙️ Categoria padrão do plano de contas. Altere para enquadrar na categoria correta."
-                                      className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-500 border border-slate-400 shrink-0 cursor-help"
-                                    />
-                                  )}
-
-                                  <select
-                                    value={row.matchedChartAccountId || ''}
-                                    onChange={(e) => handleChangeRowCategory(row.rowNumber, e.target.value)}
-                                    aria-label={`Categoria da linha ${row.rowNumber}`}
-                                    className={`flex-1 py-1 px-2 rounded-lg text-xs font-medium border transition-colors focus:outline-hidden ${
-                                      row.isFromMemory
-                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 focus:border-emerald-400'
-                                        : row.normalized.isManuallyEdited
-                                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 focus:border-blue-400'
-                                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400'
-                                    }`}
-                                  >
-                                    {chartAccounts.filter(a => a.isAnalytical).map(acc => (
-                                      <option key={acc.id} value={acc.id}>
-                                        {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
                             </td>
 
                             {/* Colunas Extras */}
@@ -3105,6 +3641,26 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           counterparties={counterparties}
           chartAccounts={chartAccounts}
           onEntitiesCreated={handleRefreshEntities}
+        />
+      )}
+
+      {/* Modal Rápido de Pesquisa & Seleção de Categorias Agrupadas */}
+      {categorySearchTarget && (
+        <CategoryQuickSearchModal
+          isOpen={!!categorySearchTarget}
+          onClose={() => setCategorySearchTarget(null)}
+          currentAccountId={categorySearchTarget.currentAccountId}
+          targetDescription={categorySearchTarget.description}
+          targetType={categorySearchTarget.type}
+          groupedAccounts={groupedAccounts}
+          onSelectAccount={(selectedAccId) => {
+            if (categorySearchTarget.isBulk) {
+              setBulkCategoryId(selectedAccId);
+              setBatchCategoryId(selectedAccId);
+            } else if (categorySearchTarget.rowNumber) {
+              handleChangeRowCategory(categorySearchTarget.rowNumber, selectedAccId);
+            }
+          }}
         />
       )}
 
