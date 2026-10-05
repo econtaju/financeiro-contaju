@@ -20,10 +20,27 @@ export interface ExtraColumnDefinition {
   type?: 'TEXT' | 'NUMBER' | 'DATE' | 'CURRENCY';
 }
 
+export interface DocumentValidationResult {
+  raw: string;
+  clean: string;
+  formatted: string;
+  isValid: boolean;
+  type: 'CPF' | 'CNPJ' | 'INVALIDO';
+}
+
+export interface InstallmentDetectionResult {
+  current: number;
+  total: number;
+  baseDescription: string;
+  matchedPattern: string;
+  groupKey: string;
+}
+
 export interface BaseSpreadsheetRow {
   titulo: string;
   tipo: TitleType; // 'PAGAR' | 'RECEBER'
   fornecedor: string; // Contraparte (Fornecedor para pagar ou Cliente para receber)
+  documento?: string; // CPF ou CNPJ da contraparte
   descricao: string;
   competencia: string; // AAAA-MM
   emissao: string; // AAAA-MM-DD
@@ -67,6 +84,12 @@ export interface AnalyzedImportRow {
   matchedCounterpartyId?: string;
   suggestedCounterpartyId?: string;
   counterpartyResolution: 'MATCH_EXATO' | 'SUGESTAO' | 'NOVO_SOLICITADO' | 'MANUAL';
+  // Validação Fiscal e Documento
+  documentValidation?: DocumentValidationResult;
+  matchedByDocument?: boolean;
+  // Detecção Inteligente de Parcelamento
+  isInstallment?: boolean;
+  installmentInfo?: InstallmentDetectionResult;
   // Resolução de Categoria / Plano de Contas
   matchedChartAccountId?: string;
   suggestedChartAccountId?: string;
@@ -116,6 +139,111 @@ export function normalizeText(val: any): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ');
+}
+
+// Validação Matemática Oficial de CPF e CNPJ (Módulo 11)
+export function validateCpfCnpj(val: any): DocumentValidationResult {
+  if (!val && val !== 0) {
+    return { raw: '', clean: '', formatted: '', isValid: false, type: 'INVALIDO' };
+  }
+  const raw = String(val).trim();
+  const clean = raw.replace(/\D/g, '');
+
+  if (clean.length === 11) {
+    // Validação de CPF
+    if (/^(\d)\1{10}$/.test(clean)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CPF' };
+    }
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(clean.charAt(i), 10) * (10 - i);
+    let rev = 11 - (sum % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    if (rev !== parseInt(clean.charAt(9), 10)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CPF' };
+    }
+    sum = 0;
+    for (let i = 0; i < 10; i++) sum += parseInt(clean.charAt(i), 10) * (11 - i);
+    rev = 11 - (sum % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    if (rev !== parseInt(clean.charAt(10), 10)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CPF' };
+    }
+    const formatted = `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9)}`;
+    return { raw, clean, formatted, isValid: true, type: 'CPF' };
+  }
+
+  if (clean.length === 14) {
+    // Validação de CNPJ
+    if (/^(\d)\1{13}$/.test(clean)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CNPJ' };
+    }
+    let size = 12;
+    let numbers = clean.substring(0, size);
+    const digits = clean.substring(size);
+    let sum = 0;
+    let pos = size - 7;
+    for (let i = size; i >= 1; i--) {
+      sum += parseInt(numbers.charAt(size - i), 10) * pos--;
+      if (pos < 2) pos = 9;
+    }
+    let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(0), 10)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CNPJ' };
+    }
+    size = 13;
+    numbers = clean.substring(0, size);
+    sum = 0;
+    pos = size - 7;
+    for (let i = size; i >= 1; i--) {
+      sum += parseInt(numbers.charAt(size - i), 10) * pos--;
+      if (pos < 2) pos = 9;
+    }
+    result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(1), 10)) {
+      return { raw, clean, formatted: raw, isValid: false, type: 'CNPJ' };
+    }
+    const formatted = `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12)}`;
+    return { raw, clean, formatted, isValid: true, type: 'CNPJ' };
+  }
+
+  return { raw, clean, formatted: raw, isValid: false, type: 'INVALIDO' };
+}
+
+// Detecção Inteligente de Padrões de Parcelamento (ex: "1/12", "01/10", "parc 3 de 10", "(2/5)")
+export function detectInstallment(
+  text: string, 
+  title?: string, 
+  party?: string, 
+  type?: TitleType
+): InstallmentDetectionResult | null {
+  const candidates = [text, title].filter(Boolean) as string[];
+  for (const c of candidates) {
+    const regexList = [
+      /(?:parc(?:ela)?\.?\s*)?(\d{1,3})\s*(?:\/|\s+de\s+)\s*(\d{1,3})/i,
+      /\((\d{1,3})\/(\d{1,3})\)/,
+      /(?:^|\s)p\s*(\d{1,3})\/(\d{1,3})/i
+    ];
+    for (const rx of regexList) {
+      const match = c.match(rx);
+      if (match) {
+        const cur = parseInt(match[1], 10);
+        const tot = parseInt(match[2], 10);
+        if (cur >= 1 && tot >= 2 && cur <= tot && tot <= 360) {
+          const cleanBase = c.replace(match[0], '').replace(/\s{2,}/g, ' ').trim();
+          const baseDesc = cleanBase || c;
+          const groupKey = `${type || 'PAGAR'}|${normalizeText(party || '')}|${normalizeText(baseDesc)}|${tot}`;
+          return {
+            current: cur,
+            total: tot,
+            baseDescription: baseDesc,
+            matchedPattern: match[0].trim(),
+            groupKey
+          };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 // Converte datas em diversos formatos para AAAA-MM-DD
@@ -635,6 +763,7 @@ export const CONTA_AZUL_COLUMN_PATTERNS = {
   tipo: ['tipo', 'natureza', 'tipo de lançamento', 'tipo de lancamento', 'tipo de título', 'tipo de titulo', 'operação', 'operacao', 'fluxo', 'movimentação', 'movimentacao', 'e/s', 'entrada/saída', 'd/c', 'cr/cp', 'r/d'],
   titulo: ['código de referência', 'codigo de referencia', 'código', 'codigo', 'número do documento', 'numero do documento', 'número', 'numero', 'título', 'titulo', 'documento', 'doc', 'nº documento', 'no documento', 'ref', 'identificador', 'nosso número'],
   fornecedor: ['nome do fornecedor', 'fornecedor', 'cliente', 'nome do cliente', 'cliente/fornecedor', 'fornecedor / cliente', 'cliente / fornecedor', 'contato', 'favorecido', 'sacado', 'contraparte', 'pagador', 'recebedor', 'beneficiário', 'beneficiario', 'razão social', 'razao social'],
+  documento: ['cpf/cnpj', 'cnpj/cpf', 'cpf / cnpj', 'cnpj / cpf', 'cpf', 'cnpj', 'documento da contraparte', 'documento do fornecedor', 'documento do cliente', 'doc federal', 'inscrição federal', 'inscricao federal', 'identificação federal', 'num doc', 'nro documento fiscal', 'cpf_cnpj', 'cnpj_cpf', 'documento'],
   descricao: ['descrição da despesa', 'descricao da despesa', 'descrição da receita', 'descricao da receita', 'descrição', 'descricao', 'histórico', 'historico', 'detalhes', 'detalhe', 'item', 'serviço', 'servico', 'observação', 'observacao', 'obs'],
   competencia: [
     'competência da despesa', 'competência da receita',
@@ -865,11 +994,28 @@ export function analyzeContaAzulSpreadsheet(
       }
     }
 
+    // 7.1 Validação e Extração de Documento Fiscal (CPF / CNPJ)
+    const rawDoc = isExplicitlyIgnored('documento') ? '' : getVal('documento');
+    let validatedDoc = validateCpfCnpj(rawDoc);
+    // Se a coluna dedicada não tiver CPF/CNPJ válido, busca na descrição ou no nome da contraparte
+    if (!validatedDoc.isValid) {
+      const embeddedDocMatch = String(`${contraparteName} ${rawDesc || ''}`).match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+      if (embeddedDocMatch) {
+        const testEmbedded = validateCpfCnpj(embeddedDocMatch[0]);
+        if (testEmbedded.isValid) {
+          validatedDoc = testEmbedded;
+        }
+      }
+    }
+
     // 8. Descrição
     let descricao = rawDesc ? String(rawDesc).trim() : '';
     if (!descricao && !isExplicitlyIgnored('descricao')) {
       descricao = `${tipo === 'RECEBER' ? 'Receita' : 'Despesa'} ${contraparteName || 'Lançamento'} - Venc. ${vencimento || 'A definir'}`;
     }
+
+    // 8.1 Detecção de Parcelamento Inteligente (ex: "1/12", "01/10", "parc 3 de 10")
+    const installmentResult = detectInstallment(descricao, getVal('titulo') ? String(getVal('titulo')).trim() : '', contraparteName, tipo);
 
     // 9. Título / Código de Referência (garantindo unicidade por linha)
     const rawTit = getVal('titulo');
@@ -946,11 +1092,27 @@ export function analyzeContaAzulSpreadsheet(
     let matchedCounterpartyId: string | undefined;
     let suggestedCounterpartyId: string | undefined;
     let counterpartyResolution: 'MATCH_EXATO' | 'SUGESTAO' | 'NOVO_SOLICITADO' | 'MANUAL' = 'NOVO_SOLICITADO';
+    let matchedByDocument = false;
 
-    if (contraparteName) {
+    // 11.1 Match prioritário por Documento Fiscal Oficial (CNPJ / CPF)
+    if (validatedDoc.isValid && validatedDoc.clean) {
+      const docMatch = safeCounterparties.find(c => {
+        const cClean = String(c?.document || '').replace(/\D/g, '');
+        return cClean && cClean.length >= 11 && cClean === validatedDoc.clean;
+      });
+
+      if (docMatch) {
+        matchedCounterpartyId = docMatch.id;
+        counterpartyResolution = 'MATCH_EXATO';
+        matchedByDocument = true;
+      }
+    }
+
+    // 11.2 Se não houve match por documento, busca por nome / razão social
+    if (!matchedCounterpartyId && contraparteName) {
       const normParty = normalizeText(contraparteName);
       
-      // Busca match exato
+      // Busca match exato por Razão Social ou Nome Fantasia
       const exactMatch = safeCounterparties.find(c => 
         (c?.name && normalizeText(c.name) === normParty) || 
         (c?.tradeName && normalizeText(c.tradeName) === normParty)
@@ -1065,6 +1227,7 @@ export function analyzeContaAzulSpreadsheet(
       titulo,
       tipo,
       fornecedor: contraparteName,
+      documento: validatedDoc.isValid ? validatedDoc.formatted : (rawDoc ? String(rawDoc).trim() : undefined),
       descricao,
       competencia,
       emissao,
@@ -1137,6 +1300,10 @@ export function analyzeContaAzulSpreadsheet(
       matchedCounterpartyId,
       suggestedCounterpartyId,
       counterpartyResolution,
+      documentValidation: validatedDoc.raw ? validatedDoc : undefined,
+      matchedByDocument,
+      isInstallment: !!installmentResult,
+      installmentInfo: installmentResult || undefined,
       matchedChartAccountId,
       suggestedChartAccountId,
       matchedChartAccountName,

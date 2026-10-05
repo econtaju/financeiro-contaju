@@ -35,11 +35,15 @@ import {
   Maximize2,
   Minimize2,
   Search,
-  BookmarkCheck
+  BookmarkCheck,
+  History,
+  RotateCcw,
+  Package
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storage } from '../../services/storageService';
 import { categoryLearningService } from '../../services/categoryLearningService';
+import { importAuditService, ImportAuditLog } from '../../services/importAuditService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { 
   FinancialTitle, 
@@ -86,6 +90,7 @@ interface ColumnMapping {
   tipo: string;
   titulo: string;
   fornecedor: string;
+  documento?: string;
   descricao: string;
   competencia: string;
   emissao: string;
@@ -820,6 +825,15 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
   // Filtro de Duplicadas Internas no Próprio Arquivo (Step 3)
   const [filterDuplicatesOnly, setFilterDuplicatesOnly] = useState<boolean>(false);
 
+  // Filtro de Parcelamentos Inteligentes (Step 3)
+  const [filterInstallmentsOnly, setFilterInstallmentsOnly] = useState<boolean>(false);
+
+  // Histórico de Auditoria e Reversão Segura de Importações
+  const [showAuditHistoryModal, setShowAuditHistoryModal] = useState<boolean>(false);
+  const [auditLogs, setAuditLogs] = useState<ImportAuditLog[]>(() => importAuditService.getLogs());
+  const [auditFeedbackMsg, setAuditFeedbackMsg] = useState<string | null>(null);
+  const [rollbackConfirmId, setRollbackConfirmId] = useState<string | null>(null);
+
   // Colunas Extras Customizadas
   const [extraColumns, setExtraColumns] = useState<ExtraColumnDefinition[]>([]);
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
@@ -833,6 +847,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     tipo: '',
     titulo: '',
     fornecedor: '',
+    documento: '',
     descricao: '',
     competencia: '',
     emissao: '',
@@ -959,6 +974,19 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     setTimeout(() => setSavedTemplateBanner(null), 4000);
   };
 
+  const handleRollbackBatch = (batchId: string) => {
+    const res = importAuditService.rollbackBatch(batchId);
+    setAuditLogs(importAuditService.getLogs());
+    setRollbackConfirmId(null);
+    if (res.success) {
+      setAuditFeedbackMsg(`✓ ${res.message}`);
+      if (props.onSuccess) props.onSuccess();
+    } else {
+      setAuditFeedbackMsg(`⚠️ ${res.message}`);
+    }
+    setTimeout(() => setAuditFeedbackMsg(null), 7000);
+  };
+
   // Detecção e Ações de Duplicidade Interna no Próprio Arquivo
   const internalDuplicateStats = useMemo(() => {
     const dups = analyzedRows.filter(r => r.isInternalDuplicate && !r.isTypeFilteredOut && r.action !== 'ERRO');
@@ -1017,6 +1045,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         tipo: findMatch(['Tipo', 'Natureza', 'Operação']),
         titulo: findMatch(['Título', 'Titulo']),
         fornecedor: findMatch(['Fornecedor', 'Fornecedor / Cliente', 'Cliente/Fornecedor', 'Cliente']),
+        documento: findMatch(['CNPJ / CPF', 'CPF / CNPJ', 'CNPJ', 'CPF', 'Documento']),
         descricao: findMatch(['Descrição', 'Descricao']),
         competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
         emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
@@ -1037,6 +1066,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         tipo: findMatch(CONTA_AZUL_COLUMN_PATTERNS.tipo),
         titulo: findMatch(CONTA_AZUL_COLUMN_PATTERNS.titulo),
         fornecedor: findMatch(CONTA_AZUL_COLUMN_PATTERNS.fornecedor),
+        documento: findMatch(CONTA_AZUL_COLUMN_PATTERNS.documento),
         descricao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.descricao),
         competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
         emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
@@ -1056,6 +1086,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         tipo: findMatch(['tipo', 'natureza', 'fluxo']),
         titulo: findMatch(['documento', 'número', 'título']),
         fornecedor: findMatch(['fornecedor', 'cliente', 'contraparte']),
+        documento: findMatch(['cnpj', 'cpf', 'documento', 'cpf/cnpj']),
         descricao: findMatch(['descrição', 'descricao', 'historico']),
         competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
         emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
@@ -1076,6 +1107,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         tipo: findMatch(CONTA_AZUL_COLUMN_PATTERNS.tipo),
         titulo: findMatch(CONTA_AZUL_COLUMN_PATTERNS.titulo),
         fornecedor: findMatch(CONTA_AZUL_COLUMN_PATTERNS.fornecedor),
+        documento: findMatch(CONTA_AZUL_COLUMN_PATTERNS.documento),
         descricao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.descricao),
         competencia: findMatch(CONTA_AZUL_COLUMN_PATTERNS.competencia),
         emissao: findMatch(CONTA_AZUL_COLUMN_PATTERNS.emissao),
@@ -1880,6 +1912,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     const memoryCount = safeRows.filter(r => r.isFromMemory && !r.isTypeFilteredOut).length;
     const filteredOutCount = safeRows.filter(r => r.isTypeFilteredOut).length;
     const manualCategoryCount = safeRows.filter(r => !r.isFromMemory && !r.isTypeFilteredOut && r.action !== 'ERRO').length;
+    const installmentCount = safeRows.filter(r => r.isInstallment && !r.isTypeFilteredOut && r.action !== 'ERRO').length;
+    const docValidatedCount = safeRows.filter(r => r.documentValidation?.isValid && !r.isTypeFilteredOut && r.action !== 'ERRO').length;
     
     const selectedActive = safeRows.filter(r => r.isSelected && r.action !== 'ERRO' && !r.isTypeFilteredOut);
     const totalReceivables = selectedActive
@@ -1901,6 +1935,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
       memoryCount,
       filteredOutCount,
       manualCategoryCount,
+      installmentCount,
+      docValidatedCount,
       totalReceivables, 
       totalPayables, 
       netBalance: totalReceivables - totalPayables,
@@ -1945,9 +1981,14 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         return false;
       }
 
+      // Filtro para Ver Apenas Lançamentos Parcelados
+      if (filterInstallmentsOnly && !r.isInstallment) {
+        return false;
+      }
+
       return true;
     });
-  }, [analyzedRows, filterAction, filterType, selectedMonth, filterCategoryMode, filterDuplicatesOnly]);
+  }, [analyzedRows, filterAction, filterType, selectedMonth, filterCategoryMode, filterDuplicatesOnly, filterInstallmentsOnly]);
 
   // Toggle seleção individual
   const toggleRow = (rowNumber: number) => {
@@ -2095,6 +2136,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
       const updatedTitlesList = [...currentTitles];
       const newSettlements: Settlement[] = [];
       const newMovements: FinancialMovement[] = [];
+      const createdTitleIds: string[] = [];
+      const updatedTitleIds: string[] = [];
 
       // Mapeamento de contrapartes novas criadas nesta execução para reaproveitamento
       const createdPartyMap: Record<string, string> = {};
@@ -2121,12 +2164,16 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             resolvedPartyId = createdPartyMap[normName];
           } else {
             const newPartyId = `cp-imp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const validatedDocStr = row.documentValidation?.isValid 
+              ? row.documentValidation.formatted 
+              : (row.normalized.documento || '00.000.000/0000-00');
+
             const newParty: Counterparty = {
               id: newPartyId,
               type: isRevenue ? 'CLIENTE' : 'FORNECEDOR',
               name: normName,
               tradeName: normName,
-              document: '00.000.000/0000-00',
+              document: validatedDocStr,
               email: `contato@${normName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'empresa'}.com.br`,
               phone: '(11) 99999-0000',
               status: 'ATIVO',
@@ -2154,6 +2201,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         if (row.action === 'CRIAR') {
           // Criação de Novo Título
           const titleId = `tit-imp-${Date.now()}-${row.rowNumber}-${Math.floor(Math.random() * 1000)}`;
+          createdTitleIds.push(titleId);
+
           const newTitle: FinancialTitle = {
             id: titleId,
             companyId: 'comp-1',
@@ -2167,6 +2216,8 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
             counterpartyId: resolvedPartyId,
             description: row.normalized.descricao,
             accountId,
+            installmentIndex: row.installmentInfo?.current,
+            totalInstallments: row.installmentInfo?.total,
             launchDate: nowIso.split('T')[0],
             competence: row.normalized.competencia,
             issueDate: row.normalized.emissao,
@@ -2256,6 +2307,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
 
             updatedTitlesList[idx] = updatedT;
             updatedCount++;
+            updatedTitleIds.push(currentT.id);
 
             // Se o principal baixado aumentou, registra a baixa complementar
             if (row.normalized.principalBaixado > currentT.settledPrincipal) {
@@ -2348,6 +2400,30 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
         details: `Importação transacional de ${selectedRows.length} títulos da planilha "${fileName}". ${createdCount} criados (${receivablesCount} receitas, ${payablesCount} despesas), ${updatedCount} atualizados, ${settledCount} baixas e ${newPartiesCount} novas contrapartes cadastradas.`
       });
 
+      // Gravação no Histórico de Auditoria com Suporte a Rollback
+      try {
+        const batchLog: ImportAuditLog = {
+          id: `batch-${Date.now()}`,
+          importedAt: nowIso,
+          fileName: fileName || 'Planilha Importada',
+          presetName: selectedPreset,
+          user: currentUser.name || 'Administrador',
+          totalRows: selectedRows.length,
+          createdCount,
+          updatedCount,
+          settledCount,
+          totalAmountReceivables,
+          totalAmountPayables,
+          createdTitleIds,
+          updatedTitleIds,
+          createdPartyIds: Object.values(createdPartyMap)
+        };
+        importAuditService.saveLog(batchLog);
+        setAuditLogs(importAuditService.getLogs());
+      } catch (e) {
+        console.warn('Erro ao salvar lote no histórico de importação:', e);
+      }
+
       setImportSummary({
         createdCount,
         updatedCount,
@@ -2410,6 +2486,19 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setAuditLogs(importAuditService.getLogs());
+                setShowAuditHistoryModal(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer"
+              title="Visualizar histórico de importações realizadas e reverter lotes com segurança"
+            >
+              <History className="w-3.5 h-3.5 text-purple-400" />
+              <span className="hidden sm:inline">Histórico de Auditoria</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsFullscreen(!isFullscreen)}
@@ -2841,6 +2930,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                         { key: 'tipo', label: 'Tipo / Operação', req: false, treatment: 'Receita vs. Despesa (crédito/débito, entrada/saída)' },
                         { key: 'titulo', label: 'Título / Referência', req: false, treatment: 'Identificador único ou gerado automaticamente' },
                         { key: 'fornecedor', label: 'Fornecedor / Cliente', req: true, treatment: 'Cruzamento com clientes/fornecedores cadastrados' },
+                        { key: 'documento', label: 'CPF / CNPJ (Documento Fiscal)', req: false, isHighlight: true, treatment: 'Validação matemática (módulo 11), vínculo automático em lote e unificação cadastral' },
                         { key: 'descricao', label: 'Descrição', req: false, treatment: 'Histórico descritivo do lançamento' },
                         { key: 'categoria', label: 'Categoria / DRE', req: false, treatment: 'Cruzamento com Plano de Contas analítico' },
                         { key: 'competencia', label: 'Competência', req: false, treatment: 'Formato AAAA-MM para relatórios mensais' },
@@ -3462,6 +3552,25 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                       )}
                     </div>
                   )}
+
+                  {/* Filtro de Lançamentos Parcelados Inteligentes */}
+                  {previewMetrics.installmentCount > 0 && (
+                    <div className="flex items-center space-x-1 bg-purple-500/10 px-2 py-1 rounded-lg border border-purple-500/30">
+                      <button
+                        type="button"
+                        onClick={() => setFilterInstallmentsOnly(prev => !prev)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                          filterInstallmentsOnly
+                            ? 'bg-purple-400 text-slate-950 shadow-md ring-2 ring-purple-300'
+                            : 'text-purple-300 hover:bg-purple-500/20'
+                        }`}
+                        title="Filtrar apenas lançamentos identificados como parcelas (ex: 1/12, 2/12)"
+                      >
+                        <Package className="w-3.5 h-3.5 text-purple-400" />
+                        <span>📦 Parcelados ({previewMetrics.installmentCount})</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Botões de Ação Rápida */}
@@ -3657,16 +3766,43 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                   title="Editar fornecedor ou cliente"
                                   className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs font-semibold text-[var(--text-primary)] transition-colors focus:outline-hidden"
                                 />
-                                {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
-                                  <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 inline-block">
-                                    Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
-                                  </span>
-                                )}
-                                {row.counterpartyResolution === 'SUGESTAO' && (
-                                  <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
-                                    Sugerido
-                                  </span>
-                                )}
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {row.counterpartyResolution === 'NOVO_SOLICITADO' && (
+                                    <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 inline-block">
+                                      Novo ({isRevenue ? 'Cliente' : 'Fornecedor'})
+                                    </span>
+                                  )}
+                                  {row.counterpartyResolution === 'SUGESTAO' && (
+                                    <span className="text-[9px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
+                                      Sugerido
+                                    </span>
+                                  )}
+                                  {row.documentValidation?.isValid && (
+                                    <span 
+                                      className="text-[9px] text-emerald-300 font-bold bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30 inline-flex items-center gap-1"
+                                      title={`${row.documentValidation.type} validado matematicamente com sucesso (${row.documentValidation.formatted})`}
+                                    >
+                                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                                      <span>{row.documentValidation.type} Válido</span>
+                                    </span>
+                                  )}
+                                  {row.matchedByDocument && (
+                                    <span 
+                                      className="text-[9px] text-blue-300 font-bold bg-blue-500/15 px-1.5 py-0.5 rounded border border-blue-500/30 inline-block"
+                                      title="Vinculado ao cadastro do app por correspondência de CNPJ/CPF"
+                                    >
+                                      ✓ Vínculo Fiscal
+                                    </span>
+                                  )}
+                                  {row.documentValidation?.raw && !row.documentValidation.isValid && (
+                                    <span 
+                                      className="text-[9px] text-rose-300 font-bold bg-rose-500/15 px-1.5 py-0.5 rounded border border-rose-500/30 inline-flex items-center gap-1"
+                                      title={`Documento fiscal "${row.documentValidation.raw}" com dígitos verificadores inválidos.`}
+                                    >
+                                      ⚠️ Doc Inválido
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </td>
 
@@ -3679,6 +3815,17 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                                 title="Editar descrição"
                                 className="w-full px-2 py-1 bg-transparent hover:bg-[var(--surface-elevated)] focus:bg-[var(--surface-elevated)] border border-transparent hover:border-[var(--border-subtle)] focus:border-amber-400 rounded-lg text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal transition-colors focus:outline-hidden resize-none"
                               />
+                              {row.isInstallment && row.installmentInfo && (
+                                <div className="mt-1">
+                                  <span 
+                                    className="text-[9px] text-purple-300 font-black bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/30 inline-flex items-center gap-1 shadow-xs"
+                                    title={`Parcela ${row.installmentInfo.current} de ${row.installmentInfo.total} identificada automaticamente na descrição.`}
+                                  >
+                                    <Package className="w-2.5 h-2.5 text-purple-400" />
+                                    <span>📦 Parcela {row.installmentInfo.current}/{row.installmentInfo.total}</span>
+                                  </span>
+                                </div>
+                              )}
                             </td>
 
                             {/* Categoria / Plano de Contas & Memória IA (NO LUGAR DO TÍTULO / DOC, ENTRE DESCRIÇÃO E VENCIMENTO/VALOR) */}
@@ -4307,6 +4454,152 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
               >
                 <Check className="w-3.5 h-3.5 stroke-[3]" />
                 <span>Salvar Perfil</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Histórico de Auditoria e Reversão Segura (Rollback) */}
+      {showAuditHistoryModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">Histórico de Auditoria das Importações</h3>
+                  <p className="text-[11px] text-[var(--text-secondary)]">Rastreabilidade completa de planilhas importadas e reversão segura em lote</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAuditHistoryModal(false);
+                  setRollbackConfirmId(null);
+                }}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {auditFeedbackMsg && (
+              <div className="mx-4 mt-3 p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-200 text-xs font-bold animate-in fade-in flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>{auditFeedbackMsg}</span>
+              </div>
+            )}
+
+            <div className="p-4 overflow-y-auto flex-1 space-y-3">
+              {auditLogs.length === 0 ? (
+                <div className="py-12 text-center text-xs text-[var(--text-secondary)]">
+                  Nenhum registro de importação encontrado no histórico.
+                </div>
+              ) : (
+                auditLogs.map((log) => {
+                  const isConfirming = rollbackConfirmId === log.id;
+                  const canRollback = !log.rolledBack && log.createdTitleIds?.length > 0;
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-3.5 rounded-xl border transition-colors ${
+                        log.rolledBack
+                          ? 'bg-[var(--surface-elevated)]/40 border-[var(--border-subtle)] opacity-60'
+                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] hover:border-purple-500/30'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2 mb-2">
+                        <div className="flex items-center space-x-2">
+                          <FileSpreadsheet className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs font-bold text-[var(--text-primary)]">{log.fileName}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
+                            {formatDateBR(log.importedAt.split('T')[0])} às {new Date(log.importedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {log.rolledBack && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                              Revertido
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-[var(--text-secondary)]">
+                          Por: <strong className="text-[var(--text-primary)]">{log.user}</strong> | Modelo: <strong className="text-amber-400">{log.presetName}</strong>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
+                        <div className="bg-[var(--surface-card)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                          <span className="text-[10px] text-[var(--text-secondary)] block">Títulos Criados</span>
+                          <strong className="text-emerald-400 text-sm">{log.createdCount}</strong>
+                        </div>
+                        <div className="bg-[var(--surface-card)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                          <span className="text-[10px] text-[var(--text-secondary)] block">Atualizados (Diff)</span>
+                          <strong className="text-amber-400 text-sm">{log.updatedCount}</strong>
+                        </div>
+                        <div className="bg-[var(--surface-card)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                          <span className="text-[10px] text-[var(--text-secondary)] block">Receitas Importadas</span>
+                          <strong className="text-emerald-400 text-xs">{formatBRL(log.totalAmountReceivables || 0)}</strong>
+                        </div>
+                        <div className="bg-[var(--surface-card)] p-2 rounded-lg border border-[var(--border-subtle)]">
+                          <span className="text-[10px] text-[var(--text-secondary)] block">Despesas Importadas</span>
+                          <strong className="text-rose-400 text-xs">{formatBRL(log.totalAmountPayables || 0)}</strong>
+                        </div>
+                      </div>
+
+                      {canRollback && (
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          {isConfirming ? (
+                            <div className="flex items-center gap-2 bg-rose-500/15 p-1.5 rounded-xl border border-rose-500/40">
+                              <span className="text-[11px] font-bold text-rose-300">
+                                Confirmar exclusão dos {log.createdTitleIds.length} títulos criados?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRollbackBatch(log.id)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors cursor-pointer"
+                              >
+                                Sim, Reverter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRollbackConfirmId(null)}
+                                className="px-2 py-1 rounded-lg bg-[var(--surface-card)] text-[var(--text-secondary)] text-xs font-semibold hover:text-[var(--text-primary)] cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setRollbackConfirmId(log.id)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Desfazer todos os títulos criados por este lote específico"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Desfazer / Reverter Lote</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-3 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAuditHistoryModal(false);
+                  setRollbackConfirmId(null);
+                }}
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-[var(--surface-card)] hover:bg-[var(--surface-card)]/80 text-[var(--text-primary)] border border-[var(--border-subtle)] cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>
