@@ -43,6 +43,7 @@ import {
 import * as XLSX from 'xlsx';
 import { storage } from '../../services/storageService';
 import { categoryLearningService } from '../../services/categoryLearningService';
+import { matchesSearch } from '../../utils/searchUtils';
 import { importAuditService, ImportAuditLog } from '../../services/importAuditService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { 
@@ -227,8 +228,27 @@ export interface GroupedChartAccounts {
   accounts: ChartAccount[];
 }
 
-export function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartAccounts[] {
-  const analytical = accounts.filter(a => a.isAnalytical);
+export function getGroupedChartAccounts(accounts: ChartAccount[], moduleFilter?: TitleType): GroupedChartAccounts[] {
+  let analytical = accounts.filter(a => a.isAnalytical);
+
+  if (moduleFilter === 'PAGAR') {
+    analytical = analytical.filter(a => {
+      const code = a.code || '';
+      const nat = a.nature || '';
+      if (code.startsWith('1.1') || nat === 'RECEITA_SERVICO') return false;
+      return true;
+    });
+  } else if (moduleFilter === 'RECEBER') {
+    analytical = analytical.filter(a => {
+      const code = a.code || '';
+      const nat = a.nature || '';
+      if (code.startsWith('3.') || nat === 'CUSTO_SERVICO') return false;
+      if (code.startsWith('4.') || nat.startsWith('DESPESA_')) return false;
+      if (code.startsWith('6.') || nat === 'TRIBUTO_LUCRO') return false;
+      if (code.startsWith('7.') || nat === 'FINANCIAMENTO_SOCIO') return false;
+      return true;
+    });
+  }
 
   const groupDefs: { key: string; name: string; shortName: string; badgeColor: string; match: (acc: ChartAccount) => boolean }[] = [
     {
@@ -300,6 +320,9 @@ export function getGroupedChartAccounts(accounts: ChartAccount[]): GroupedChartA
   const result: GroupedChartAccounts[] = [];
 
   for (const def of groupDefs) {
+    if (moduleFilter === 'PAGAR' && (def.key === '1' || def.shortName === 'Receitas')) continue;
+    if (moduleFilter === 'RECEBER' && ['3', '4.1', '4.2', '4.3', '6', '7'].includes(def.key)) continue;
+
     const matched = analytical.filter(a => !matchedAccountIds.has(a.id) && def.match(a));
     matched.forEach(a => matchedAccountIds.add(a.id));
     if (matched.length > 0) {
@@ -479,19 +502,39 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
 
   if (!isOpen) return null;
 
-  const normalizedQuery = searchTerm.trim().toLowerCase();
-
-  const filteredGroups = groupedAccounts.map(g => {
-    if (activeGroupFilter !== 'TODOS' && g.shortName !== activeGroupFilter) {
-      return { ...g, accounts: [] };
-    }
-    const matchingAccounts = g.accounts.filter(a => {
-      if (!normalizedQuery) return true;
-      const text = `${a.code || ''} ${a.name || ''} ${a.nature || ''}`.toLowerCase();
-      return text.includes(normalizedQuery);
+  const availableGroups = useMemo(() => {
+    return groupedAccounts.filter(g => {
+      if (targetType === 'PAGAR') {
+        if (g.shortName === 'Receitas' || g.groupName.includes('RECEITAS DE SERVIÇOS')) return false;
+      } else if (targetType === 'RECEBER') {
+        const expenseGroups = ['Custos', 'Pessoal', 'Administrativas & TI', 'Comerciais & Mkt', 'Tributos', 'Sócios & Lucros'];
+        if (expenseGroups.includes(g.shortName)) return false;
+      }
+      return true;
     });
-    return { ...g, accounts: matchingAccounts };
-  }).filter(g => g.accounts.length > 0);
+  }, [groupedAccounts, targetType]);
+
+  const filteredGroups = useMemo(() => {
+    return availableGroups.map(g => {
+      if (activeGroupFilter !== 'TODOS' && g.shortName !== activeGroupFilter) {
+        return { ...g, accounts: [] };
+      }
+      const matchingAccounts = g.accounts.filter(a => {
+        if (targetType === 'PAGAR') {
+          if ((a.code || '').startsWith('1.1') || a.nature === 'RECEITA_SERVICO') return false;
+        } else if (targetType === 'RECEBER') {
+          if ((a.code || '').startsWith('3.') || a.nature === 'CUSTO_SERVICO') return false;
+          if ((a.code || '').startsWith('4.') || (a.nature || '').startsWith('DESPESA_')) return false;
+          if ((a.code || '').startsWith('6.') || a.nature === 'TRIBUTO_LUCRO') return false;
+          if ((a.code || '').startsWith('7.') || a.nature === 'FINANCIAMENTO_SOCIO') return false;
+        }
+
+        if (!searchTerm.trim()) return true;
+        return matchesSearch([a.code, a.name, a.nature, g.groupName, g.shortName], searchTerm);
+      });
+      return { ...g, accounts: matchingAccounts };
+    }).filter(g => g.accounts.length > 0);
+  }, [availableGroups, activeGroupFilter, searchTerm, targetType]);
 
   const totalMatchingAccounts = filteredGroups.reduce((acc, g) => acc + g.accounts.length, 0);
 
@@ -523,9 +566,19 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
               <div>
                 <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
                   <span>Pesquisar Categoria por Nome ou Código</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    Plano de Contas
-                  </span>
+                  {targetType === 'PAGAR' ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                      Contas a Pagar (Despesas & Custos)
+                    </span>
+                  ) : targetType === 'RECEBER' ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      Contas a Receber (Receitas & Vendas)
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      Plano de Contas
+                    </span>
+                  )}
                 </h3>
                 {targetDescription ? (
                   <p className="text-[11px] text-[var(--text-secondary)] truncate max-w-lg mt-0.5">
@@ -554,7 +607,7 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Digite o nome da categoria (ex: Aluguel, Vale, Viagem, Salário) ou código (ex: 3.2, 1.1)..."
+              placeholder="Digite o nome da categoria (ex: Aluguel, Vale, Energia, Pro-labore) ou código (ex: 4.1.01, 4101)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -589,7 +642,7 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
             >
               Todas
             </button>
-            {groupedAccounts.map(g => (
+            {availableGroups.map(g => (
               <button
                 key={g.shortName}
                 type="button"
@@ -3157,7 +3210,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
                           return (
                             <button
                               type="button"
-                              onClick={() => setCategorySearchTarget({ isBulk: true, currentAccountId: activeBulkAccId })}
+                              onClick={() => setCategorySearchTarget({ isBulk: true, currentAccountId: activeBulkAccId, type: fallbackDefaultType })}
                               className="flex-1 px-3 py-1.5 rounded-xl border border-amber-500/40 bg-[var(--surface-elevated)] hover:border-amber-400 text-xs font-medium text-left flex items-center justify-between gap-2 transition-all cursor-pointer shadow-xs"
                               title="Clique para abrir a pesquisa por nome e código contábil agrupada por categorias do plano de contas"
                             >
@@ -4313,7 +4366,7 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
           onClose={() => setCategorySearchTarget(null)}
           currentAccountId={categorySearchTarget.currentAccountId}
           targetDescription={categorySearchTarget.description}
-          targetType={categorySearchTarget.type}
+          targetType={categorySearchTarget.type || fallbackDefaultType}
           groupedAccounts={groupedAccounts}
           onSelectAccount={(selectedAccId) => {
             if (categorySearchTarget.isBulk) {

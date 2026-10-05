@@ -117,9 +117,6 @@ export function matchesSearch(
   const normalizedQuery = normalizeForSearch(searchQuery);
   if (!normalizedQuery) return true;
 
-  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
-  if (queryTokens.length === 0) return true;
-
   // Monta uma lista consolidada de textos alvo
   const fieldList = Array.isArray(fields) ? fields : [fields];
   const combinedRaw = fieldList.map(f => (f !== null && f !== undefined ? String(f) : '')).join(' ');
@@ -127,14 +124,24 @@ export function matchesSearch(
 
   if (!normalizedTarget) return false;
 
-  // Correspondência exata rápida da query inteira
+  // 1. Correspondência exata rápida da query inteira normalizada
   if (normalizedTarget.includes(normalizedQuery)) {
     return true;
   }
 
+  // 2. Correspondência alfanumérica contínua (ignora pontos, traços, barras e espaços - ex: "4.1.01" bate com "4101", "4-1-01", "4 1")
+  const strippedQuery = removeDiacritics(searchQuery).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const strippedTarget = removeDiacritics(combinedRaw).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (strippedQuery && strippedTarget && strippedTarget.includes(strippedQuery)) {
+    return true;
+  }
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  if (queryTokens.length === 0) return true;
+
   const targetWords = normalizedTarget.split(' ').filter(Boolean);
 
-  // Todos os tokens da busca precisam ser encontrados no alvo
+  // 3. Todos os tokens da busca precisam ser encontrados no alvo (ordem independente)
   for (const token of queryTokens) {
     if (!tokenMatchesWords(token, targetWords, normalizedTarget)) {
       return false;
