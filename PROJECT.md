@@ -42,7 +42,7 @@ Todas as features identificadas no Survey com seus respectivos milestones:
 | M2 | Lançamentos & Ações Rápidas | Cards touch compactos e tap targets >= 40px em Pagar, Receber e Movimentações; filtros horizontais; dock flutuante de lote. | M1 | DONE |
 | M3 | Modais Fullscreen & Teclado | Shell Fullscreen Mobile com cabeçalho e rodapé fixos em NewTitleModal, SettlementModal, EditTitleModal, modais em lote; `inputMode="decimal"`. | M1 | DONE |
 | M4 | DRE & Relatórios Gerenciais | DREView com timeHorizon 'MES' e Consolidado/Analítico; CashFlowView com coluna adaptada e fundos opacos; ReportsView com sticky left-0. | M1 | DONE |
-| M5 | Testes E2E, Auditoria & Final | Execução de testes E2E mobile, validação rigorosa com Reviewers, Challengers, Forensic Auditor e build com 0 erros. | M1, M2, M3, M4 | IN_PROGRESS |
+| M5 | Testes E2E, Auditoria & Final | Execução de testes E2E mobile, validação rigorosa com Reviewers, Challengers, Forensic Auditor e build com 0 erros. | M1, M2, M3, M4 | DONE |
 
 ---
 
