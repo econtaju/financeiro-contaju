@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { TitleType, FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, getFilteredChartAccounts, isRevenueAccount, isCostOrExpenseAccount } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, getFilteredChartAccounts, isRevenueAccount, isCostOrExpenseAccount, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
 import { QuickCreateAccountModal } from './QuickCreateAccountModal';
@@ -211,11 +211,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
   }, [counterparties]);
 
   const chartAccountOptions: SelectOption[] = useMemo(() => {
-    return chartAccounts.map(a => ({
-      value: a.id,
-      label: `${a.code} - ${a.name}`,
-      sublabel: a.nature ? `Natureza: ${a.nature}` : undefined
-    }));
+    return formatChartAccountSelectOptions(chartAccounts);
   }, [chartAccounts]);
 
   const bankAccountOptions: SelectOption[] = useMemo(() => [

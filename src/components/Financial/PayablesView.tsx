@@ -43,6 +43,7 @@ import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { SwipeableCard } from '../Common/SwipeableCard';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 import { toast } from '../../hooks/useToast';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
@@ -322,9 +323,19 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         .filter(acc => !inPeriodMap.has(acc.id))
         .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
+      const isCost = (acc: ChartAccount) => (acc.code && acc.code.startsWith('2')) || acc.nature === 'CUSTO_SERVICO';
+      const inPeriodCosts = inPeriod.filter(it => isCost(it.account));
+      const inPeriodExpenses = inPeriod.filter(it => !isCost(it.account));
+      const otherCosts = others.filter(acc => isCost(acc));
+      const otherExpenses = others.filter(acc => !isCost(acc));
+
       return {
         inPeriod,
         others,
+        inPeriodCosts,
+        inPeriodExpenses,
+        otherCosts,
+        otherExpenses,
         unclassifiedCount,
         unclassifiedTotal: Math.round(unclassifiedTotal * 100) / 100,
         totalTitlesInPeriod: periodTitles.filter(t => t && t.documentState !== 'CANCELADO').length
@@ -846,20 +857,38 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 ⚠️ Não Classificados ({categoryStats.unclassifiedCount})
               </option>
             )}
-            {categoryStats.inPeriod.length > 0 && (
-              <optgroup label="No Período Selecionado">
-                {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+            {categoryStats.inPeriodCosts.length > 0 && (
+              <optgroup label="⚡ Custos da Operação no Período (CSP/CPV)">
+                {categoryStats.inPeriodCosts.map(({ account, count, totalAmount }) => (
                   <option key={account.id} value={account.id}>
-                    {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
+                    [CUSTO] {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
                   </option>
                 ))}
               </optgroup>
             )}
-            {categoryStats.others.length > 0 && (
-              <optgroup label="Outras do Plano">
-                {categoryStats.others.map(acc => (
+            {categoryStats.inPeriodExpenses.length > 0 && (
+              <optgroup label="⚡ Despesas Operacionais no Período">
+                {categoryStats.inPeriodExpenses.map(({ account, count, totalAmount }) => (
+                  <option key={account.id} value={account.id}>
+                    [DESPESA] {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {categoryStats.otherCosts.length > 0 && (
+              <optgroup label="📋 Custos da Operação (Outras do Plano)">
+                {categoryStats.otherCosts.map(acc => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.code} - {acc.name}
+                    [CUSTO] {acc.code} - {acc.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {categoryStats.otherExpenses.length > 0 && (
+              <optgroup label="📋 Despesas Operacionais (Outras do Plano)">
+                {categoryStats.otherExpenses.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    [DESPESA] {acc.code} - {acc.name}
                   </option>
                 ))}
               </optgroup>
@@ -1118,21 +1147,41 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 </option>
               )}
 
-              {categoryStats.inPeriod.length > 0 && (
-                <optgroup label={`⚡ Categorias com Despesas no Período Selecionado (${categoryStats.inPeriod.length})`}>
-                  {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+              {categoryStats.inPeriodCosts.length > 0 && (
+                <optgroup label={`⚡ Custos da Operação no Período (CSP/CPV) (${categoryStats.inPeriodCosts.length})`}>
+                  {categoryStats.inPeriodCosts.map(({ account, count, totalAmount }) => (
                     <option key={account.id} value={account.id}>
-                      {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
+                      [CUSTO] {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
                     </option>
                   ))}
                 </optgroup>
               )}
 
-              {categoryStats.others.length > 0 && (
-                <optgroup label={`📋 Outras Categorias do Plano de Contas (${categoryStats.others.length})`}>
-                  {categoryStats.others.map(acc => (
+              {categoryStats.inPeriodExpenses.length > 0 && (
+                <optgroup label={`⚡ Despesas Operacionais no Período (${categoryStats.inPeriodExpenses.length})`}>
+                  {categoryStats.inPeriodExpenses.map(({ account, count, totalAmount }) => (
+                    <option key={account.id} value={account.id}>
+                      [DESPESA] {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {categoryStats.otherCosts.length > 0 && (
+                <optgroup label={`📋 Custos da Operação (Plano de Contas) (${categoryStats.otherCosts.length})`}>
+                  {categoryStats.otherCosts.map(acc => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.code} - {acc.name}
+                      [CUSTO] {acc.code} - {acc.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {categoryStats.otherExpenses.length > 0 && (
+                <optgroup label={`📋 Despesas Operacionais (Plano de Contas) (${categoryStats.otherExpenses.length})`}>
+                  {categoryStats.otherExpenses.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      [DESPESA] {acc.code} - {acc.name}
                     </option>
                   ))}
                 </optgroup>
@@ -1426,7 +1475,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
             💡 Dica: Duplo clique em qualquer linha para editar o lançamento
           </span>
           <span className="sm:hidden text-[10px] text-rose-700 dark:text-rose-300 font-medium">
-            👆 Toque na linha para ver os detalhes completos
+            👆 Toque para detalhes • ↔ Deslize para a direita para Pagar ou esquerda para Editar
           </span>
         </span>
         <span className="text-rose-950 dark:text-rose-100 font-bold text-xs sm:text-sm">
@@ -1486,11 +1535,19 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               cardBorder = 'border-rose-400 dark:border-rose-600';
             }
 
+            const canSettle = t.balancePrincipal > 0 && t.documentState !== 'CANCELADO';
+
             return (
-              <div 
+              <SwipeableCard
                 key={t.id}
-                className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
+                onSwipeRight={canSettle ? () => setSelectedTitleForSettlement(t) : undefined}
+                rightLabel="Pagar"
+                onSwipeLeft={() => setSelectedTitleForEdit(t)}
+                leftLabel="Editar"
               >
+                <div 
+                  className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
+                >
                 {/* Linha Principal Mobile: Status, Fornecedor, Descrição, Data e Valor Imediatos */}
                 <div 
                   onClick={() => toggleExpandMobile(t.id)}
@@ -1781,7 +1838,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   </div>
                 )}
               </div>
-            );
+            </SwipeableCard>
+          );
           })
         )}
       </div>

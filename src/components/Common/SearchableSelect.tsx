@@ -7,6 +7,7 @@ export interface SelectOption {
   label: string;
   sublabel?: string;
   badge?: string;
+  group?: string;
 }
 
 interface SearchableSelectProps {
@@ -187,35 +188,44 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           {/* Options list */}
           <div className="max-h-60 overflow-y-auto divide-y divide-[var(--border-subtle)] p-1 text-xs">
             {filteredOptions.length > 0 ? (
-              filteredOptions.map((opt) => {
+              filteredOptions.map((opt, idx) => {
                 const isSelected = opt.value === value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleSelect(opt.value)}
-                    className={`w-full text-left px-2.5 py-2 rounded flex items-center justify-between transition-colors cursor-pointer ${
-                      isSelected 
-                        ? 'bg-amber-500/15 font-semibold text-amber-400 border border-amber-500/30' 
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
-                    }`}
-                  >
-                    <div className="flex-1 truncate pr-2">
-                      <div className="truncate font-medium">{opt.label}</div>
-                      {opt.sublabel && (
-                        <div className="text-[10px] text-[var(--text-muted)] truncate">{opt.sublabel}</div>
-                      )}
-                    </div>
+                const prevOpt = idx > 0 ? filteredOptions[idx - 1] : null;
+                const showGroupHeader = opt.group && (!prevOpt || prevOpt.group !== opt.group);
 
-                    <div className="flex items-center space-x-1.5 flex-shrink-0">
-                      {opt.badge && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
-                          {opt.badge}
-                        </span>
-                      )}
-                      {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
-                    </div>
-                  </button>
+                return (
+                  <React.Fragment key={opt.value}>
+                    {showGroupHeader && (
+                      <div className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-500 uppercase bg-amber-500/10 border-y border-[var(--border-subtle)] mt-1 first:mt-0 select-none">
+                        {opt.group}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(opt.value)}
+                      className={`w-full text-left px-2.5 py-2 rounded flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected 
+                          ? 'bg-amber-500/15 font-semibold text-amber-400 border border-amber-500/30' 
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                      }`}
+                    >
+                      <div className="flex-1 truncate pr-2">
+                        <div className="truncate font-medium">{opt.label}</div>
+                        {opt.sublabel && (
+                          <div className="text-[10px] text-[var(--text-muted)] truncate">{opt.sublabel}</div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 flex-shrink-0">
+                        {opt.badge && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                            {opt.badge}
+                          </span>
+                        )}
+                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                      </div>
+                    </button>
+                  </React.Fragment>
                 );
               })
             ) : (

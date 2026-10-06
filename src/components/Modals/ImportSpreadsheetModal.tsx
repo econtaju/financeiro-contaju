@@ -229,90 +229,116 @@ export interface GroupedChartAccounts {
 }
 
 export function getGroupedChartAccounts(accounts: ChartAccount[], moduleFilter?: TitleType): GroupedChartAccounts[] {
-  let analytical = accounts.filter(a => a.isAnalytical);
+  let analytical = accounts.filter(a => a.isAnalytical && a.isActive);
 
   if (moduleFilter === 'PAGAR') {
     analytical = analytical.filter(a => {
       const code = a.code || '';
       const nat = a.nature || '';
+      // Exclui receitas brutas e financeiras no Contas a Pagar
       if (code.startsWith('1.1') || nat === 'RECEITA_SERVICO') return false;
+      if (code.startsWith('4.1') || nat === 'RECEITA_FINANCEIRA') return false;
       return true;
     });
   } else if (moduleFilter === 'RECEBER') {
     analytical = analytical.filter(a => {
       const code = a.code || '';
       const nat = a.nature || '';
-      if (code.startsWith('3.') || nat === 'CUSTO_SERVICO') return false;
-      if (code.startsWith('4.') || nat.startsWith('DESPESA_')) return false;
-      if (code.startsWith('6.') || nat === 'TRIBUTO_LUCRO') return false;
-      if (code.startsWith('7.') || nat === 'FINANCIAMENTO_SOCIO') return false;
+      // No Contas a Receber, permite apenas receitas e aportes de capital
+      if (code.startsWith('2.') || nat === 'CUSTO_SERVICO') return false;
+      if (code.startsWith('3.') || nat.startsWith('DESPESA_')) return false;
+      if (code.startsWith('4.2') || nat === 'DESPESA_FINANCEIRA') return false;
+      if (code.startsWith('5.') || nat === 'TRIBUTO_LUCRO') return false;
+      if (code.startsWith('6.') || nat === 'INVESTIMENTO_ATIVO') return false;
+      if (code.startsWith('1.2') || nat === 'DEDUCAO_RECEITA') return false;
       return true;
     });
   }
 
   const groupDefs: { key: string; name: string; shortName: string; badgeColor: string; match: (acc: ChartAccount) => boolean }[] = [
     {
-      key: '1',
+      key: '1.1',
       name: '1. RECEITAS DE SERVIÇOS E FATURAMENTO',
-      shortName: 'Receitas',
+      shortName: 'Receitas de Serviços',
       badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
       match: (acc) => (acc.code || '').startsWith('1.1') || acc.nature === 'RECEITA_SERVICO'
     },
     {
-      key: '2',
-      name: '2. DEDUÇÕES DA RECEITA (IMPOSTOS & ABATIMENTOS)',
+      key: '1.2',
+      name: '1.2 DEDUÇÕES DA RECEITA (IMPOSTOS & ABATIMENTOS)',
       shortName: 'Deduções',
       badgeColor: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
       match: (acc) => (acc.code || '').startsWith('1.2') || acc.nature === 'DEDUCAO_RECEITA'
     },
     {
-      key: '3',
-      name: '3. CUSTOS OPERACIONAIS (SERVIÇOS PRESTADOS)',
-      shortName: 'Custos',
+      key: '2',
+      name: '2. CUSTOS DA OPERAÇÃO (SERVIÇOS PRESTADOS - CSP/CPV)',
+      shortName: 'Custos da Operação',
       badgeColor: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-      match: (acc) => (acc.code || '').startsWith('3.') || acc.nature === 'CUSTO_SERVICO'
+      match: (acc) => (acc.code || '').startsWith('2') || acc.nature === 'CUSTO_SERVICO'
+    },
+    {
+      key: '3.1',
+      name: '3.1 DESPESAS COM PESSOAL (FOLHA, BENEFÍCIOS & PRÓ-LABORE)',
+      shortName: 'Despesas c/ Pessoal',
+      badgeColor: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+      match: (acc) => (acc.code || '').startsWith('3.1') || acc.nature === 'DESPESA_PESSOAL'
+    },
+    {
+      key: '3.2',
+      name: '3.2 DESPESAS ADMINISTRATIVAS & TI (ALUGUEL, ENERGIA, SOFTWARES)',
+      shortName: 'Despesas Admin & TI',
+      badgeColor: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+      match: (acc) => (acc.code || '').startsWith('3.2') || acc.nature === 'DESPESA_ADMINISTRATIVA'
+    },
+    {
+      key: '3.3',
+      name: '3.3 DESPESAS COMERCIAIS & MARKETING (PUBLICIDADE, TRÁFEGO, COMISSÕES)',
+      shortName: 'Despesas Comerciais & Mkt',
+      badgeColor: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+      match: (acc) => (acc.code || '').startsWith('3.3') || acc.nature === 'DESPESA_COMERCIAL'
     },
     {
       key: '4.1',
-      name: '4.1 DESPESAS COM PESSOAL (FOLHA, BENEFÍCIOS & PRÓ-LABORE)',
-      shortName: 'Pessoal',
-      badgeColor: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
-      match: (acc) => (acc.code || '').startsWith('4.1') || acc.nature === 'DESPESA_PESSOAL'
+      name: '4.1 RECEITAS FINANCEIRAS (JUROS RECEBIDOS, MULTAS & RENDIMENTOS)',
+      shortName: 'Receitas Financeiras',
+      badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+      match: (acc) => (acc.code || '').startsWith('4.1') || acc.nature === 'RECEITA_FINANCEIRA'
     },
     {
       key: '4.2',
-      name: '4.2 DESPESAS ADMINISTRATIVAS & TI (ALUGUEL, SOFTWARES, CONTADOR)',
-      shortName: 'Administrativas & TI',
-      badgeColor: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-      match: (acc) => (acc.code || '').startsWith('4.2') || acc.nature === 'DESPESA_ADMINISTRATIVA'
-    },
-    {
-      key: '4.3',
-      name: '4.3 DESPESAS COMERCIAIS & MARKETING (PUBLICIDADE, TRÁFEGO)',
-      shortName: 'Comerciais & Mkt',
-      badgeColor: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
-      match: (acc) => (acc.code || '').startsWith('4.3') || acc.nature === 'DESPESA_COMERCIAL'
+      name: '4.2 DESPESAS FINANCEIRAS (JUROS PAGOS, MULTAS & TARIFAS BANCÁRIAS)',
+      shortName: 'Despesas Financeiras',
+      badgeColor: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+      match: (acc) => (acc.code || '').startsWith('4.2') || acc.nature === 'DESPESA_FINANCEIRA'
     },
     {
       key: '5',
-      name: '5. RESULTADO FINANCEIRO (JUROS, TARIFAS & RENDIMENTOS)',
-      shortName: 'Financeiro',
-      badgeColor: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-      match: (acc) => (acc.code || '').startsWith('5.') || acc.nature === 'RESULTADO_FINANCEIRO' || acc.nature === 'DESPESA_FINANCEIRA' || acc.nature === 'RECEITA_FINANCEIRA'
+      name: '5. TRIBUTOS SOBRE O LUCRO (SIMPLES, IRPJ & CSLL)',
+      shortName: 'Tributos s/ Lucro',
+      badgeColor: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+      match: (acc) => (acc.code || '').startsWith('5.') || acc.nature === 'TRIBUTO_LUCRO'
     },
     {
       key: '6',
-      name: '6. TRIBUTOS SOBRE O LUCRO (SIMPLES, IRPJ, CSLL)',
-      shortName: 'Tributos',
-      badgeColor: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-      match: (acc) => (acc.code || '').startsWith('6.') || acc.nature === 'TRIBUTO_LUCRO'
+      name: '6. INVESTIMENTOS & ATIVOS (EQUIPAMENTOS, HARDWARE & MÓVEIS)',
+      shortName: 'Investimentos & Ativos',
+      badgeColor: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
+      match: (acc) => (acc.code || '').startsWith('6.') || acc.nature === 'INVESTIMENTO_ATIVO'
     },
     {
       key: '7',
       name: '7. FINANCIAMENTOS, SÓCIOS & DISTRIBUIÇÃO DE LUCROS',
-      shortName: 'Sócios & Lucros',
+      shortName: 'Sócios & Financiamentos',
       badgeColor: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
       match: (acc) => (acc.code || '').startsWith('7.') || acc.nature === 'FINANCIAMENTO_SOCIO' || acc.id === 'acc-7.1.04' || acc.name.toLowerCase().includes('lucro')
+    },
+    {
+      key: '8',
+      name: '8. CONTROLES ESPECÍFICOS & ADIANTAMENTOS',
+      shortName: 'Controles Específicos',
+      badgeColor: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+      match: (acc) => (acc.code || '').startsWith('8.') || acc.nature === 'CONTROLE_ESPECIFICO'
     }
   ];
 
@@ -320,8 +346,8 @@ export function getGroupedChartAccounts(accounts: ChartAccount[], moduleFilter?:
   const result: GroupedChartAccounts[] = [];
 
   for (const def of groupDefs) {
-    if (moduleFilter === 'PAGAR' && (def.key === '1' || def.shortName === 'Receitas')) continue;
-    if (moduleFilter === 'RECEBER' && ['3', '4.1', '4.2', '4.3', '6', '7'].includes(def.key)) continue;
+    if (moduleFilter === 'PAGAR' && (def.key === '1.1' || def.key === '4.1')) continue;
+    if (moduleFilter === 'RECEBER' && ['2', '3.1', '3.2', '3.3', '4.2', '5', '6', '8'].includes(def.key)) continue;
 
     const matched = analytical.filter(a => !matchedAccountIds.has(a.id) && def.match(a));
     matched.forEach(a => matchedAccountIds.add(a.id));
@@ -330,19 +356,19 @@ export function getGroupedChartAccounts(accounts: ChartAccount[], moduleFilter?:
         groupName: def.name,
         shortName: def.shortName,
         badgeColor: def.badgeColor,
-        accounts: matched.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+        accounts: matched.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
       });
     }
   }
 
-  // Contas residuais
+  // Contas residuais (caso haja contas customizadas pelo usuário fora da numeração padrão)
   const leftovers = analytical.filter(a => !matchedAccountIds.has(a.id));
   if (leftovers.length > 0) {
     result.push({
       groupName: 'OUTRAS CONTAS E OPERAÇÕES',
-      shortName: 'Outras',
+      shortName: 'Outras Contas',
       badgeColor: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
-      accounts: leftovers.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+      accounts: leftovers.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
     });
   }
 
@@ -370,7 +396,7 @@ export function getAccountGroupBadgeStyle(acc?: ChartAccount | null): AccountGro
   const nature = acc.nature || '';
   const name = acc.name.toLowerCase();
 
-  // 1. Receitas de Serviços / Faturamento (Verde)
+  // 1.1 Receitas de Serviços / Faturamento (Verde)
   if (code.startsWith('1.1') || nature === 'RECEITA_SERVICO') {
     return {
       borderLeft: 'border-l-4 border-l-emerald-500',
@@ -380,7 +406,7 @@ export function getAccountGroupBadgeStyle(acc?: ChartAccount | null): AccountGro
     };
   }
 
-  // 2. Deduções da Receita (Rosa)
+  // 1.2 Deduções da Receita (Rosa)
   if (code.startsWith('1.2') || nature === 'DEDUCAO_RECEITA') {
     return {
       borderLeft: 'border-l-4 border-l-rose-500',
@@ -390,43 +416,83 @@ export function getAccountGroupBadgeStyle(acc?: ChartAccount | null): AccountGro
     };
   }
 
-  // 3. Custos Operacionais (Âmbar)
-  if (code.startsWith('3.') || nature === 'CUSTO_SERVICO') {
+  // 2. Custos Operacionais / Serviços Prestados (Âmbar) - CSP / CPV
+  if (code.startsWith('2') || nature === 'CUSTO_SERVICO') {
     return {
       borderLeft: 'border-l-4 border-l-amber-500',
       bgSubtle: 'bg-amber-500/10 hover:bg-amber-500/15',
       badgeStyle: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-      groupLabel: 'Custo'
+      groupLabel: 'Custo da Operação'
     };
   }
 
-  // 4.1 Pessoal (Índigo)
-  if (code.startsWith('4.1') || nature === 'DESPESA_PESSOAL') {
+  // 3.1 Despesas com Pessoal (Índigo)
+  if (code.startsWith('3.1') || nature === 'DESPESA_PESSOAL') {
     return {
       borderLeft: 'border-l-4 border-l-indigo-500',
       bgSubtle: 'bg-indigo-500/10 hover:bg-indigo-500/15',
       badgeStyle: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
-      groupLabel: 'Pessoal'
+      groupLabel: 'Despesa c/ Pessoal'
     };
   }
 
-  // 4.2 Administrativas & TI (Sky)
-  if (code.startsWith('4.2') || nature === 'DESPESA_ADMINISTRATIVA') {
+  // 3.2 Despesas Administrativas & TI (Sky)
+  if (code.startsWith('3.2') || nature === 'DESPESA_ADMINISTRATIVA') {
     return {
       borderLeft: 'border-l-4 border-l-sky-500',
       bgSubtle: 'bg-sky-500/10 hover:bg-sky-500/15',
       badgeStyle: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
-      groupLabel: 'Admin & TI'
+      groupLabel: 'Despesa Admin/TI'
     };
   }
 
-  // 4.3 Comerciais & Marketing (Ciano)
-  if (code.startsWith('4.3') || nature === 'DESPESA_COMERCIAL') {
+  // 3.3 Despesas Comerciais & Marketing (Ciano)
+  if (code.startsWith('3.3') || nature === 'DESPESA_COMERCIAL') {
     return {
       borderLeft: 'border-l-4 border-l-cyan-500',
       bgSubtle: 'bg-cyan-500/10 hover:bg-cyan-500/15',
       badgeStyle: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
-      groupLabel: 'Comercial'
+      groupLabel: 'Despesa Comercial'
+    };
+  }
+
+  // 4.1 Receitas Financeiras (Verde Esmeralda)
+  if (code.startsWith('4.1') || nature === 'RECEITA_FINANCEIRA') {
+    return {
+      borderLeft: 'border-l-4 border-l-emerald-500',
+      bgSubtle: 'bg-emerald-500/10 hover:bg-emerald-500/15',
+      badgeStyle: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      groupLabel: 'Receita Financeira'
+    };
+  }
+
+  // 4.2 Despesas Financeiras (Azul)
+  if (code.startsWith('4.2') || nature === 'DESPESA_FINANCEIRA' || nature.includes('FINANCEIR')) {
+    return {
+      borderLeft: 'border-l-4 border-l-blue-500',
+      bgSubtle: 'bg-blue-500/10 hover:bg-blue-500/15',
+      badgeStyle: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+      groupLabel: 'Despesa Financeira'
+    };
+  }
+
+  // 5. Tributos sobre o Lucro (Laranja)
+  if (code.startsWith('5.') || nature === 'TRIBUTO_LUCRO') {
+    return {
+      borderLeft: 'border-l-4 border-l-orange-500',
+      bgSubtle: 'bg-orange-500/10 hover:bg-orange-500/15',
+      badgeStyle: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+      groupLabel: 'Tributo s/ Lucro'
+    };
+  }
+
+  // 6. Investimentos & Ativos (Teal)
+  if (code.startsWith('6.') || nature === 'INVESTIMENTO_ATIVO') {
+    return {
+      borderLeft: 'border-l-4 border-l-teal-500',
+      bgSubtle: 'bg-teal-500/10 hover:bg-teal-500/15',
+      badgeStyle: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
+      groupLabel: 'Investimento / Ativo'
     };
   }
 
@@ -440,23 +506,13 @@ export function getAccountGroupBadgeStyle(acc?: ChartAccount | null): AccountGro
     };
   }
 
-  // 6. Tributos (Laranja)
-  if (code.startsWith('6.') || nature === 'TRIBUTO_LUCRO') {
+  // 8. Controles Específicos (Ardósia)
+  if (code.startsWith('8.') || nature === 'CONTROLE_ESPECIFICO') {
     return {
-      borderLeft: 'border-l-4 border-l-orange-500',
-      bgSubtle: 'bg-orange-500/10 hover:bg-orange-500/15',
-      badgeStyle: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-      groupLabel: 'Tributos'
-    };
-  }
-
-  // 5. Resultado Financeiro (Azul)
-  if (code.startsWith('5.') || nature.includes('FINANCEIR')) {
-    return {
-      borderLeft: 'border-l-4 border-l-blue-500',
-      bgSubtle: 'bg-blue-500/10 hover:bg-blue-500/15',
-      badgeStyle: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-      groupLabel: 'Financeiro'
+      borderLeft: 'border-l-4 border-l-slate-400',
+      bgSubtle: 'bg-slate-500/10 hover:bg-slate-500/15',
+      badgeStyle: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+      groupLabel: 'Controle Específico'
     };
   }
 
@@ -853,7 +909,6 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
 
   // Visualização e Modal de Categorias Inteligente
   const [isFullscreen, setIsFullscreen] = useState<boolean>(true);
-  const groupedAccounts = useMemo(() => getGroupedChartAccounts(chartAccounts), [chartAccounts]);
   const [categorySearchTarget, setCategorySearchTarget] = useState<{
     rowNumber?: number;
     description?: string;
@@ -861,6 +916,10 @@ const ImportSpreadsheetModalInner: React.FC<ImportSpreadsheetModalProps> = ({
     type?: TitleType;
     isBulk?: boolean;
   } | null>(null);
+
+  const groupedAccounts = useMemo(() => {
+    return getGroupedChartAccounts(chartAccounts, categorySearchTarget?.type || defaultType);
+  }, [chartAccounts, categorySearchTarget?.type, defaultType]);
   const [savedTemplateBanner, setSavedTemplateBanner] = useState<string | null>(null);
   const [cascadeSuggestion, setCascadeSuggestion] = useState<{
     partyName: string;

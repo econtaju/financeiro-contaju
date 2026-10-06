@@ -36,3 +36,26 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// Registro do Service Worker para suporte a PWA e operação offline
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        // Verifica se há novas atualizações em segundo plano
+        reg.onupdatefound = () => {
+          const installingWorker = reg.installing;
+          if (installingWorker) {
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('[PWA] Nova versão disponível em segundo plano.');
+              }
+            };
+          }
+        };
+      })
+      .catch((err) => {
+        console.warn('[PWA] Registro de Service Worker indisponível:', err);
+      });
+  });
+}

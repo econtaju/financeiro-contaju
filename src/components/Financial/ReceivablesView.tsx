@@ -47,6 +47,7 @@ import { BatchPostponeModal } from '../Modals/BatchPostponeModal';
 import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { SwipeableCard } from '../Common/SwipeableCard';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 import { toast } from '../../hooks/useToast';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
@@ -325,15 +326,25 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       });
 
       const inPeriod = Array.from(inPeriodMap.values());
-      inPeriod.sort((a, b) => b.count - a.count || a.account.code.localeCompare(b.account.code, undefined, { numeric: true }));
+      inPeriod.sort((a, b) => b.count - a.count || (a.account.code || '').localeCompare(b.account.code || '', undefined, { numeric: true }));
 
       const others = revenueAccounts
         .filter(acc => !inPeriodMap.has(acc.id))
-        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+        .sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
+
+      const isFinRevenue = (acc: ChartAccount) => (acc.code && acc.code.startsWith('4.1')) || acc.nature === 'RECEITA_FINANCEIRA';
+      const inPeriodService = inPeriod.filter(it => !isFinRevenue(it.account));
+      const inPeriodFinancial = inPeriod.filter(it => isFinRevenue(it.account));
+      const othersService = others.filter(acc => !isFinRevenue(acc));
+      const othersFinancial = others.filter(acc => isFinRevenue(acc));
 
       return {
         inPeriod,
         others,
+        inPeriodService,
+        inPeriodFinancial,
+        othersService,
+        othersFinancial,
         unclassifiedCount,
         unclassifiedTotal: Math.round(unclassifiedTotal * 100) / 100,
         totalTitlesInPeriod: periodTitles.filter(t => t && t.documentState !== 'CANCELADO').length
@@ -950,18 +961,36 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 ⚠️ Não Classificados ({categoryStats.unclassifiedCount})
               </option>
             )}
-            {categoryStats.inPeriod.length > 0 && (
-              <optgroup label="No Período Selecionado">
-                {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+            {categoryStats.inPeriodService.length > 0 && (
+              <optgroup label="⚡ Receitas de Serviços no Período">
+                {categoryStats.inPeriodService.map(({ account, count, totalAmount }) => (
                   <option key={account.id} value={account.id}>
                     {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
                   </option>
                 ))}
               </optgroup>
             )}
-            {categoryStats.others.length > 0 && (
-              <optgroup label="Outras do Plano">
-                {categoryStats.others.map(acc => (
+            {categoryStats.inPeriodFinancial.length > 0 && (
+              <optgroup label="⚡ Receitas Financeiras no Período">
+                {categoryStats.inPeriodFinancial.map(({ account, count, totalAmount }) => (
+                  <option key={account.id} value={account.id}>
+                    {account.code} - {account.name} ({count} • {formatBRL(totalAmount)})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {categoryStats.othersService.length > 0 && (
+              <optgroup label="📋 Receitas de Serviços (Outras do Plano)">
+                {categoryStats.othersService.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {categoryStats.othersFinancial.length > 0 && (
+              <optgroup label="📋 Receitas Financeiras (Outras do Plano)">
+                {categoryStats.othersFinancial.map(acc => (
                   <option key={acc.id} value={acc.id}>
                     {acc.code ? `${acc.code} - ` : ''}{acc.name}
                   </option>
@@ -1222,9 +1251,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 </option>
               )}
 
-              {categoryStats.inPeriod.length > 0 && (
-                <optgroup label={`⚡ Categorias com Receitas no Período Selecionado (${categoryStats.inPeriod.length})`}>
-                  {categoryStats.inPeriod.map(({ account, count, totalAmount }) => (
+              {categoryStats.inPeriodService.length > 0 && (
+                <optgroup label={`⚡ Receitas de Serviços no Período (${categoryStats.inPeriodService.length})`}>
+                  {categoryStats.inPeriodService.map(({ account, count, totalAmount }) => (
                     <option key={account.id} value={account.id}>
                       {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
                     </option>
@@ -1232,9 +1261,29 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 </optgroup>
               )}
 
-              {categoryStats.others.length > 0 && (
-                <optgroup label={`📋 Outras Categorias do Plano de Contas (${categoryStats.others.length})`}>
-                  {categoryStats.others.map(acc => (
+              {categoryStats.inPeriodFinancial.length > 0 && (
+                <optgroup label={`⚡ Receitas Financeiras no Período (${categoryStats.inPeriodFinancial.length})`}>
+                  {categoryStats.inPeriodFinancial.map(({ account, count, totalAmount }) => (
+                    <option key={account.id} value={account.id}>
+                      {account.code} - {account.name} ({count} títulos • {formatBRL(totalAmount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {categoryStats.othersService.length > 0 && (
+                <optgroup label={`📋 Receitas de Serviços (Plano de Contas) (${categoryStats.othersService.length})`}>
+                  {categoryStats.othersService.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.code} - {acc.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {categoryStats.othersFinancial.length > 0 && (
+                <optgroup label={`📋 Receitas Financeiras (Plano de Contas) (${categoryStats.othersFinancial.length})`}>
+                  {categoryStats.othersFinancial.map(acc => (
                     <option key={acc.id} value={acc.id}>
                       {acc.code} - {acc.name}
                     </option>
@@ -1510,7 +1559,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
             💡 Dica: Duplo clique em qualquer linha para editar o título
           </span>
           <span className="sm:hidden text-[10px] text-emerald-700 dark:text-emerald-300 font-medium">
-            👆 Toque na linha para ver os detalhes completos
+            👆 Toque para detalhes • ↔ Deslize para a direita para Receber ou esquerda para Editar
           </span>
         </span>
         <span className="text-emerald-950 dark:text-emerald-100 font-bold text-xs sm:text-sm">
@@ -1569,11 +1618,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
               cardBorder = 'border-emerald-400 dark:border-emerald-600';
             }
 
+            const canSettle = t.balancePrincipal > 0 && t.documentState !== 'CANCELADO';
+
             return (
-              <div 
+              <SwipeableCard
                 key={t.id}
-                className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
+                onSwipeRight={canSettle ? () => setSelectedTitleForSettlement(t) : undefined}
+                rightLabel="Receber"
+                onSwipeLeft={() => setSelectedTitleForEdit(t)}
+                leftLabel="Editar"
               >
+                <div 
+                  className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
+                >
                 {/* Linha Principal Mobile: Status, Cliente, Descrição, Data e Valor Imediatos */}
                 <div 
                   onClick={() => toggleExpandMobile(t.id)}
@@ -1897,7 +1954,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   </div>
                 )}
               </div>
-            );
+            </SwipeableCard>
+          );
           })
         )}
       </div>

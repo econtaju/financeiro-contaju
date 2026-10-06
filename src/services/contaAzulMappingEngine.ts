@@ -12,6 +12,7 @@
 
 import { FinancialTitle, Counterparty, ChartAccount, BankAccount, TitleType } from '../types';
 import { categoryLearningService } from './categoryLearningService';
+import { isRevenueAccount, isCostOrExpenseAccount } from './financialEngine';
 
 export interface ExtraColumnDefinition {
   id: string;
@@ -1150,11 +1151,19 @@ export function analyzeContaAzulSpreadsheet(
 
     const rawCategoryName = rawCat ? String(rawCat).trim() : '';
 
-    // 12.1. Primeiro verifica se a planilha trouxe uma categoria que casa com o Plano de Contas
+    // Filtra as contas do plano analítico válidas para a natureza deste lançamento
+    const compatibleAccounts = safeChartAccounts.filter(a => {
+      if (!a || !a.isAnalytical || !a.isActive) return false;
+      return tipo === 'RECEBER' ? isRevenueAccount(a) : isCostOrExpenseAccount(a);
+    });
+
+    // 12.1. Primeiro verifica se a planilha trouxe uma categoria que casa com o Plano de Contas compatível
     if (rawCategoryName) {
       const normCat = normalizeText(rawCategoryName);
-      const exactAccount = safeChartAccounts.find(a => 
-        a && a.isAnalytical && normalizeText(a.name || '') === normCat
+      
+      // Match exato com conta compatível
+      const exactAccount = compatibleAccounts.find(a => 
+        normalizeText(a.name || '') === normCat
       );
 
       if (exactAccount) {
@@ -1162,9 +1171,12 @@ export function analyzeContaAzulSpreadsheet(
         matchedChartAccountName = exactAccount.name;
         categoryResolution = 'MATCH_PLANO';
       } else {
-        const partialAccount = safeChartAccounts.find(a => 
-          a && a.isAnalytical && (normalizeText(a.name || '').includes(normCat) || normCat.includes(normalizeText(a.name || '')))
-        );
+        // Match parcial com conta compatível
+        const partialAccount = compatibleAccounts.find(a => {
+          const aName = normalizeText(a.name || '');
+          return aName && normCat && (aName.includes(normCat) || normCat.includes(aName));
+        });
+        
         if (partialAccount) {
           suggestedChartAccountId = partialAccount.id;
           matchedChartAccountId = partialAccount.id;

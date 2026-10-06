@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Layers, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
 import { FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
-import { getFilteredChartAccounts } from '../../services/financialEngine';
+import { getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 
 interface BatchEditTitlesModalProps {
@@ -42,11 +42,7 @@ export const BatchEditTitlesModal: React.FC<BatchEditTitlesModalProps> = ({
   const chartAccounts = getFilteredChartAccounts(allChartAccounts, type);
   const bankAccounts = storage.getBankAccounts().filter(a => a.status === 'ATIVO');
 
-  const chartAccountOptions: SelectOption[] = chartAccounts.map(a => ({
-    value: a.id,
-    label: `${a.code} - ${a.name}`,
-    sublabel: a.nature ? `Natureza: ${a.nature}` : undefined
-  }));
+  const chartAccountOptions: SelectOption[] = formatChartAccountSelectOptions(chartAccounts);
 
   const bankAccountOptions: SelectOption[] = [
     { value: '', label: 'Indiferente / Não definida' },

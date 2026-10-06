@@ -35,7 +35,7 @@ import {
   Printer,
   Network
 } from 'lucide-react';
-import { ReportingEngine, DREMatrix, DRELineItem } from '../../services/reportingEngine';
+import { ReportingEngine, DREMatrix, DRELineItem, DRERegime } from '../../services/reportingEngine';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { BudgetEngine } from '../../services/budgetEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
@@ -166,7 +166,12 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   } | null>(null);
   const [drillDownTab, setDrillDownTab] = useState<'TITLES' | 'CONCENTRATION' | 'CASH_RECONCILIATION'>('TITLES');
 
-  const dreData = ReportingEngine.generateDRE(effectiveYear);
+  const [regime, setRegime] = useState<DRERegime>('COMPETENCIA');
+
+  const dreData = useMemo(() => {
+    return ReportingEngine.generateDRE(effectiveYear, regime);
+  }, [effectiveYear, regime]);
+
   const allTitles = storage.getTitles();
   const counterparties = storage.getCounterparties();
 
@@ -445,11 +450,14 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, effectiveYear, dreData.months]);
 
   const totalColLabel = useMemo(() => {
-    if (timeHorizon === 'MES') return `Total ${dreData.months[selectedMonth]}`;
-    if (timeHorizon === 'SEMESTRE') return `Total ${selectedSemester}º Sem`;
-    if (timeHorizon === 'TRIMESTRE') return `Total ${selectedQuarter}º Tri`;
-    return 'Total Exercício';
-  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, dreData.months]);
+    const base = timeHorizon === 'MES' ? `Total ${dreData.months[selectedMonth]}`
+      : timeHorizon === 'SEMESTRE' ? `Total ${selectedSemester}º Sem`
+      : timeHorizon === 'TRIMESTRE' ? `Total ${selectedQuarter}º Tri`
+      : 'Total Exercício';
+    if (regime === 'CAIXA') return `${base} (Caixa)`;
+    if (regime === 'COMPARATIVO') return `${base} (Competência)`;
+    return base;
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, dreData.months, regime]);
 
   // Totalizador da linha no período selecionado
   const getLinePeriodTotal = (line: DRELineItem) => {
@@ -457,9 +465,19 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     return activeMonthIndices.reduce((acc, mIdx) => acc + (line.valuesByMonth[mIdx] || 0), 0);
   };
 
+  const getLinePeriodCashTotal = (line: DRELineItem) => {
+    if (timeHorizon === 'ANO') return line.cashTotalYear || 0;
+    return activeMonthIndices.reduce((acc, mIdx) => acc + ((line.cashValuesByMonth && line.cashValuesByMonth[mIdx]) || 0), 0);
+  };
+
   const getNetResultPeriodTotal = () => {
     if (timeHorizon === 'ANO') return dreData.totalNetResult;
     return activeMonthIndices.reduce((acc, mIdx) => acc + (dreData.netResults[mIdx] || 0), 0);
+  };
+
+  const getNetResultPeriodCashTotal = () => {
+    if (timeHorizon === 'ANO') return dreData.cashTotalNetResult || 0;
+    return activeMonthIndices.reduce((acc, mIdx) => acc + ((dreData.cashNetResults && dreData.cashNetResults[mIdx]) || 0), 0);
   };
 
   // KPIs Executivos do DRE calculados para o período ativo
@@ -519,11 +537,15 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   };
 
   const handleExportExcel = () => {
+    const isComparative = regime === 'COMPARATIVO';
     const headers = [
       'Código', 
       'Rubrica Econômica', 
       ...activeMonthIndices.map(i => dreData.months[i]), 
-      totalColLabel, 
+      ...(isComparative 
+        ? ['Competência', 'Caixa Realizado', 'Gap (R$)', '% Realização'] 
+        : [totalColLabel]
+      ),
       '% AV',
       ...(showHorizontalAnalysis ? ['% AH (Evolução)'] : [])
     ];
@@ -533,11 +555,20 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       const periodTot = getLinePeriodTotal(l);
       const av = grossRevVal > 0 ? (periodTot / grossRevVal) * 100 : 0;
       const ahEv = getLinePeriodAHEvolution(l);
+
+      let totalCells: (string | number)[] = [periodTot];
+      if (isComparative) {
+        const cashVal = getLinePeriodCashTotal(l);
+        const gapVal = Math.round((periodTot - cashVal) * 100) / 100;
+        const rate = periodTot > 0 ? Math.min(Math.round((cashVal / periodTot) * 100), 999) : (cashVal > 0 ? 100 : 0);
+        totalCells = [periodTot, cashVal, gapVal, `${rate}%`];
+      }
+
       return [
         l.code || '-',
         l.name,
         ...activeMonthIndices.map(i => l.valuesByMonth[i] || 0),
-        periodTot,
+        ...totalCells,
         `${(av ?? 0).toFixed(1)}%`,
         ...(showHorizontalAnalysis ? [ahEv ? ahEv.label : '-'] : [])
       ];
@@ -547,27 +578,57 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     const netPeriodTot = getNetResultPeriodTotal();
     const netAV = grossRevVal > 0 ? (netPeriodTot / grossRevVal) * 100 : 0;
     const netAHEv = getNetResultPeriodAHEvolution();
+
+    let netTotalCells: (string | number)[] = [netPeriodTot];
+    if (isComparative) {
+      const netCash = getNetResultPeriodCashTotal();
+      const netGap = Math.round((netPeriodTot - netCash) * 100) / 100;
+      const netRate = netPeriodTot > 0 ? Math.min(Math.round((netCash / netPeriodTot) * 100), 999) : (netCash > 0 ? 100 : 0);
+      netTotalCells = [netPeriodTot, netCash, netGap, `${netRate}%`];
+    }
+
     rows.push([
       '9',
       '(=) RESULTADO LÍQUIDO DO EXERCÍCIO',
       ...activeMonthIndices.map(i => dreData.netResults[i] || 0),
-      netPeriodTot,
+      ...netTotalCells,
       `${(netAV ?? 0).toFixed(1)}%`,
       ...(showHorizontalAnalysis ? [netAHEv ? netAHEv.label : '-'] : [])
     ]);
 
-    exportToExcel(`DRE-Gerencial-${effectiveYear}`, 'DRE Gerencial', headers, rows);
+    const fileSuffix = regime === 'CAIXA' ? 'Caixa' : regime === 'COMPARATIVO' ? 'Comparativo-Caixa-Competencia' : 'Competencia';
+    exportToExcel(`DRE-${fileSuffix}-${effectiveYear}`, `DRE ${fileSuffix}`, headers, rows);
   };
 
   const handleExportCSV = () => {
-    const headers = ['Código', 'Rubrica Econômica', ...activeMonthIndices.map(i => dreData.months[i]), totalColLabel];
-    const rows = visibleLines.map(l => [
-      l.code || '-',
-      l.name,
-      ...activeMonthIndices.map(i => l.valuesByMonth[i] || 0),
-      getLinePeriodTotal(l)
-    ]);
-    exportToCSV(`DRE-Gerencial-${effectiveYear}`, headers, rows);
+    const isComparative = regime === 'COMPARATIVO';
+    const headers = [
+      'Código', 
+      'Rubrica Econômica', 
+      ...activeMonthIndices.map(i => dreData.months[i]), 
+      ...(isComparative 
+        ? ['Competência', 'Caixa Realizado', 'Gap (R$)', '% Realização'] 
+        : [totalColLabel]
+      )
+    ];
+    const rows = visibleLines.map(l => {
+      const periodTot = getLinePeriodTotal(l);
+      let totalCells: (string | number)[] = [periodTot];
+      if (isComparative) {
+        const cashVal = getLinePeriodCashTotal(l);
+        const gapVal = Math.round((periodTot - cashVal) * 100) / 100;
+        const rate = periodTot > 0 ? Math.min(Math.round((cashVal / periodTot) * 100), 999) : (cashVal > 0 ? 100 : 0);
+        totalCells = [periodTot, cashVal, gapVal, `${rate}%`];
+      }
+      return [
+        l.code || '-',
+        l.name,
+        ...activeMonthIndices.map(i => l.valuesByMonth[i] || 0),
+        ...totalCells
+      ];
+    });
+    const fileSuffix = regime === 'CAIXA' ? 'Caixa' : regime === 'COMPARATIVO' ? 'Comparativo' : 'Competencia';
+    exportToCSV(`DRE-${fileSuffix}-${effectiveYear}`, headers, rows);
   };
 
   const handleExportPDF = () => {
@@ -624,7 +685,15 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
             </h1>
           </div>
           <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-            Estruturado estritamente por <strong>Regime de Competência</strong>. Faturamento e custos reconhecidos pelo período econômico gerador.
+            {regime === 'COMPETENCIA' && (
+              <>Estruturado por <strong>Regime de Competência</strong>. Faturamento, custos e despesas reconhecidos pelo período econômico gerador.</>
+            )}
+            {regime === 'CAIXA' && (
+              <>Estruturado por <strong>Regime de Caixa</strong>. Entradas e saídas reconhecidas exclusivamente pelas quitações e liquidações efetivadas.</>
+            )}
+            {regime === 'COMPARATIVO' && (
+              <>Visão <strong>Comparativa Lado a Lado</strong>: Competência vs Caixa Realizado. Auditoria de descasamento financeiro, inadimplência e taxa de realização.</>
+            )}
           </p>
         </div>
 
@@ -805,6 +874,57 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 })}
               </div>
             )}
+          </div>
+
+          {/* Regime Contábil: Competência, Caixa ou Comparativo */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
+              <Scale className="w-3.5 h-3.5 text-amber-400" />
+              Regime:
+            </span>
+            <div className="flex items-center bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
+              <button
+                type="button"
+                onClick={() => setRegime('COMPETENCIA')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  regime === 'COMPETENCIA'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="DRE por Regime de Competência (Faturamento e Provisões)"
+              >
+                Competência
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegime('CAIXA')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  regime === 'CAIXA'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="DRE por Regime de Caixa (Liquidações efetivas em conta bancária)"
+              >
+                Caixa
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegime('COMPARATIVO')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                  regime === 'COMPARATIVO'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="DRE Comparativo: Competência vs Caixa Lado a Lado com apuração de Gap e % Realização"
+              >
+                <span>Caixa x Competência</span>
+                <span className={`text-[9px] uppercase px-1 py-0.2 rounded font-black ${
+                  regime === 'COMPARATIVO' ? 'bg-black/20 text-slate-950' : 'bg-amber-500/20 text-amber-400'
+                }`}>
+                  Lado a Lado
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Modo de Visualização Estrutural: Recolhido vs Expandido */}
@@ -1356,14 +1476,39 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   );
                 })}
 
-                {/* Coluna de Total do Período */}
-                <th className={`py-2.5 px-2 text-right font-black text-amber-950 dark:text-amber-300 border-l-2 border-amber-500/50 bg-amber-500/15 dark:bg-amber-500/20 ${
-                  canFitToScreen 
-                    ? 'w-[9.4%] text-xs' 
-                    : 'min-w-[100px] text-xs'
-                }`}>
-                  <span className="block truncate">{totalColLabel}</span>
-                </th>
+                {/* Coluna de Total do Período (Simples ou Comparativo Lado a Lado) */}
+                {regime === 'COMPARATIVO' ? (
+                  <>
+                    <th className={`py-2.5 px-2 text-right font-black text-amber-950 dark:text-amber-300 border-l-2 border-amber-500/50 bg-amber-500/15 dark:bg-amber-500/20 ${
+                      canFitToScreen ? 'w-[7.5%] text-xs' : 'min-w-[85px] text-xs'
+                    }`} title="Total apurado pelo Regime de Competência">
+                      <span className="block truncate">Competência</span>
+                    </th>
+                    <th className={`py-2.5 px-2 text-right font-black text-emerald-950 dark:text-emerald-300 border-l border-emerald-500/40 bg-emerald-500/15 dark:bg-emerald-500/20 ${
+                      canFitToScreen ? 'w-[7.5%] text-xs' : 'min-w-[85px] text-xs'
+                    }`} title="Total liquidado efetivamente pelo Regime de Caixa">
+                      <span className="block truncate">Caixa</span>
+                    </th>
+                    <th className={`py-2.5 px-1.5 text-right font-black text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 bg-slate-200/90 dark:bg-[#1a2130] ${
+                      canFitToScreen ? 'w-[6.2%] text-xs' : 'min-w-[75px] text-xs'
+                    }`} title="Gap / Descolamento (Competência - Caixa)">
+                      <span className="block truncate">Gap (R$)</span>
+                    </th>
+                    <th className={`py-2.5 px-1 text-right font-black text-amber-950 dark:text-amber-300 border-l border-amber-500/40 bg-amber-500/15 ${
+                      canFitToScreen ? 'w-[5.5%] text-xs' : 'min-w-[65px] text-xs'
+                    }`} title="Taxa de Realização Financeira em Caixa (% Liquidado / Competência)">
+                      <span className="block truncate">% Realiz.</span>
+                    </th>
+                  </>
+                ) : (
+                  <th className={`py-2.5 px-2 text-right font-black text-amber-950 dark:text-amber-300 border-l-2 border-amber-500/50 bg-amber-500/15 dark:bg-amber-500/20 ${
+                    canFitToScreen 
+                      ? 'w-[9.4%] text-xs' 
+                      : 'min-w-[100px] text-xs'
+                  }`}>
+                    <span className="block truncate">{totalColLabel}</span>
+                  </th>
+                )}
 
                 {/* Colunas Opcionais de Desvio Orçamentário (Orçado e Desvio %) */}
                 {showBudgetVariance && (
@@ -1555,16 +1700,71 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       );
                     })}
 
-                    {/* Total do Período */}
-                    <td 
-                      onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
-                      title={`Total Exercício • ${line.name}: ${formatBRL(periodTotal)}`}
-                      className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/15 dark:bg-amber-500/20 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
-                        !isSummary ? 'cursor-pointer hover:bg-amber-500/25 hover:text-amber-950 dark:hover:text-amber-200' : ''
-                      } ${valueColor}`}
-                    >
-                      {formatCellValue(periodTotal)}
-                    </td>
+                    {/* Bloco de Totais: Comparativo (Competência, Caixa, Gap, % Realização) ou Simples */}
+                    {regime === 'COMPARATIVO' ? (() => {
+                      const compVal = periodTotal;
+                      const cashVal = getLinePeriodCashTotal(line);
+                      const gapVal = Math.round((compVal - cashVal) * 100) / 100;
+                      const realRate = compVal > 0 
+                        ? Math.min(Math.round((cashVal / compVal) * 100), 999) 
+                        : (cashVal > 0 ? 100 : 0);
+
+                      return (
+                        <>
+                          {/* Competência */}
+                          <td 
+                            onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                            title={`Competência • ${line.name}: ${formatBRL(compVal)}`}
+                            className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/10 dark:bg-amber-500/15 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                              !isSummary ? 'cursor-pointer hover:bg-amber-500/25' : ''
+                            } ${valueColor}`}
+                          >
+                            {formatCellValue(compVal)}
+                          </td>
+                          {/* Caixa Realizado */}
+                          <td 
+                            onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                            title={`Caixa Realizado • ${line.name}: ${formatBRL(cashVal)}`}
+                            className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-emerald-500/10 dark:bg-emerald-500/15 border-l border-emerald-500/30 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                              !isSummary ? 'cursor-pointer hover:bg-emerald-500/25' : ''
+                            } ${cashVal > 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-400'}`}
+                          >
+                            {formatCellValue(cashVal)}
+                          </td>
+                          {/* Gap (R$) */}
+                          <td 
+                            title={`Gap Financeiro (Competência - Caixa) • ${line.name}: ${formatBRL(gapVal)}`}
+                            className={`py-2 px-1.5 text-right font-mono text-xs border-l border-slate-200 dark:border-slate-800 tabular-nums whitespace-nowrap overflow-hidden ${
+                              gapVal === 0 ? 'text-slate-400' : gapVal > 0 ? 'text-amber-700 dark:text-amber-300 font-semibold' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
+                            }`}
+                          >
+                            {formatCellValue(gapVal)}
+                          </td>
+                          {/* % Realizado */}
+                          <td 
+                            title={`Taxa de Realização Financeira em Caixa: ${realRate}%`}
+                            className={`py-2 px-1 text-right font-mono text-[11px] font-bold border-l border-amber-500/30 tabular-nums whitespace-nowrap overflow-hidden ${
+                              compVal === 0 ? 'text-slate-400' :
+                              realRate >= 80 ? 'text-emerald-700 dark:text-emerald-400' :
+                              realRate < 50 ? 'text-rose-700 dark:text-rose-400' :
+                              'text-amber-700 dark:text-amber-400'
+                            }`}
+                          >
+                            {compVal !== 0 ? `${realRate}%` : '-'}
+                          </td>
+                        </>
+                      );
+                    })() : (
+                      <td 
+                        onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                        title={`Total Exercício • ${line.name}: ${formatBRL(periodTotal)}`}
+                        className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/15 dark:bg-amber-500/20 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                          !isSummary ? 'cursor-pointer hover:bg-amber-500/25 hover:text-amber-950 dark:hover:text-amber-200' : ''
+                        } ${valueColor}`}
+                      >
+                        {formatCellValue(periodTotal)}
+                      </td>
+                    )}
 
                     {/* Colunas Opcionais de Orçado e Desvio % (Sugestão 3) */}
                     {showBudgetVariance && (() => {
@@ -1716,14 +1916,60 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   );
                 })}
 
-                <td 
-                  title={`Resultado Líquido Total do Exercício: ${formatBRL(getNetResultPeriodTotal())}`}
-                  className={`py-2.5 px-1.5 sm:px-2 text-right font-mono font-extrabold bg-amber-500/20 dark:bg-amber-500/25 border-l-2 border-amber-500 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs sm:text-sm ${
-                    getNetResultPeriodTotal() >= 0 ? 'text-amber-950 dark:text-amber-300' : 'text-rose-700 dark:text-rose-400'
-                  }`}
-                >
-                  {getNetResultPeriodTotal() >= 0 ? '+' : ''}{formatCellValue(getNetResultPeriodTotal())}
-                </td>
+                {regime === 'COMPARATIVO' ? (() => {
+                  const netComp = getNetResultPeriodTotal();
+                  const netCash = getNetResultPeriodCashTotal();
+                  const netGap = Math.round((netComp - netCash) * 100) / 100;
+                  const netRealRate = netComp > 0 ? Math.min(Math.round((netCash / netComp) * 100), 999) : (netCash > 0 ? 100 : 0);
+
+                  return (
+                    <>
+                      {/* Competência */}
+                      <td 
+                        title={`Resultado Líquido (Competência): ${formatBRL(netComp)}`}
+                        className={`py-2.5 px-1.5 sm:px-2 text-right font-mono font-extrabold bg-amber-500/20 dark:bg-amber-500/25 border-l-2 border-amber-500 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs sm:text-sm ${
+                          netComp >= 0 ? 'text-amber-950 dark:text-amber-300' : 'text-rose-700 dark:text-rose-400'
+                        }`}
+                      >
+                        {netComp >= 0 ? '+' : ''}{formatCellValue(netComp)}
+                      </td>
+                      {/* Caixa Realizado */}
+                      <td 
+                        title={`Resultado Líquido (Caixa Realizado): ${formatBRL(netCash)}`}
+                        className={`py-2.5 px-1.5 sm:px-2 text-right font-mono font-extrabold bg-emerald-500/20 dark:bg-emerald-500/25 border-l border-emerald-500 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs sm:text-sm ${
+                          netCash >= 0 ? 'text-emerald-950 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-400'
+                        }`}
+                      >
+                        {netCash >= 0 ? '+' : ''}{formatCellValue(netCash)}
+                      </td>
+                      {/* Gap */}
+                      <td 
+                        title={`Gap de Liquidez (Competência - Caixa): ${formatBRL(netGap)}`}
+                        className="py-2.5 px-1.5 text-right font-mono font-bold text-xs border-l border-amber-500/30 tabular-nums whitespace-nowrap"
+                      >
+                        {formatCellValue(netGap)}
+                      </td>
+                      {/* % Realizado */}
+                      <td 
+                        title={`Taxa de Realização Líquida em Caixa: ${netRealRate}%`}
+                        className={`py-2.5 px-1 text-right font-mono text-[11px] font-black border-l border-amber-500/40 tabular-nums whitespace-nowrap ${
+                          netRealRate >= 80 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                        }`}
+                      >
+                        {netComp !== 0 ? `${netRealRate}%` : '-'}
+                      </td>
+                    </>
+                  );
+                })() : (
+                  <td 
+                    title={`Resultado Líquido Total do Exercício: ${formatBRL(getNetResultPeriodTotal())}`}
+                    className={`py-2.5 px-1.5 sm:px-2 text-right font-mono font-extrabold bg-amber-500/20 dark:bg-amber-500/25 border-l-2 border-amber-500 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs sm:text-sm ${
+                      getNetResultPeriodTotal() >= 0 ? 'text-amber-950 dark:text-amber-300' : 'text-rose-700 dark:text-rose-400'
+                    }`}
+                  >
+                    {getNetResultPeriodTotal() >= 0 ? '+' : ''}{formatCellValue(getNetResultPeriodTotal())}
+                  </td>
+                )}
 
                 {/* Colunas Opcionais de Orçado e Desvio % no Resultado Líquido */}
                 {showBudgetVariance && budgetData && (() => {

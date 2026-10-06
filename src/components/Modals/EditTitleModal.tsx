@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet } from 'lucide-react';
 import { FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, getFilteredChartAccounts } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
 import { QuickCreateAccountModal } from './QuickCreateAccountModal';
@@ -124,11 +124,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     };
   });
 
-  const chartAccountOptions: SelectOption[] = chartAccounts.map(a => ({
-    value: a.id,
-    label: `${a.code} - ${a.name}`,
-    sublabel: a.nature ? `Natureza: ${a.nature}` : undefined
-  }));
+  const chartAccountOptions: SelectOption[] = formatChartAccountSelectOptions(chartAccounts);
 
   const bankAccountOptions: SelectOption[] = [
     { value: '', label: 'Indiferente / Não definida' },

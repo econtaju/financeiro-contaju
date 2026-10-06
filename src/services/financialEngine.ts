@@ -1627,3 +1627,157 @@ export const getFilteredChartAccounts = (
   });
 };
 
+/**
+ * Retorna metadados de taxonomia gerencial e contábil para uma conta do plano de contas,
+ * separando estritamente Custos Operacionais de Despesas Operacionais e Receitas.
+ */
+export const getAccountTaxonomyInfo = (account: ChartAccount): {
+  group: string;
+  badge: string;
+  categoryType: 'CUSTO' | 'DESPESA' | 'RECEITA' | 'DEDUCAO' | 'INVESTIMENTO' | 'FINANCIAMENTO' | 'OUTROS';
+} => {
+  const code = account.code || '';
+  const nature = account.nature || '';
+
+  // 1.1 Receitas de Serviços / Operacionais
+  if (code.startsWith('1.1') || nature === 'RECEITA_SERVICO') {
+    return {
+      group: '1.1 RECEITAS DE SERVIÇOS & OPERACIONAIS',
+      badge: 'RECEITA DE SERVIÇO',
+      categoryType: 'RECEITA'
+    };
+  }
+
+  // 1.2 Deduções da Receita
+  if (code.startsWith('1.2') || nature === 'DEDUCAO_RECEITA') {
+    return {
+      group: '1.2 DEDUÇÕES DA RECEITA (IMPOSTOS & ABATIMENTOS)',
+      badge: 'DEDUÇÃO',
+      categoryType: 'DEDUCAO'
+    };
+  }
+
+  // 2. Custos da Operação / Custos dos Serviços Prestados (CSP/CPV)
+  if (code.startsWith('2') || nature === 'CUSTO_SERVICO') {
+    return {
+      group: '2. CUSTOS DA OPERAÇÃO (SERVIÇOS PRESTADOS - CSP/CPV)',
+      badge: 'CUSTO DA OPERAÇÃO',
+      categoryType: 'CUSTO'
+    };
+  }
+
+  // 3.1 Despesas com Pessoal
+  if (code.startsWith('3.1') || nature === 'DESPESA_PESSOAL') {
+    return {
+      group: '3.1 DESPESAS COM PESSOAL (FOLHA, BENEFÍCIOS & PRÓ-LABORE)',
+      badge: 'DESPESA C/ PESSOAL',
+      categoryType: 'DESPESA'
+    };
+  }
+
+  // 3.2 Despesas Administrativas & TI
+  if (code.startsWith('3.2') || nature === 'DESPESA_ADMINISTRATIVA') {
+    return {
+      group: '3.2 DESPESAS ADMINISTRATIVAS & TI (ALUGUEL & SOFTWARES)',
+      badge: 'DESPESA ADMIN/TI',
+      categoryType: 'DESPESA'
+    };
+  }
+
+  // 3.3 Despesas Comerciais & Marketing
+  if (code.startsWith('3.3') || nature === 'DESPESA_COMERCIAL') {
+    return {
+      group: '3.3 DESPESAS COMERCIAIS & MARKETING (TRÁFEGO & COMISSÕES)',
+      badge: 'DESPESA COMERCIAL',
+      categoryType: 'DESPESA'
+    };
+  }
+
+  // 4.1 Receitas Financeiras
+  if (code.startsWith('4.1') || nature === 'RECEITA_FINANCEIRA') {
+    return {
+      group: '4.1 RECEITAS FINANCEIRAS & RENDIMENTOS',
+      badge: 'RECEITA FINANCEIRA',
+      categoryType: 'RECEITA'
+    };
+  }
+
+  // 4.2 Despesas Financeiras & Bancárias
+  if (code.startsWith('4.2') || nature === 'DESPESA_FINANCEIRA' || nature.includes('FINANCEIR')) {
+    return {
+      group: '4.2 DESPESAS FINANCEIRAS & TARIFAS BANCÁRIAS',
+      badge: 'DESPESA FINANCEIRA',
+      categoryType: 'DESPESA'
+    };
+  }
+
+  // 5. Tributos sobre o Lucro
+  if (code.startsWith('5.') || nature === 'TRIBUTO_LUCRO') {
+    return {
+      group: '5. TRIBUTOS SOBRE O LUCRO (IRPJ & CSLL)',
+      badge: 'TRIBUTO S/ LUCRO',
+      categoryType: 'DESPESA'
+    };
+  }
+
+  // 6. Investimentos & Ativos
+  if (code.startsWith('6.') || nature === 'INVESTIMENTO_ATIVO') {
+    return {
+      group: '6. INVESTIMENTOS & ATIVOS (HARDWARE & EQUIPAMENTOS)',
+      badge: 'INVESTIMENTO',
+      categoryType: 'INVESTIMENTO'
+    };
+  }
+
+  // 7. Sócios & Financiamentos
+  if (code.startsWith('7.') || nature === 'FINANCIAMENTO_SOCIO') {
+    return {
+      group: '7. FINANCIAMENTOS, SÓCIOS & DISTRIBUIÇÃO DE LUCROS',
+      badge: 'SÓCIOS & LUCROS',
+      categoryType: 'FINANCIAMENTO'
+    };
+  }
+
+  // 8. Controles Específicos
+  if (code.startsWith('8.') || nature === 'CONTROLE_ESPECIFICO') {
+    return {
+      group: '8. CONTROLES ESPECÍFICOS & ADIANTAMENTOS',
+      badge: 'CONTROLE ESPECÍFICO',
+      categoryType: 'OUTROS'
+    };
+  }
+
+  return {
+    group: 'OUTRAS CONTAS E OPERAÇÕES',
+    badge: 'OUTRAS',
+    categoryType: 'OUTROS'
+  };
+};
+
+/**
+ * Formata lista de contas contábeis em opções para SearchableSelect com grupos visuais,
+ * ordenação numérica e identificação clara de Custos vs Despesas.
+ */
+export const formatChartAccountSelectOptions = (
+  accounts: ChartAccount[],
+  titleType?: 'PAGAR' | 'RECEBER'
+) => {
+  const filtered = titleType ? getFilteredChartAccounts(accounts, titleType) : accounts.filter(a => a.isAnalytical && a.isActive);
+  
+  // Ordena por código numérico
+  const sorted = [...filtered].sort((a, b) => 
+    (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+  );
+
+  return sorted.map(a => {
+    const tax = getAccountTaxonomyInfo(a);
+    return {
+      value: a.id,
+      label: `${a.code} - ${a.name}`,
+      sublabel: a.nature ? `Natureza: ${a.nature}` : undefined,
+      badge: tax.badge,
+      group: tax.group
+    };
+  });
+};
+

@@ -89,7 +89,7 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
   // Filtrar contas analíticas de acordo com o tipo
   const relevantAccounts = chartAccounts.filter(a => a.isAnalytical);
   const [showCategorySearch, setShowCategorySearch] = useState(false);
-  const groupedAccounts = React.useMemo(() => getGroupedChartAccounts(chartAccounts), [chartAccounts]);
+  const groupedAccounts = React.useMemo(() => getGroupedChartAccounts(chartAccounts, tipo), [chartAccounts, tipo]);
   const currentAccount = chartAccounts.find(a => a.id === selectedAccountId);
 
   const handleSubmit = (e: React.FormEvent) => {

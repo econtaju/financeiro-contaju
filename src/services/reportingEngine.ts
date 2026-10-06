@@ -2,6 +2,8 @@ import { ChartAccount, FinancialTitle, FinancialMovement } from '../types';
 import { storage } from './storageService';
 import { FinancialEngine } from './financialEngine';
 
+export type DRERegime = 'COMPETENCIA' | 'CAIXA' | 'COMPARATIVO';
+
 export interface DRELineItem {
   id: string;
   name: string;
@@ -12,8 +14,15 @@ export interface DRELineItem {
   level: number; // 0 for major group, 1 for subgroup, 2 for account
   groupId?: string; // Identifier of top group (e.g. 'h-1', 'h-2', 'h-3', 'h-4', 'h-5', 'h-6')
   parentHeaderId?: string; // Direct parent header id (e.g. 'h-4' or 'h-4.1')
-  valuesByMonth: number[]; // 12 months: index 0 = Jan, ..., index 11 = Dec
+  valuesByMonth: number[]; // 12 months: index 0 = Jan, ..., index 11 = Dec (regime ativo ou competência)
   totalYear: number;
+  // Campos comparativos e regime de caixa
+  cashValuesByMonth?: number[]; // Realizado financeiramente por caixa nos 12 meses
+  cashTotalYear?: number;
+  gapValuesByMonth?: number[]; // Variação mês a mês (Competência - Caixa)
+  gapTotalYear?: number;
+  realizationRates?: number[]; // Taxa % de realização financeira nos 12 meses
+  totalRealizationRate?: number; // Taxa % anual de realização
   matchedTitleIds?: string[];
   titles?: FinancialTitle[];
 }
@@ -23,6 +32,9 @@ export type DREMatrix = {
   lines: DRELineItem[];
   netResults: number[];
   totalNetResult: number;
+  regime?: DRERegime;
+  cashNetResults?: number[];
+  totalCashNetResult?: number;
 };
 
 export interface CashFlowLineItem {
@@ -47,40 +59,84 @@ export type CashFlowMatrix = {
 
 export class ReportingEngine {
   /**
-   * GENERATE DRE GERENCIAL BY COMPETENCE
-   * Calculates 12 months + annual total based on economic competence (YYYY-MM).
+   * GENERATE DRE GERENCIAL MULTI-REGIME (COMPETÊNCIA, CAIXA OU COMPARATIVO)
+   * Apura os 12 meses do ano e total anual sob regime de competência econômica ou efetivação financeira em caixa.
    */
-  public static generateDRE(year: number): {
-    months: string[];
-    lines: DRELineItem[];
-    netResults: number[];
-    totalNetResult: number;
-  } {
+  public static generateDRE(
+    year: number,
+    regime: DRERegime = 'COMPETENCIA'
+  ): DREMatrix {
     const titles = storage.getTitles().filter(t => t.documentState !== 'CANCELADO');
     const accounts = storage.getChartAccounts();
+    const allSettlements = storage.getSettlements().filter(s => !s.isReversed);
 
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-    // Helper to sum for specific account codes or line
-    const getValuesForAccount = (accId: string): { monthly: number[]; total: number; titleIds: string[] } => {
-      const monthly = new Array(12).fill(0);
+    // Helper para apurar competência e caixa de cada conta analítica
+    const getValuesForAccount = (accId: string): {
+      monthlyComp: number[];
+      totalComp: number;
+      monthlyCash: number[];
+      totalCash: number;
+      titleIds: string[];
+    } => {
+      const monthlyComp = new Array(12).fill(0);
+      const monthlyCash = new Array(12).fill(0);
       const titleIds: string[] = [];
 
+      // 1. Competência (conforme competence YYYY-MM)
       for (let m = 0; m < 12; m++) {
         const compStr = `${year}-${(m + 1).toString().padStart(2, '0')}`;
-        const matchingTitles = titles.filter(t => t.accountId === accId && t.competence === compStr);
+        const matchingTitles = titles.filter(t => 
+          (t.accountId === accId || (t as any).chartAccountId === accId) && 
+          t.competence === compStr
+        );
 
         for (const title of matchingTitles) {
-          titleIds.push(title.id);
-          // For sales/receivables, originalAmount is revenue
-          // For payables/costs, originalAmount is cost/expense
-          monthly[m] += title.originalAmount;
+          if (!titleIds.includes(title.id)) titleIds.push(title.id);
+          monthlyComp[m] += title.originalAmount || 0;
         }
-        monthly[m] = Math.round(monthly[m] * 100) / 100;
+        monthlyComp[m] = Math.round(monthlyComp[m] * 100) / 100;
       }
 
-      const total = monthly.reduce((a, b) => a + b, 0);
-      return { monthly, total: Math.round(total * 100) / 100, titleIds };
+      // 2. Caixa (conforme quitações financeiras efetivadas no mês do ano)
+      for (let m = 0; m < 12; m++) {
+        const monthStr = `${year}-${(m + 1).toString().padStart(2, '0')}`;
+
+        for (const title of titles) {
+          if (title.accountId !== accId && (title as any).chartAccountId !== accId) continue;
+
+          let monthSettled = 0;
+          const matchingSettlements = allSettlements.filter(s => s.titleId === title.id);
+
+          if (matchingSettlements.length > 0) {
+            for (const s of matchingSettlements) {
+              const sDate = s.settlementDate || '';
+              if (sDate.startsWith(monthStr)) {
+                monthSettled += s.components?.principalSettled || s.components?.netFinancialAmount || 0;
+                if (!titleIds.includes(title.id)) titleIds.push(title.id);
+              }
+            }
+          } else {
+            const payDate = (title as any).actualPaymentDate || (title as any).paymentDate || '';
+            if (payDate && payDate.startsWith(monthStr) && (title.settledPrincipal || 0) > 0) {
+              monthSettled += title.settledPrincipal;
+              if (!titleIds.includes(title.id)) titleIds.push(title.id);
+            } else if (!payDate && title.settlementState === 'LIQUIDADO' && (title.dueDate || '').startsWith(monthStr)) {
+              monthSettled += title.settledPrincipal || title.originalAmount || 0;
+              if (!titleIds.includes(title.id)) titleIds.push(title.id);
+            }
+          }
+
+          monthlyCash[m] += monthSettled;
+        }
+        monthlyCash[m] = Math.round(monthlyCash[m] * 100) / 100;
+      }
+
+      const totalComp = Math.round(monthlyComp.reduce((a, b) => a + b, 0) * 100) / 100;
+      const totalCash = Math.round(monthlyCash.reduce((a, b) => a + b, 0) * 100) / 100;
+
+      return { monthlyComp, totalComp, monthlyCash, totalCash, titleIds };
     };
 
     const sumArrays = (arrays: number[][]): number[] => {
@@ -97,329 +153,519 @@ export class ReportingEngine {
       return arr1.map((v, i) => Math.round((v - (arr2[i] || 0)) * 100) / 100);
     };
 
-    // 1. Receita Bruta de Serviços (Analytical accounts under grp-1.1)
-    const grossRevenueAccs = accounts.filter(a => a.parentId === 'grp-1.1' && a.isAnalytical);
+    // Helper construtor de linha DRE com preenchimento completo de métricas comparativas
+    const createDRELine = (
+      id: string,
+      name: string,
+      code: string | undefined,
+      level: number,
+      groupId: string,
+      parentHeaderId: string | undefined,
+      compValues: number[],
+      compTotal: number,
+      cashValues: number[],
+      cashTotal: number,
+      titleIds?: string[],
+      isHeader = false,
+      isSummary = false
+    ): DRELineItem => {
+      const activeValues = regime === 'CAIXA' ? cashValues : compValues;
+      const activeTotal = regime === 'CAIXA' ? cashTotal : compTotal;
+
+      const gapValues = compValues.map((c, i) => Math.round((c - (cashValues[i] || 0)) * 100) / 100);
+      const gapTotal = Math.round((compTotal - cashTotal) * 100) / 100;
+
+      const realizationRates = compValues.map((c, i) => {
+        const cashVal = cashValues[i] || 0;
+        if (c <= 0 && cashVal <= 0) return 100;
+        if (c <= 0 && cashVal > 0) return 100;
+        return Math.round(Math.min((cashVal / c) * 100, 999) * 10) / 10;
+      });
+
+      const totalRealizationRate = compTotal > 0
+        ? Math.round(Math.min((cashTotal / compTotal) * 100, 999) * 10) / 10
+        : 100;
+
+      return {
+        id,
+        name,
+        code,
+        level,
+        groupId,
+        parentHeaderId,
+        isHeader,
+        isSummary,
+        valuesByMonth: activeValues,
+        totalYear: activeTotal,
+        cashValuesByMonth: cashValues,
+        cashTotalYear: cashTotal,
+        gapValuesByMonth: gapValues,
+        gapTotalYear: gapTotal,
+        realizationRates,
+        totalRealizationRate,
+        matchedTitleIds: titleIds
+      };
+    };
+
+    // 1. Receita Bruta de Serviços (grp-1.1 ou nature/código correspondente)
+    const grossRevenueAccs = accounts.filter(a => 
+      (a.parentId === 'grp-1.1' || a.nature === 'RECEITA_SERVICO' || (a.code && a.code.startsWith('1.1'))) && 
+      a.isAnalytical
+    );
     const grossRevLines: DRELineItem[] = grossRevenueAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-1',
-        parentHeaderId: 'h-1',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-1', 'h-1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const grossRevValues = sumArrays(grossRevLines.map(l => l.valuesByMonth));
-    const grossRevTotal = grossRevValues.reduce((a, b) => a + b, 0);
+    const grossRevCompValues = sumArrays(grossRevLines.map(l => l.gapValuesByMonth ? l.valuesByMonth : l.valuesByMonth));
+    const grossRevCompTotal = grossRevLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const grossRevCashValues = sumArrays(grossRevLines.map(l => l.cashValuesByMonth || []));
+    const grossRevCashTotal = grossRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    // 2. Deduções da Receita e Tributos sobre Faturamento (grp-1.2)
-    const deducAccs = accounts.filter(a => a.parentId === 'grp-1.2' && a.isAnalytical);
+    // 2. Deduções da Receita (grp-1.2)
+    const deducAccs = accounts.filter(a => 
+      (a.parentId === 'grp-1.2' || a.nature === 'DEDUCAO_RECEITA' || (a.code && a.code.startsWith('1.2'))) && 
+      a.isAnalytical
+    );
     const deducLines: DRELineItem[] = deducAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-2',
-        parentHeaderId: 'h-2',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-2', 'h-2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const deducValues = sumArrays(deducLines.map(l => l.valuesByMonth));
-    const deducTotal = deducValues.reduce((a, b) => a + b, 0);
+    const deducCompValues = sumArrays(deducLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const deducCompTotal = deducLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const deducCashValues = sumArrays(deducLines.map(l => l.cashValuesByMonth || []));
+    const deducCashTotal = deducLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    // (=) Receita Líquida = Receita Bruta - Deduções
-    const netRevValues = subtractArrays(grossRevValues, deducValues);
-    const netRevTotal = netRevValues.reduce((a, b) => a + b, 0);
+    // (=) Receita Líquida
+    const netRevCompValues = subtractArrays(grossRevCompValues, deducCompValues);
+    const netRevCompTotal = Math.round((grossRevCompTotal - deducCompTotal) * 100) / 100;
+    const netRevCashValues = subtractArrays(grossRevCashValues, deducCashValues);
+    const netRevCashTotal = Math.round((grossRevCashTotal - deducCashTotal) * 100) / 100;
 
-    // 3. Custos dos Serviços Prestados (grp-2.1)
-    const costAccs = accounts.filter(a => a.parentId === 'grp-2.1' && a.isAnalytical);
+    // 3. Custos dos Serviços Prestados (grp-2 ou grp-2.1)
+    const costAccs = accounts.filter(a => 
+      (a.parentId === 'grp-2.1' || a.parentId === 'grp-2' || a.nature === 'CUSTO_SERVICO' || (a.code && a.code.startsWith('2'))) && 
+      a.isAnalytical
+    );
     const costLines: DRELineItem[] = costAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-3',
-        parentHeaderId: 'h-3',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-3', 'h-3', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const costValues = sumArrays(costLines.map(l => l.valuesByMonth));
-    const costTotal = costValues.reduce((a, b) => a + b, 0);
+    const costCompValues = sumArrays(costLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const costCompTotal = costLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const costCashValues = sumArrays(costLines.map(l => l.cashValuesByMonth || []));
+    const costCashTotal = costLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    // (=) Lucro Bruto = Receita Líquida - Custos
-    const grossProfitValues = subtractArrays(netRevValues, costValues);
-    const grossProfitTotal = grossProfitValues.reduce((a, b) => a + b, 0);
+    // (=) Lucro Bruto
+    const grossProfitCompValues = subtractArrays(netRevCompValues, costCompValues);
+    const grossProfitCompTotal = Math.round((netRevCompTotal - costCompTotal) * 100) / 100;
+    const grossProfitCashValues = subtractArrays(netRevCashValues, costCashValues);
+    const grossProfitCashTotal = Math.round((netRevCashTotal - costCashTotal) * 100) / 100;
 
     // 4. Despesas Operacionais
     // 4.1 Despesas com Pessoal (grp-3.1)
-    const personalAccs = accounts.filter(a => a.parentId === 'grp-3.1' && a.isAnalytical);
+    const personalAccs = accounts.filter(a => 
+      (a.parentId === 'grp-3.1' || a.nature === 'DESPESA_PESSOAL' || (a.code && a.code.startsWith('3.1'))) && 
+      a.isAnalytical
+    );
     const personalLines: DRELineItem[] = personalAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-4',
-        parentHeaderId: 'h-4.1',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const personalValues = sumArrays(personalLines.map(l => l.valuesByMonth));
+    const personalCompValues = sumArrays(personalLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const personalCompTotal = personalLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const personalCashValues = sumArrays(personalLines.map(l => l.cashValuesByMonth || []));
+    const personalCashTotal = personalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
     // 4.2 Despesas Administrativas (grp-3.2)
-    const adminAccs = accounts.filter(a => a.parentId === 'grp-3.2' && a.isAnalytical);
+    const adminAccs = accounts.filter(a => 
+      (a.parentId === 'grp-3.2' || a.nature === 'DESPESA_ADMINISTRATIVA' || (a.code && a.code.startsWith('3.2'))) && 
+      a.isAnalytical
+    );
     const adminLines: DRELineItem[] = adminAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-4',
-        parentHeaderId: 'h-4.2',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const adminValues = sumArrays(adminLines.map(l => l.valuesByMonth));
+    const adminCompValues = sumArrays(adminLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const adminCompTotal = adminLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const adminCashValues = sumArrays(adminLines.map(l => l.cashValuesByMonth || []));
+    const adminCashTotal = adminLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
     // 4.3 Despesas Comerciais (grp-3.3)
-    const commAccs = accounts.filter(a => a.parentId === 'grp-3.3' && a.isAnalytical);
+    const commAccs = accounts.filter(a => 
+      (a.parentId === 'grp-3.3' || a.nature === 'DESPESA_COMERCIAL' || (a.code && a.code.startsWith('3.3'))) && 
+      a.isAnalytical
+    );
     const commLines: DRELineItem[] = commAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return {
-        id: acc.id,
-        name: acc.name,
-        code: acc.code,
-        level: 2,
-        groupId: 'h-4',
-        parentHeaderId: 'h-4.3',
-        valuesByMonth: monthly,
-        totalYear: total,
-        matchedTitleIds: titleIds
-      };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.3', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const commValues = sumArrays(commLines.map(l => l.valuesByMonth));
+    const commCompValues = sumArrays(commLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const commCompTotal = commLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const commCashValues = sumArrays(commLines.map(l => l.cashValuesByMonth || []));
+    const commCashTotal = commLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
     // Total Despesas Operacionais
-    const opExpValues = sumArrays([personalValues, adminValues, commValues]);
-    const opExpTotal = opExpValues.reduce((a, b) => a + b, 0);
+    const opExpCompValues = sumArrays([personalCompValues, adminCompValues, commCompValues]);
+    const opExpCompTotal = Math.round((personalCompTotal + adminCompTotal + commCompTotal) * 100) / 100;
+    const opExpCashValues = sumArrays([personalCashValues, adminCashValues, commCashValues]);
+    const opExpCashTotal = Math.round((personalCashTotal + adminCashTotal + commCashTotal) * 100) / 100;
 
-    // (=) Resultado Operacional (EBITDA/LAJIR) = Lucro Bruto - Despesas Operacionais
-    const opResultValues = subtractArrays(grossProfitValues, opExpValues);
-    const opResultTotal = opResultValues.reduce((a, b) => a + b, 0);
+    // (=) Resultado Operacional (EBITDA/LAJIR)
+    const opResultCompValues = subtractArrays(grossProfitCompValues, opExpCompValues);
+    const opResultCompTotal = Math.round((grossProfitCompTotal - opExpCompTotal) * 100) / 100;
+    const opResultCashValues = subtractArrays(grossProfitCashValues, opExpCashValues);
+    const opResultCashTotal = Math.round((grossProfitCashTotal - opExpCashTotal) * 100) / 100;
 
-    // 5. Resultado Financeiro (grp-4.1 Receitas - grp-4.2 Despesas)
-    const finRevAccs = accounts.filter(a => a.parentId === 'grp-4.1' && a.isAnalytical);
+    // 5. Resultado Financeiro
+    const finRevAccs = accounts.filter(a => 
+      (a.parentId === 'grp-4.1' || a.nature === 'RECEITA_FINANCEIRA' || (a.code && a.code.startsWith('4.1'))) && 
+      a.isAnalytical
+    );
     const finRevLines = finRevAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-5', parentHeaderId: 'h-5.1', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-5', 'h-5.1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const finRevValues = sumArrays(finRevLines.map(l => l.valuesByMonth));
+    const finRevCompValues = sumArrays(finRevLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const finRevCompTotal = finRevLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const finRevCashValues = sumArrays(finRevLines.map(l => l.cashValuesByMonth || []));
+    const finRevCashTotal = finRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    const finExpAccs = accounts.filter(a => a.parentId === 'grp-4.2' && a.isAnalytical);
+    const finExpAccs = accounts.filter(a => 
+      (a.parentId === 'grp-4.2' || a.nature === 'DESPESA_FINANCEIRA' || (a.code && a.code.startsWith('4.2'))) && 
+      a.isAnalytical
+    );
     const finExpLines = finExpAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-5', parentHeaderId: 'h-5.2', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-5', 'h-5.2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const finExpValues = sumArrays(finExpLines.map(l => l.valuesByMonth));
+    const finExpCompValues = sumArrays(finExpLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const finExpCompTotal = finExpLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const finExpCashValues = sumArrays(finExpLines.map(l => l.cashValuesByMonth || []));
+    const finExpCashTotal = finExpLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    const netFinValues = subtractArrays(finRevValues, finExpValues);
-    const netFinTotal = netFinValues.reduce((a, b) => a + b, 0);
+    const netFinCompValues = subtractArrays(finRevCompValues, finExpCompValues);
+    const netFinCompTotal = Math.round((finRevCompTotal - finExpCompTotal) * 100) / 100;
+    const netFinCashValues = subtractArrays(finRevCashValues, finExpCashValues);
+    const netFinCashTotal = Math.round((finRevCashTotal - finExpCashTotal) * 100) / 100;
 
     // (=) Resultado Antes dos Tributos (LAIR)
-    const resultBeforeTaxes = opResultValues.map((v, i) => Math.round((v + netFinValues[i]) * 100) / 100);
-    const resultBeforeTaxesTotal = resultBeforeTaxes.reduce((a, b) => a + b, 0);
+    const resultBeforeTaxesComp = opResultCompValues.map((v, i) => Math.round((v + netFinCompValues[i]) * 100) / 100);
+    const resultBeforeTaxesCompTotal = Math.round((opResultCompTotal + netFinCompTotal) * 100) / 100;
+    const resultBeforeTaxesCash = opResultCashValues.map((v, i) => Math.round((v + netFinCashValues[i]) * 100) / 100);
+    const resultBeforeTaxesCashTotal = Math.round((opResultCashTotal + netFinCashTotal) * 100) / 100;
 
     // 6. Tributos sobre o Lucro (grp-5)
-    const taxAccs = accounts.filter(a => a.parentId === 'grp-5' && a.isAnalytical);
+    const taxAccs = accounts.filter(a => 
+      (a.parentId === 'grp-5' || a.nature === 'TRIBUTO_LUCRO' || (a.code && a.code.startsWith('5'))) && 
+      a.isAnalytical
+    );
     const taxLines = taxAccs.map(acc => {
-      const { monthly, total, titleIds } = getValuesForAccount(acc.id);
-      return { id: acc.id, name: acc.name, code: acc.code, level: 2, groupId: 'h-6', parentHeaderId: 'h-6', valuesByMonth: monthly, totalYear: total, matchedTitleIds: titleIds };
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-6', 'h-6', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const taxValues = sumArrays(taxLines.map(l => l.valuesByMonth));
-    const taxTotal = taxValues.reduce((a, b) => a + b, 0);
+    const taxCompValues = sumArrays(taxLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const taxCompTotal = taxLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const taxCashValues = sumArrays(taxLines.map(l => l.cashValuesByMonth || []));
+    const taxCashTotal = taxLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
     // (=) Resultado Líquido Gerencial
-    const netResultValues = subtractArrays(resultBeforeTaxes, taxValues);
-    const netResultTotal = netResultValues.reduce((a, b) => a + b, 0);
+    const netResultCompValues = subtractArrays(resultBeforeTaxesComp, taxCompValues);
+    const netResultCompTotal = Math.round((resultBeforeTaxesCompTotal - taxCompTotal) * 100) / 100;
+    const netResultCashValues = subtractArrays(resultBeforeTaxesCash, taxCashValues);
+    const netResultCashTotal = Math.round((resultBeforeTaxesCashTotal - taxCashTotal) * 100) / 100;
 
-    // Assemble hierarchical lines structure
+    // Montagem hierárquica das linhas oficiais da DRE
     const lines: DRELineItem[] = [
       // 1. Receita Bruta
-      { 
-        id: 'h-1', 
-        name: 'RECEITA BRUTA DE SERVIÇOS', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-1', 
-        valuesByMonth: grossRevValues, 
-        totalYear: grossRevTotal,
-        matchedTitleIds: grossRevLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      createDRELine(
+        'h-1',
+        'RECEITA BRUTA DE SERVIÇOS',
+        undefined,
+        0,
+        'h-1',
+        undefined,
+        grossRevCompValues,
+        grossRevCompTotal,
+        grossRevCashValues,
+        grossRevCashTotal,
+        grossRevLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...grossRevLines,
 
       // 2. Deduções
-      { 
-        id: 'h-2', 
-        name: '(-) Deduções e Tributos sobre Faturamento', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-2', 
-        valuesByMonth: deducValues, 
-        totalYear: deducTotal,
-        matchedTitleIds: deducLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      createDRELine(
+        'h-2',
+        '(-) Deduções e Tributos sobre Faturamento',
+        undefined,
+        0,
+        'h-2',
+        undefined,
+        deducCompValues,
+        deducCompTotal,
+        deducCashValues,
+        deducCashTotal,
+        deducLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...deducLines,
 
       // Summary Receita Líquida
-      { id: 's-net-rev', name: '(=) RECEITA LÍQUIDA', level: 0, isSummary: true, valuesByMonth: netRevValues, totalYear: netRevTotal },
+      createDRELine(
+        's-net-rev',
+        '(=) RECEITA LÍQUIDA',
+        undefined,
+        0,
+        'h-1',
+        undefined,
+        netRevCompValues,
+        netRevCompTotal,
+        netRevCashValues,
+        netRevCashTotal,
+        undefined,
+        false,
+        true
+      ),
 
-      // 3. Custos
-      { 
-        id: 'h-3', 
-        name: '(-) Custos dos Serviços Prestados', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-3', 
-        valuesByMonth: costValues, 
-        totalYear: costTotal,
-        matchedTitleIds: costLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      // 3. Custos dos Serviços Prestados
+      createDRELine(
+        'h-3',
+        '(-) Custos dos Serviços Prestados',
+        undefined,
+        0,
+        'h-3',
+        undefined,
+        costCompValues,
+        costCompTotal,
+        costCashValues,
+        costCashTotal,
+        costLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...costLines,
 
       // Summary Lucro Bruto
-      { id: 's-gross-profit', name: '(=) LUCRO BRUTO', level: 0, isSummary: true, valuesByMonth: grossProfitValues, totalYear: grossProfitTotal },
+      createDRELine(
+        's-gross-profit',
+        '(=) LUCRO BRUTO',
+        undefined,
+        0,
+        'h-3',
+        undefined,
+        grossProfitCompValues,
+        grossProfitCompTotal,
+        grossProfitCashValues,
+        grossProfitCashTotal,
+        undefined,
+        false,
+        true
+      ),
 
       // 4. Despesas Operacionais
-      { 
-        id: 'h-4', 
-        name: '(-) Despesas Operacionais', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-4', 
-        valuesByMonth: opExpValues, 
-        totalYear: opExpTotal,
-        matchedTitleIds: [...personalLines, ...adminLines, ...commLines].flatMap(l => l.matchedTitleIds || [])
-      },
-      { 
-        id: 'h-4.1', 
-        name: 'Despesas com Pessoal', 
-        level: 1, 
-        isHeader: true, 
-        groupId: 'h-4', 
-        parentHeaderId: 'h-4', 
-        valuesByMonth: personalValues, 
-        totalYear: personalValues.reduce((a, b) => a + b, 0),
-        matchedTitleIds: personalLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      createDRELine(
+        'h-4',
+        '(-) Despesas Operacionais',
+        undefined,
+        0,
+        'h-4',
+        undefined,
+        opExpCompValues,
+        opExpCompTotal,
+        opExpCashValues,
+        opExpCashTotal,
+        [...personalLines, ...adminLines, ...commLines].flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
+      createDRELine(
+        'h-4.1',
+        'Despesas com Pessoal',
+        undefined,
+        1,
+        'h-4',
+        'h-4',
+        personalCompValues,
+        personalCompTotal,
+        personalCashValues,
+        personalCashTotal,
+        personalLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...personalLines,
-      { 
-        id: 'h-4.2', 
-        name: 'Despesas Administrativas', 
-        level: 1, 
-        isHeader: true, 
-        groupId: 'h-4', 
-        parentHeaderId: 'h-4', 
-        valuesByMonth: adminValues, 
-        totalYear: adminValues.reduce((a, b) => a + b, 0),
-        matchedTitleIds: adminLines.flatMap(l => l.matchedTitleIds || [])
-      },
+
+      createDRELine(
+        'h-4.2',
+        'Despesas Administrativas',
+        undefined,
+        1,
+        'h-4',
+        'h-4',
+        adminCompValues,
+        adminCompTotal,
+        adminCashValues,
+        adminCashTotal,
+        adminLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...adminLines,
-      { 
-        id: 'h-4.3', 
-        name: 'Despesas Comerciais', 
-        level: 1, 
-        isHeader: true, 
-        groupId: 'h-4', 
-        parentHeaderId: 'h-4', 
-        valuesByMonth: commValues, 
-        totalYear: commValues.reduce((a, b) => a + b, 0),
-        matchedTitleIds: commLines.flatMap(l => l.matchedTitleIds || [])
-      },
+
+      createDRELine(
+        'h-4.3',
+        'Despesas Comerciais',
+        undefined,
+        1,
+        'h-4',
+        'h-4',
+        commCompValues,
+        commCompTotal,
+        commCashValues,
+        commCashTotal,
+        commLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...commLines,
 
       // Summary Resultado Operacional
-      { id: 's-op-result', name: '(=) RESULTADO OPERACIONAL', level: 0, isSummary: true, valuesByMonth: opResultValues, totalYear: opResultTotal },
+      createDRELine(
+        's-op-result',
+        '(=) RESULTADO OPERACIONAL (EBITDA/LAJIDA)',
+        undefined,
+        0,
+        'h-4',
+        undefined,
+        opResultCompValues,
+        opResultCompTotal,
+        opResultCashValues,
+        opResultCashTotal,
+        undefined,
+        false,
+        true
+      ),
 
       // 5. Resultado Financeiro
-      { 
-        id: 'h-5', 
-        name: '(+/-) Resultado Financeiro', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-5', 
-        valuesByMonth: netFinValues, 
-        totalYear: netFinTotal,
-        matchedTitleIds: [...finRevLines, ...finExpLines].flatMap(l => l.matchedTitleIds || [])
-      },
-      { 
-        id: 'h-5.1', 
-        name: '(+) Receitas Financeiras', 
-        level: 1, 
-        isHeader: true, 
-        groupId: 'h-5', 
-        parentHeaderId: 'h-5', 
-        valuesByMonth: finRevValues, 
-        totalYear: finRevValues.reduce((a, b) => a + b, 0),
-        matchedTitleIds: finRevLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      createDRELine(
+        'h-5',
+        '(+/-) Resultado Financeiro Líquido',
+        undefined,
+        0,
+        'h-5',
+        undefined,
+        netFinCompValues,
+        netFinCompTotal,
+        netFinCashValues,
+        netFinCashTotal,
+        [...finRevLines, ...finExpLines].flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
+      createDRELine(
+        'h-5.1',
+        '(+) Receitas Financeiras',
+        undefined,
+        1,
+        'h-5',
+        'h-5',
+        finRevCompValues,
+        finRevCompTotal,
+        finRevCashValues,
+        finRevCashTotal,
+        finRevLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...finRevLines,
-      { 
-        id: 'h-5.2', 
-        name: '(-) Despesas Financeiras', 
-        level: 1, 
-        isHeader: true, 
-        groupId: 'h-5', 
-        parentHeaderId: 'h-5', 
-        valuesByMonth: finExpValues, 
-        totalYear: finExpValues.reduce((a, b) => a + b, 0),
-        matchedTitleIds: finExpLines.flatMap(l => l.matchedTitleIds || [])
-      },
+
+      createDRELine(
+        'h-5.2',
+        '(-) Despesas Financeiras',
+        undefined,
+        1,
+        'h-5',
+        'h-5',
+        finExpCompValues,
+        finExpCompTotal,
+        finExpCashValues,
+        finExpCashTotal,
+        finExpLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...finExpLines,
 
       // Summary LAIR
-      { id: 's-lair', name: '(=) RESULTADO ANTES DOS TRIBUTOS', level: 0, isSummary: true, valuesByMonth: resultBeforeTaxes, totalYear: resultBeforeTaxesTotal },
+      createDRELine(
+        's-lair',
+        '(=) RESULTADO ANTES DOS TRIBUTOS (LAIR)',
+        undefined,
+        0,
+        'h-5',
+        undefined,
+        resultBeforeTaxesComp,
+        resultBeforeTaxesCompTotal,
+        resultBeforeTaxesCash,
+        resultBeforeTaxesCashTotal,
+        undefined,
+        false,
+        true
+      ),
 
       // 6. Tributos sobre Lucro
-      { 
-        id: 'h-6', 
-        name: '(-) Tributos sobre o Lucro', 
-        level: 0, 
-        isHeader: true, 
-        groupId: 'h-6', 
-        valuesByMonth: taxValues, 
-        totalYear: taxTotal,
-        matchedTitleIds: taxLines.flatMap(l => l.matchedTitleIds || [])
-      },
+      createDRELine(
+        'h-6',
+        '(-) Tributos sobre o Lucro',
+        undefined,
+        0,
+        'h-6',
+        undefined,
+        taxCompValues,
+        taxCompTotal,
+        taxCashValues,
+        taxCashTotal,
+        taxLines.flatMap(l => l.matchedTitleIds || []),
+        true
+      ),
       ...taxLines,
 
       // Final Summary
-      { id: 's-final', name: '(=) RESULTADO LÍQUIDO GERENCIAL', level: 0, isSummary: true, valuesByMonth: netResultValues, totalYear: netResultTotal }
+      createDRELine(
+        's-final',
+        '(=) RESULTADO LÍQUIDO GERENCIAL',
+        undefined,
+        0,
+        's-final',
+        undefined,
+        netResultCompValues,
+        netResultCompTotal,
+        netResultCashValues,
+        netResultCashTotal,
+        undefined,
+        false,
+        true
+      )
     ];
+
+    const activeNetResults = regime === 'CAIXA' ? netResultCashValues : netResultCompValues;
+    const activeTotalNetResult = regime === 'CAIXA' ? netResultCashTotal : netResultCompTotal;
 
     return {
       months,
       lines,
-      netResults: netResultValues,
-      totalNetResult: netResultTotal
+      netResults: activeNetResults,
+      totalNetResult: activeTotalNetResult,
+      regime,
+      cashNetResults: netResultCashValues,
+      totalCashNetResult: netResultCashTotal
     };
+  }
+
+  /**
+   * Atalho para gerar a DRE gerencial pelo regime de Caixa (efetivação financeira)
+   */
+  public static generateDREByCash(year: number): DREMatrix {
+    return this.generateDRE(year, 'CAIXA');
+  }
+
+  /**
+   * Atalho para gerar a DRE gerencial comparativa (Caixa vs Competência lado a lado)
+   */
+  public static generateDREComparison(year: number): DREMatrix {
+    return this.generateDRE(year, 'COMPARATIVO');
   }
 
   /**
