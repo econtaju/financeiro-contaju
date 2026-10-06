@@ -419,28 +419,38 @@ export const ReportsView: React.FC = () => {
 
             <div className="overflow-x-auto max-h-[500px]">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-300 text-slate-700 font-semibold text-[11px]">
+                <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-20 border-b border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-[11px]">
                   <tr>
-                    <th className="py-2.5 px-4 min-w-[220px]">Estrutura de Contas</th>
+                    <th className="py-2.5 px-3 sm:px-4 min-w-[145px] max-w-[170px] sm:min-w-[220px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 border-r border-slate-300 dark:border-slate-700 shadow-sm">
+                      Estrutura de Contas
+                    </th>
                     {dreData.months.map(m => (
                       <th key={m} className="py-2.5 px-3 text-right font-mono min-w-[90px]">{m}</th>
                     ))}
-                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 font-bold">Total Ano</th>
+                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 dark:bg-slate-700/60 font-bold">Total Ano</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {dreData.lines.map(line => {
                     const isHeader = line.isHeader;
                     const isSummary = line.isSummary;
                     const indentClass = line.level === 1 ? 'pl-7' : line.level === 2 ? 'pl-11' : 'pl-4';
 
-                    let rowStyle = 'hover:bg-slate-50/80';
-                    if (isHeader) rowStyle = 'bg-slate-50 font-bold text-slate-900';
-                    if (isSummary) rowStyle = 'bg-amber-500/10 font-bold text-slate-900 border-t border-b border-amber-500/30';
+                    let rowStyle = 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50';
+                    let stickyBg = 'bg-white dark:bg-[#121620] text-slate-900 dark:text-slate-100';
+
+                    if (isHeader) {
+                      rowStyle = 'bg-slate-50 dark:bg-slate-800/80 font-bold text-slate-900 dark:text-white';
+                      stickyBg = 'bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white';
+                    }
+                    if (isSummary) {
+                      rowStyle = 'bg-amber-500/10 font-bold text-slate-900 dark:text-amber-300 border-t border-b border-amber-500/30';
+                      stickyBg = 'bg-amber-100 dark:bg-[#201c14] font-bold text-amber-950 dark:text-amber-300';
+                    }
 
                     return (
                       <tr key={line.id} className={rowStyle}>
-                        <td className={`py-2 px-4 ${indentClass}`}>
+                        <td className={`py-2 px-3 sm:px-4 min-w-[145px] max-w-[170px] sm:min-w-[220px] sticky left-0 z-10 border-r border-slate-300 dark:border-slate-700 shadow-sm ${stickyBg} ${indentClass}`}>
                           {line.code && <span className="text-[10px] font-mono text-slate-500 mr-1.5">{line.code}</span>}
                           <span>{line.name}</span>
                         </td>
@@ -579,28 +589,38 @@ export const ReportsView: React.FC = () => {
 
             <div className="overflow-x-auto max-h-[500px]">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-300 text-slate-700 font-semibold text-[11px]">
+                <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-20 border-b border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-[11px]">
                   <tr>
-                    <th className="py-2.5 px-4 min-w-[220px]">Item do Fluxo de Caixa</th>
+                    <th className="py-2.5 px-3 sm:px-4 min-w-[145px] max-w-[170px] sm:min-w-[220px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 border-r border-slate-300 dark:border-slate-700 shadow-sm">
+                      Item do Fluxo de Caixa
+                    </th>
                     {cashFlowData.months.map(m => (
                       <th key={m} className="py-2.5 px-3 text-right font-mono min-w-[90px]">{m}</th>
                     ))}
-                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 font-bold">Total Ano</th>
+                    <th className="py-2.5 px-4 text-right font-mono min-w-[110px] bg-slate-200/60 dark:bg-slate-700/60 font-bold">Total Ano</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {cashFlowData.lines.map(line => {
                     const isHeader = line.isHeader;
                     const isSummary = line.isSummary;
                     const indentClass = line.level === 1 ? 'pl-7' : line.level === 2 ? 'pl-11' : 'pl-4';
 
-                    let rowStyle = 'hover:bg-slate-50/80';
-                    if (isHeader) rowStyle = 'bg-slate-50 font-bold text-slate-900';
-                    if (isSummary) rowStyle = 'bg-amber-500/10 font-bold text-slate-900 border-t border-b border-amber-500/30';
+                    let rowStyle = 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50';
+                    let stickyBg = 'bg-white dark:bg-[#121620] text-slate-900 dark:text-slate-100';
+
+                    if (isHeader) {
+                      rowStyle = 'bg-slate-50 dark:bg-slate-800/80 font-bold text-slate-900 dark:text-white';
+                      stickyBg = 'bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white';
+                    }
+                    if (isSummary) {
+                      rowStyle = 'bg-amber-500/10 font-bold text-slate-900 dark:text-amber-300 border-t border-b border-amber-500/30';
+                      stickyBg = 'bg-amber-100 dark:bg-[#201c14] font-bold text-amber-950 dark:text-amber-300';
+                    }
 
                     return (
                       <tr key={line.id} className={rowStyle}>
-                        <td className={`py-2 px-4 ${indentClass}`}>
+                        <td className={`py-2 px-3 sm:px-4 min-w-[145px] max-w-[170px] sm:min-w-[220px] sticky left-0 z-10 border-r border-slate-300 dark:border-slate-700 shadow-sm ${stickyBg} ${indentClass}`}>
                           <span>{line.name}</span>
                         </td>
                         {line.valuesByMonth.map((val, idx) => (

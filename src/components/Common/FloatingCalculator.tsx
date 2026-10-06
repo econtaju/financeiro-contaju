@@ -228,7 +228,7 @@ export const FloatingCalculator: React.FC<FloatingCalculatorProps> = ({
       <div 
         ref={containerRef}
         style={inlineStyle}
-        className={`fixed z-40 select-none ${isCustomPos ? '' : 'bottom-5 right-5'}`}
+        className={`fixed z-40 select-none ${isCustomPos ? '' : 'bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-5 right-3 sm:right-5'}`}
         title="Calculadora Minimizada - Clique para abrir ou arraste para reposicionar (Alt+C)"
       >
         <div 
@@ -314,8 +314,8 @@ export const FloatingCalculator: React.FC<FloatingCalculatorProps> = ({
     <div 
       ref={containerRef}
       style={inlineStyle}
-      className={`fixed z-50 w-80 rounded-2xl bg-slate-900/95 dark:bg-[#121620]/95 text-white border border-slate-700/80 shadow-2xl shadow-black/70 backdrop-blur-xl overflow-hidden flex flex-col select-none ${
-        isCustomPos ? '' : 'bottom-5 right-5'
+      className={`fixed z-50 w-[calc(100vw-24px)] max-w-xs sm:w-80 rounded-2xl bg-slate-900/95 dark:bg-[#121620]/95 text-white border border-slate-700/80 shadow-2xl shadow-black/70 backdrop-blur-xl overflow-hidden flex flex-col select-none ${
+        isCustomPos ? '' : 'bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-5 right-3 sm:right-5'
       }`}
     >
       {/* Top Window Bar (arrastável pelo cabeçalho) */}

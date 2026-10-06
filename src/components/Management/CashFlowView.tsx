@@ -31,7 +31,7 @@ import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { storage } from '../../services/storageService';
 
-export type CashFlowTimeHorizon = 'ANO' | 'SEMESTRE' | 'TRIMESTRE';
+export type CashFlowTimeHorizon = 'ANO' | 'SEMESTRE' | 'TRIMESTRE' | 'MES';
 
 export interface CashFlowViewProps {
   isFocusMode?: boolean;
@@ -45,13 +45,17 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
   const [mode, setMode] = useState<'REALIZADO' | 'PROJETADO' | 'COMBINADO'>('REALIZADO');
   const [pdfToast, setPdfToast] = useState<string | null>(null);
 
+  // Modo de visualização: Consolidado (apenas grupos sintéticos e saldos) vs Analítico (detalhado)
+  const [viewMode, setViewMode] = useState<'CONSOLIDADO' | 'ANALITICO'>('CONSOLIDADO');
+
   // Filtro de Segregação: Todos os Fluxos / Apenas Atividades de Caixa da Empresa / Apenas Distribuição de Lucros
   const [flowFilter, setFlowFilter] = useState<'TODOS' | 'ATIVIDADES_REAIS' | 'DISTRIBUICAO_LUCROS'>('TODOS');
 
-  // Filtros de prazo solicitados: Ano (12 meses), Semestre ou Trimestre
+  // Filtros de prazo solicitados: Ano (12 meses), Semestre, Trimestre ou Mês
   const [timeHorizon, setTimeHorizon] = useState<CashFlowTimeHorizon>('ANO');
   const [selectedSemester, setSelectedSemester] = useState<1 | 2>(1);
   const [selectedQuarter, setSelectedQuarter] = useState<1 | 2 | 3 | 4>(1);
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
 
   const effectiveYear = period.active ? period.year : selectedYear;
   // Note: mode can be passed directly. If COMBINADO, map to CONSOLIDADO in ReportingEngine
@@ -61,6 +65,9 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
   // Definição dos meses ativos de acordo com o filtro de horizonte de tempo
   const activeMonthIndices = useMemo(() => {
+    if (timeHorizon === 'MES') {
+      return [selectedMonth];
+    }
     if (timeHorizon === 'ANO') {
       return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     }
@@ -72,19 +79,21 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     if (selectedQuarter === 2) return [3, 4, 5];
     if (selectedQuarter === 3) return [6, 7, 8];
     return [9, 10, 11];
-  }, [timeHorizon, selectedSemester, selectedQuarter]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth]);
 
   const horizonLabel = useMemo(() => {
+    if (timeHorizon === 'MES') return `${cashData.months[selectedMonth]}/${effectiveYear}`;
     if (timeHorizon === 'ANO') return `Ano Completo (${effectiveYear}) - 12 Meses`;
     if (timeHorizon === 'SEMESTRE') return `${selectedSemester}º Semestre de ${effectiveYear}`;
     return `${selectedQuarter}º Trimestre (${selectedQuarter}T) de ${effectiveYear}`;
-  }, [timeHorizon, selectedSemester, selectedQuarter, effectiveYear]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, effectiveYear, cashData.months]);
 
   const totalColLabel = useMemo(() => {
+    if (timeHorizon === 'MES') return `Total ${cashData.months[selectedMonth]}`;
     if (timeHorizon === 'ANO') return 'Total Exercício';
     if (timeHorizon === 'SEMESTRE') return `Total ${selectedSemester}º Sem.`;
     return `Total ${selectedQuarter}º Trim.`;
-  }, [timeHorizon, selectedSemester, selectedQuarter]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, cashData.months]);
 
   // Cálculo do total da linha para o período filtrado
   const getLinePeriodTotal = (line: CashFlowLineItem): number => {
@@ -107,11 +116,16 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
   // Linhas filtradas de acordo com a visão selecionada pelo gestor
   const displayedLines = useMemo(() => {
-    if (flowFilter === 'TODOS') return cashData.lines;
+    let lines = cashData.lines;
+
+    // Modo Consolidado exibe apenas as linhas sintéticas/estruturais e saldos
+    if (viewMode === 'CONSOLIDADO') {
+      lines = lines.filter(l => l.level === 0 || l.isSummary || l.isHeader);
+    }
 
     if (flowFilter === 'ATIVIDADES_REAIS') {
       // Oculta linhas de distribuição de lucros aos sócios
-      return cashData.lines.filter(l => 
+      return lines.filter(l => 
         l.id !== 'cf-fin-out-profit' && 
         l.id !== 'cf-profit-distribution'
       );
@@ -119,7 +133,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
     if (flowFilter === 'DISTRIBUICAO_LUCROS') {
       // Foco estrito na remuneração dos sócios e capacidade de caixa
-      return cashData.lines.filter(l => 
+      return lines.filter(l => 
         l.id === 'cf-initial' ||
         l.id === 'cf-op-net' ||
         l.id === 'cf-fin-out-loans' ||
@@ -132,8 +146,8 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       );
     }
 
-    return cashData.lines;
-  }, [cashData.lines, flowFilter]);
+    return lines;
+  }, [cashData.lines, viewMode, flowFilter]);
 
   // KPIs executivos do período selecionado com segregação precisa
   const periodKPIs = useMemo(() => {
@@ -471,10 +485,40 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
             >
               Trimestre
             </button>
+
+            {/* Opção Mês */}
+            <button
+              onClick={() => setTimeHorizon('MES')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center cursor-pointer min-h-[40px] sm:min-h-0 ${
+                timeHorizon === 'MES'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                  : 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+              }`}
+            >
+              Mês
+            </button>
           </div>
 
-          {/* Sub-filtros quando Semestre ou Trimestre está selecionado */}
-          <div className="flex items-center space-x-2">
+          {/* Sub-filtros quando Mês, Semestre ou Trimestre está selecionado */}
+          <div className="flex items-center space-x-2 overflow-x-auto scrollbar-none max-w-full">
+            {timeHorizon === 'MES' && (
+              <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs overflow-x-auto scrollbar-none">
+                {cashData.months.map((mName, mIdx) => (
+                  <button
+                    key={mIdx}
+                    onClick={() => setSelectedMonth(mIdx)}
+                    className={`px-2.5 py-1.5 min-h-[40px] sm:min-h-0 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                      selectedMonth === mIdx
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold shadow-xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {mName}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {timeHorizon === 'SEMESTRE' && (
               <div className="flex items-center space-x-1.5 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)]">
                 <button
@@ -779,6 +823,32 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
       {/* Tabela Estruturada do Fluxo de Caixa Direto */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
+        {/* Alternador Rápido Mobile: Consolidado vs Analítico com Tap Target >= 40px */}
+        <div className="p-2 sm:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)]">
+          <div className="grid grid-cols-2 p-1 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]">
+            <button
+              type="button"
+              onClick={() => setViewMode('CONSOLIDADO')}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition-all min-h-[40px] flex items-center justify-center gap-1.5 ${
+                viewMode === 'CONSOLIDADO' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Minimize2 className="w-4 h-4" />
+              Consolidado
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('ANALITICO')}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition-all min-h-[40px] flex items-center justify-center gap-1.5 ${
+                viewMode === 'ANALITICO' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Maximize2 className="w-4 h-4" />
+              Analítico
+            </button>
+          </div>
+        </div>
+
         <div className="p-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center space-x-2">
             <span className="font-bold text-[var(--text-primary)]">Matriz do Fluxo de Caixa</span>
@@ -786,16 +856,40 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
               • Exibindo {displayedLines.length} rubricas em {activeMonthIndices.length} meses ({horizonLabel})
             </span>
           </div>
-          <span className="text-[11px] text-[var(--text-secondary)] font-medium">
-            Valores expressos em Reais (R$)
-          </span>
+          {/* Seletor Segmentado Desktop: Consolidado vs Analítico */}
+          <div className="hidden sm:flex items-center bg-[var(--surface-card)] p-0.5 rounded-xl border border-[var(--border-subtle)] text-xs shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('CONSOLIDADO')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                viewMode === 'CONSOLIDADO'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              Consolidado
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('ANALITICO')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                viewMode === 'ANALITICO'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              Analítico
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto max-h-[720px]">
           <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
-            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 shadow-xs">
+            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#1a2130] border-b border-slate-300 dark:border-slate-700 shadow-xs">
               <tr className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                <th className="py-3 px-4 min-w-[320px] sticky left-0 bg-slate-100 dark:bg-slate-800 z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold">
+                <th className="py-3 px-2.5 sm:px-4 min-w-[145px] max-w-[165px] sm:min-w-[220px] sm:max-w-[260px] md:min-w-[300px] sticky left-0 bg-slate-100 dark:bg-[#1a2130] z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold shadow-sm">
                   Rubrica Financeira / Estrutura
                 </th>
 
@@ -805,7 +899,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                   return (
                     <th 
                       key={mIdx} 
-                      className="py-3 px-2 text-right min-w-[95px] border-r border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold bg-slate-100 dark:bg-slate-800"
+                      className="py-3 px-2 text-right min-w-[95px] border-r border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold bg-slate-100 dark:bg-[#1a2130]"
                     >
                       {mName}/{String(effectiveYear).substring(2)}
                     </th>
@@ -813,7 +907,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                 })}
 
                 {/* Coluna de Total do Período */}
-                <th className="py-3 px-3 text-right font-extrabold text-slate-900 dark:text-slate-100 min-w-[130px] bg-slate-100 dark:bg-slate-800 border-l-2 border-slate-300 dark:border-slate-700">
+                <th className="py-3 px-3 text-right font-extrabold text-slate-900 dark:text-slate-100 min-w-[130px] bg-slate-100 dark:bg-[#1a2130] border-l-2 border-slate-300 dark:border-slate-700">
                   {totalColLabel}
                 </th>
               </tr>
@@ -837,40 +931,40 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
                 if (isFinalBalance) {
                   rowBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs border-y-2 border-slate-400 dark:border-slate-600';
-                  stickyBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold';
+                  stickyBg = 'bg-slate-200 dark:bg-[#1a2230] text-slate-900 dark:text-white font-extrabold';
                 } else if (isCashBeforeProfit) {
                   rowBg = 'bg-emerald-500/15 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-extrabold text-xs border-y-2 border-emerald-500/40';
-                  stickyBg = 'bg-emerald-500/20 dark:bg-emerald-950/60 text-emerald-950 dark:text-emerald-100 font-extrabold';
+                  stickyBg = 'bg-emerald-100 dark:bg-[#13281e] text-emerald-950 dark:text-emerald-100 font-extrabold';
                 } else if (isProfitLine) {
                   rowBg = 'bg-purple-500/10 dark:bg-purple-950/30 font-bold text-slate-900 dark:text-slate-100 border-l-4 border-l-purple-500';
-                  stickyBg = 'bg-purple-500/15 dark:bg-purple-950/40 text-slate-900 dark:text-slate-100 font-bold';
+                  stickyBg = 'bg-purple-100 dark:bg-[#20152b] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isRealOutflowLine) {
                   rowBg = 'bg-amber-500/10 dark:bg-amber-950/20 font-bold text-slate-900 dark:text-slate-100 border-t border-b border-amber-500/30';
-                  stickyBg = 'bg-amber-500/15 dark:bg-amber-950/30 text-slate-900 dark:text-slate-100 font-bold';
+                  stickyBg = 'bg-amber-100 dark:bg-[#261f10] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isInitialBalance) {
                   rowBg = 'bg-slate-50 dark:bg-slate-800/40 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700';
-                  stickyBg = 'bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-slate-100 font-semibold';
+                  stickyBg = 'bg-slate-100 dark:bg-[#151c27] text-slate-900 dark:text-slate-100 font-semibold';
                 } else if (isHeader) {
                   rowBg = 'bg-slate-100 dark:bg-slate-800/70 font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider text-xs border-t-2 border-slate-300 dark:border-slate-700';
-                  stickyBg = 'bg-slate-100 dark:bg-slate-800/70 text-slate-900 dark:text-slate-100 font-bold';
+                  stickyBg = 'bg-slate-200 dark:bg-[#1e2738] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isSummary) {
                   rowBg = 'bg-slate-100/90 dark:bg-slate-800/60 font-bold text-slate-900 dark:text-slate-100 border-t border-b border-slate-300 dark:border-slate-700';
-                  stickyBg = 'bg-slate-100 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 font-bold';
+                  stickyBg = 'bg-slate-200 dark:bg-[#1a2230] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isNetLine) {
                   rowBg = 'bg-blue-50/80 dark:bg-blue-950/40 font-bold text-slate-900 dark:text-slate-100 border-t-2 border-b-2 border-blue-200 dark:border-blue-800/60';
-                  stickyBg = 'bg-blue-50 dark:bg-blue-950/60 text-slate-900 dark:text-slate-100 font-bold';
+                  stickyBg = 'bg-blue-100 dark:bg-[#152338] text-slate-900 dark:text-slate-100 font-bold';
                 }
 
                 return (
                   <tr key={line.id} className={`${rowBg} transition-colors`}>
                     {/* Nome da Rubrica com Recuo Hierárquico */}
                     <td 
-                      className={`py-2 px-4 sticky left-0 z-10 border-r border-slate-200 dark:border-slate-700 ${stickyBg}`}
-                      style={{ paddingLeft: `${line.level * 16 + 16}px` }}
+                      className={`py-2 px-2.5 sm:px-4 sticky left-0 z-10 border-r border-slate-200 dark:border-slate-700 shadow-sm min-w-[145px] max-w-[165px] sm:min-w-[220px] sm:max-w-[260px] md:min-w-[300px] ${stickyBg}`}
+                      style={{ paddingLeft: `${Math.min(line.level * 8 + 8, 24)}px` }}
                     >
-                      <div className="flex items-center space-x-2 truncate max-w-sm sm:max-w-md">
+                      <div className="flex items-center space-x-1.5 sm:space-x-2 truncate min-w-0">
                         {line.code && (
-                          <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                          <span className="font-mono text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">
                             {line.code}
                           </span>
                         )}

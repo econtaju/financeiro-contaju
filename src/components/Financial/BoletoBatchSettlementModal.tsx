@@ -237,38 +237,40 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
+      <div className="bg-white dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040] rounded-none sm:rounded-2xl shadow-2xl w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] max-w-4xl flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
         
-        {/* Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-[#273040] flex items-center justify-between bg-slate-50 dark:bg-[#131720]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+        {/* Header Fixo */}
+        <div className="shrink-0 p-4 sm:p-5 border-b border-slate-200 dark:border-[#273040] flex items-center justify-between bg-slate-50 dark:bg-[#131720] z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <Barcode className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Leitor e Baixa por Linha Digitável / Boleto</span>
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 truncate">
+                <span className="truncate">Leitor e Baixa por Linha Digitável</span>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">
                   Em Lote
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Cole uma ou várias linhas digitáveis para cruzar com o Contas a Pagar e baixar instantaneamente
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Cole linhas digitáveis para cruzar com o Contas a Pagar e baixar instantaneamente
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            aria-label="Fechar modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+        {/* Body Rolável */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs pb-28 sm:pb-6 scroll-smooth [scroll-padding-bottom:7rem]">
           
           {/* Caixa de Entrada da Linha Digitável */}
           <div className="space-y-2">
@@ -291,8 +293,8 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder="Cole aqui a linha digitável com pontos e espaços (ex: 34191.79001 01043.510047 91020.150008 5 98450000185000) ou apenas números..."
-              rows={3}
-              className="w-full p-3 font-mono text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#131720] text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden transition-all shadow-2xs"
+              rows={2}
+              className="w-full p-3 font-mono text-sm sm:text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#131720] text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden transition-all shadow-2xs"
             />
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               💡 Suporta leitor de código de barras óptico, relatórios de remessa bancária e múltiplos boletos colados de uma só vez.
@@ -443,7 +445,7 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
                   <select
                     value={selectedAccount}
                     onChange={(e) => setSelectedAccount(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-amber-500"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white text-sm sm:text-xs font-semibold focus:ring-2 focus:ring-amber-500"
                   >
                     {bankAccounts.filter(a => a.status === 'ATIVO').map(a => (
                       <option key={a.id} value={a.id}>
@@ -461,7 +463,7 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
                     type="date"
                     value={settlementDate}
                     onChange={(e) => setSettlementDate(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-amber-500"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white text-sm sm:text-xs font-semibold focus:ring-2 focus:ring-amber-500"
                   />
                 </div>
               </div>
@@ -478,12 +480,12 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#131720] flex items-center justify-between">
+        {/* Footer Fixo */}
+        <div className="shrink-0 sticky bottom-0 p-3 sm:p-4 border-t border-slate-200 dark:border-[#273040] bg-slate-50/95 dark:bg-[#131720]/95 backdrop-blur flex items-center justify-between gap-3 z-10 shadow-lg">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+            className="min-h-[42px] px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
           >
             Cancelar
           </button>
@@ -492,13 +494,13 @@ export const BoletoBatchSettlementModal: React.FC<BoletoBatchSettlementModalProp
             type="button"
             onClick={handleExecuteBatchSettlement}
             disabled={validSelectedBoletos.length === 0 || isProcessing}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer ${
+            className={`min-h-[42px] px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
               validSelectedBoletos.length > 0 && !isProcessing
                 ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
                 : 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
             }`}
           >
-            <Check className="w-4 h-4 stroke-[3]" />
+            <Check className="w-4 h-4 stroke-[3] shrink-0" />
             <span>
               {isProcessing
                 ? 'Processando baixas...'

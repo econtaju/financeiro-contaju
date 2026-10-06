@@ -27,7 +27,8 @@ import {
   ChevronDown,
   ChevronUp,
   Barcode,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import { FinancialTitle, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -65,7 +66,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       setStatusFilter('TODOS');
     }
   }, [initialSearch]);
-  const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO'>('ALL');
+  const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO' | 'ESTE_MES'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [counterpartyFilter, setCounterpartyFilter] = useState<string>('ALL');
   const [bankFilter, setBankFilter] = useState<string>('ALL');
@@ -395,6 +396,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           if (t.documentState === 'CANCELADO' || balance <= 0 || due !== today) return false;
         } else if (quickDateFilter === 'ESTA_SEMANA') {
           if (t.documentState === 'CANCELADO' || balance <= 0 || due < weekRange.start || due > weekRange.end) return false;
+        } else if (quickDateFilter === 'ESTE_MES') {
+          if (t.documentState === 'CANCELADO' || balance <= 0 || !due.startsWith(today.slice(0, 7))) return false;
         } else if (quickDateFilter === 'VENCIDO') {
           if (t.documentState === 'CANCELADO' || balance <= 0 || due >= today) return false;
         } else if (quickDateFilter === 'LIQUIDADO') {
@@ -754,7 +757,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         </div>
 
         {/* Abas Horizontais com Contadores em Destaque */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
           {[
             { id: 'ABERTO', label: 'Em Aberto', count: stats.openCount },
             { id: 'VENCIDO', label: 'Vencidos', count: stats.vencidosCount },
@@ -768,20 +771,49 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 setStatusFilter(tab.id as any);
                 setQuickDateFilter('ALL');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                 statusFilter === tab.id && quickDateFilter === 'ALL'
                   ? 'bg-rose-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700'
               }`}
             >
               <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                 statusFilter === tab.id && quickDateFilter === 'ALL'
                   ? 'bg-rose-800 text-white'
                   : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}>
                 {tab.count}
               </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Chips Rápidos de Data no Mobile */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
+          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0 mr-1">Prazo:</span>
+          {[
+            { id: 'ALL', label: 'Todos' },
+            { id: 'HOJE', label: 'Hoje' },
+            { id: 'ESTA_SEMANA', label: 'Esta Semana' },
+            { id: 'ESTE_MES', label: 'Este Mês' },
+          ].map(chip => (
+            <button
+              key={chip.id}
+              type="button"
+              onClick={() => {
+                setQuickDateFilter(chip.id as any);
+                if (chip.id !== 'ALL') {
+                  setStatusFilter('ABERTO');
+                }
+              }}
+              className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center whitespace-nowrap shrink-0 cursor-pointer ${
+                quickDateFilter === chip.id
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              {chip.label}
             </button>
           ))}
         </div>
@@ -1252,41 +1284,56 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         const totalSelectedBalance = selectedTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
 
         return (
-          <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white p-3.5 rounded-xl border border-rose-800 shadow-xl flex flex-wrap justify-between items-center gap-3 animate-in slide-in-from-top duration-200">
-            <div className="flex items-center space-x-3">
-              <span className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center font-bold text-xs shadow-xs">
-                {selectedIds.length}
-              </span>
-              <div>
-                <div className="font-semibold text-xs flex items-center gap-2">
-                  <span>{selectedIds.length} obrigação(ões) selecionada(s)</span>
-                  {hasClosedInSelection && (
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full inline-flex items-center gap-1 font-normal">
-                      <Lock className="w-3 h-3" /> Contém títulos em competência travada
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-rose-200">
-                  Saldo total selecionado: <strong>{formatBRL(totalSelectedBalance)}</strong>
+          <div className="fixed bottom-16 inset-x-3 z-40 sm:static sm:inset-auto bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white p-3 sm:p-3.5 rounded-2xl sm:rounded-xl border border-rose-800 shadow-2xl sm:shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 animate-in slide-in-from-bottom sm:slide-in-from-top duration-200">
+            {/* Header / Info counter */}
+            <div className="flex items-center justify-between sm:justify-start gap-3">
+              <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+                <span className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                  {selectedIds.length}
+                </span>
+                <div className="min-w-0">
+                  <div className="font-semibold text-xs flex items-center gap-1.5 flex-wrap">
+                    <span className="truncate">{selectedIds.length} obrigação(ões)</span>
+                    {hasClosedInSelection && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full inline-flex items-center gap-1 font-normal">
+                        <Lock className="w-3 h-3" /> Travada
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-rose-200 truncate">
+                    Saldo: <strong>{formatBRL(totalSelectedBalance)}</strong>
+                  </div>
                 </div>
               </div>
+
+              {/* Botão Desmarcar no mobile */}
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="sm:hidden min-h-[40px] px-3 py-1.5 text-xs text-slate-300 hover:text-white bg-white/10 active:bg-white/20 rounded-xl cursor-pointer shrink-0 font-medium flex items-center justify-center"
+              >
+                Desmarcar
+              </button>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2">
-              {/* Baixar em Lote (Melhoria 5) */}
+            {/* Ações em Lote: Primária em destaque + Secundárias em carrossel horizontal suave */}
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-nowrap pb-0.5 touch-pan-x">
+              {/* Baixar em Lote (Ação Primária com destaque e >= 44px) */}
               <button
+                type="button"
                 onClick={() => setIsBatchSettlementOpen(true)}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all flex items-center cursor-pointer"
+                className="min-h-[44px] px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center cursor-pointer shrink-0"
                 title="Liquidar e amortizar os títulos selecionados em lote"
               >
-                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                <CheckCircle2 className="w-4 h-4 mr-1.5" />
                 Baixar em Lote
               </button>
 
-              {/* Prorrogar Vencimento em Lote (Melhoria 5) */}
+              {/* Prorrogar Vencimento em Lote */}
               <button
+                type="button"
                 onClick={() => setIsBatchPostponeOpen(true)}
-                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center cursor-pointer shrink-0"
                 title="Prorrogar vencimentos dos títulos selecionados (+7, +15, +30 dias)"
               >
                 <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
@@ -1295,61 +1342,74 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
               {/* Exportar Lote */}
               <button
+                type="button"
                 onClick={handleExportSelectedExcel}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-semibold border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Exportar apenas os títulos selecionados para planilha Excel"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-emerald-400" />
-                Exportar Lote
+                Exportar
               </button>
 
+              {/* Alteração em Massa */}
               <button
+                type="button"
                 onClick={() => setIsBatchEditOpen(true)}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer shrink-0"
               >
                 <Edit3 className="w-3.5 h-3.5 mr-1.5" />
-                Alteração em Massa
+                Em Massa
               </button>
 
+              {/* Duplicar */}
               <button
+                type="button"
                 onClick={() => handleBatchDuplicate(false)}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Duplicar obrigações para a mesma competência"
               >
                 <Copy className="w-3.5 h-3.5 mr-1.5" />
                 Duplicar
               </button>
 
+              {/* Duplicar (+1 Mês) */}
               <button
+                type="button"
                 onClick={() => handleBatchDuplicate(true)}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Duplicar avançando competência e vencimento em +1 mês"
               >
                 <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-300" />
-                Duplicar (+1 Mês)
+                +1 Mês
               </button>
 
+              {/* Cancelar */}
               <button
+                type="button"
                 onClick={handleOpenBatchCancel}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center cursor-pointer shrink-0"
                 title="Alterar a situação das obrigações selecionadas para CANCELADO"
               >
                 <Ban className="w-3.5 h-3.5 mr-1 text-amber-400" />
                 Cancelar
               </button>
 
+              {/* Excluir */}
               <button
+                type="button"
                 onClick={handleOpenBatchDelete}
-                className="px-2.5 py-1.5 bg-rose-700/70 hover:bg-rose-700 text-white rounded-lg text-xs font-bold border border-rose-500/40 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-rose-700/70 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold border border-rose-500/40 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Excluir permanentemente as obrigações selecionadas do sistema"
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                 Excluir
               </button>
 
+              {/* Desmarcar desktop */}
               <button
+                type="button"
                 onClick={() => setSelectedIds([])}
-                className="px-2.5 py-1.5 text-xs text-slate-300 hover:text-white cursor-pointer"
+                className="hidden sm:inline-flex min-h-[40px] px-3 py-2 text-xs text-slate-300 hover:text-white cursor-pointer items-center shrink-0 font-medium"
               >
                 Desmarcar
               </button>
@@ -1375,7 +1435,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       </div>
 
       {/* Mobile View: Cards Expansíveis (Descrição, Data de Vencimento e Valor; clique na linha expande o restante) */}
-      <div className="block md:hidden space-y-2.5">
+      <div className={`block md:hidden space-y-2.5 ${selectedIds.length > 0 ? 'pb-28 sm:pb-0' : ''}`}>
         {sortedTitles.length === 0 ? (
           <div className="bg-white dark:bg-[#1B212D] p-8 rounded-xl border border-slate-200 dark:border-[#273040] text-center text-slate-600 dark:text-slate-300 text-xs shadow-2xs">
             Nenhuma obrigação a pagar localizada para os filtros informados.
@@ -1431,51 +1491,91 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 key={t.id}
                 className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
               >
-                {/* Linha Principal Mobile: Descrição, Data de Vencimento e Valor */}
+                {/* Linha Principal Mobile: Status, Fornecedor, Descrição, Data e Valor Imediatos */}
                 <div 
                   onClick={() => toggleExpandMobile(t.id)}
                   className="p-3.5 cursor-pointer select-none active:bg-slate-100/60 dark:active:bg-slate-800/60 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
                     
-                    {/* Checkbox + Descrição + Data de Vencimento */}
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSelectOne(t.id, e as any);
-                        }}
-                        className="pt-0.5 cursor-pointer shrink-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 cursor-pointer w-4 h-4 bg-white dark:bg-slate-800"
-                        />
+                    {/* Checkbox com Tap Target >= 40px */}
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleSelectOne(t.id, e as any);
+                      }}
+                      className="min-w-[40px] min-h-[40px] flex items-center justify-center -m-2 cursor-pointer shrink-0 pt-0.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        className="rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 cursor-pointer w-4 h-4 bg-white dark:bg-slate-800"
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {/* Badge Temporal e Categoria Imediatos */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {balance > 0 && t.documentState !== 'CANCELADO' && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isOverdue
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                              : isNearDue
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {isOverdue ? 'Vencido' : isNearDue ? 'Vence Hoje' : 'Em dia'}
+                          </span>
+                        )}
+                        {t.documentState === 'CANCELADO' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                            Cancelado
+                          </span>
+                        )}
+                        {t.settlementState === 'LIQUIDADO' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            Pago
+                          </span>
+                        )}
+                        {t.settlementState === 'PARCIAL' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            Parcial
+                          </span>
+                        )}
+                        {chartAcc && (
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
+                            • {chartAcc.name}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="min-w-0 flex-1">
-                        {/* Descrição */}
-                        <div className="font-semibold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug line-clamp-2">
-                          {t.description || 'Sem descrição'}
-                        </div>
+                      {/* Fornecedor / Favorecido em Destaque */}
+                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug truncate">
+                        {supplier?.name || supplier?.tradeName || 'Fornecedor não especificado'}
+                      </div>
 
-                        {/* Data de Vencimento */}
-                        <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                          <CalendarDays className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-                          <span>Vencimento:</span>
-                          <strong className="text-slate-800 dark:text-slate-200">{formatDateBR(t.dueDate)}</strong>
-                        </div>
+                      {/* Descrição */}
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1">
+                        {t.description || 'Sem descrição'}
+                      </div>
+
+                      {/* Data de Vencimento com Ícone */}
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                        <CalendarDays className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                        <span>Vencimento:</span>
+                        <strong className={isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-200'}>
+                          {formatDateBR(t.dueDate)}
+                        </strong>
                       </div>
                     </div>
 
                     {/* Valor em Destaque + Toggle Indicator */}
-                    <div className="text-right shrink-0 flex flex-col items-end justify-between">
-                      <div className="font-bold text-rose-600 dark:text-rose-400 text-sm sm:text-base leading-tight">
+                    <div className="text-right shrink-0 flex flex-col items-end justify-between self-stretch">
+                      <div className="font-extrabold font-mono text-rose-600 dark:text-rose-400 text-sm sm:text-base leading-tight">
                         {formatBRL(balance > 0 ? balance : t.originalAmount)}
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 font-medium">
+                      <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-auto pt-2 font-medium">
                         <span>{isExpanded ? 'recolher' : 'detalhes'}</span>
                         {isExpanded ? (
                           <ChevronUp className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
@@ -1622,36 +1722,36 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         <button
                           type="button"
                           onClick={() => setSelectedTitleForSettlement(t)}
-                          className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          className="min-h-[42px] flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          Pagar Obrigação
+                          <span>Pagar Obrigação</span>
                         </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => setSelectedTitleForEdit(t)}
-                        className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                       >
-                        <Edit3 className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        Editar
+                        <Edit3 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                        <span>Editar</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={(e) => handleDuplicateOne(t, e)}
-                        className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                         title="Duplicar obrigação"
                       >
-                        <Copy className="w-3.5 h-3.5 text-slate-600" />
-                        Duplicar
+                        <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                        <span>Duplicar</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setHistoryTitle(t)}
-                        className="p-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 rounded-lg text-xs shadow-2xs"
+                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                         title="Ver histórico de pagamentos"
                       >
                         <Eye className="w-4 h-4" />
@@ -1661,7 +1761,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         <button
                           type="button"
                           onClick={(e) => handleOpenSingleCancel(t, e)}
-                          className="p-2 bg-white border border-amber-300 hover:bg-amber-50 text-amber-600 rounded-lg text-xs shadow-2xs"
+                          className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-600/50 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                           title="Cancelar obrigação"
                         >
                           <Ban className="w-4 h-4" />
@@ -1671,7 +1771,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       <button
                         type="button"
                         onClick={(e) => handleOpenSingleDelete(t, e)}
-                        className="p-2 bg-white border border-rose-300 hover:bg-rose-50 text-rose-600 rounded-lg text-xs shadow-2xs"
+                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-600/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                         title="Excluir definitivamente"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -2074,8 +2174,12 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 Histórico da Obrigação: {historyTitle.titleNumber}
               </h2>
-              <button onClick={() => setHistoryTitle(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 cursor-pointer">
-                ✕
+              <button 
+                onClick={() => setHistoryTitle(null)} 
+                className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Fechar histórico"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -2125,7 +2229,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex justify-end">
               <button
                 onClick={() => setHistoryTitle(null)}
-                className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer"
+                className="min-h-[40px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
               >
                 Fechar
               </button>

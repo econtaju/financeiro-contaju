@@ -134,24 +134,24 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-[var(--border-subtle)] animate-in fade-in zoom-in-95 my-6 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-[var(--surface-card)] rounded-none sm:rounded-2xl shadow-2xl max-w-2xl w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-hidden border border-[var(--border-subtle)] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 my-0 sm:my-6 flex flex-col">
         
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
-          <div className="flex items-center gap-2.5">
-            <div className={`p-2 rounded-xl border ${
+        {/* Header Fixo */}
+        <div className="shrink-0 p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`p-2 rounded-xl border shrink-0 ${
               type === 'PAGAR' 
                 ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' 
                 : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
             }`}>
               {type === 'PAGAR' ? <TrendingDown className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
             </div>
-            <div>
-              <h2 className="text-base font-bold text-[var(--text-primary)]">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-[var(--text-primary)] truncate">
                 Liquidação em Lote ({type === 'PAGAR' ? 'Contas a Pagar' : 'Contas a Receber'})
               </h2>
-              <p className="text-xs text-[var(--text-secondary)]">
+              <p className="text-xs text-[var(--text-secondary)] truncate">
                 Baixar {payableTitles.length} título(s) selecionados com 1 único comando
               </p>
             </div>
@@ -159,14 +159,15 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-elevated)] cursor-pointer"
+            className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] cursor-pointer shrink-0"
+            aria-label="Fechar modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-xs">
+        {/* Content Rolável */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-xs pb-28 sm:pb-6 scroll-smooth [scroll-padding-bottom:7rem]">
 
           {successReport && (
             <div className="p-4 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-emerald-200 flex items-center gap-3">
@@ -255,7 +256,7 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
                   max={today}
                   value={settlementDate}
                   onChange={e => setSettlementDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-sm sm:text-xs text-[var(--text-primary)] font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
 
@@ -267,7 +268,7 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
                 <select
                   value={paymentMethod}
                   onChange={e => setPaymentMethod(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-sm sm:text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 >
                   <option value="PIX">⚡ PIX (Transferência Instantânea)</option>
                   <option value="TED">🏦 TED / Transferência Bancária</option>
@@ -288,7 +289,7 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
                   placeholder="Ex: Baixa quinzenal de fornecedores / lote NF"
                   value={batchNotes}
                   onChange={e => setBatchNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-sm sm:text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -334,13 +335,13 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
           </form>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
+        {/* Footer Fixo */}
+        <div className="shrink-0 sticky bottom-0 p-3 sm:p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)]/95 backdrop-blur flex justify-between items-center gap-3 z-10 shadow-lg">
           <button
             type="button"
             onClick={onClose}
             disabled={isProcessing}
-            className="px-4 py-2 bg-transparent hover:bg-[var(--surface-card)] text-[var(--text-secondary)] rounded-xl text-xs font-semibold border border-[var(--border-subtle)] transition-colors cursor-pointer"
+            className="min-h-[42px] px-4 py-2 bg-transparent hover:bg-[var(--surface-card)] text-[var(--text-secondary)] rounded-xl text-xs font-semibold border border-[var(--border-subtle)] transition-colors cursor-pointer"
           >
             Cancelar
           </button>
@@ -349,7 +350,7 @@ export const BatchSettlementModal: React.FC<BatchSettlementModalProps> = ({
             type="submit"
             form="batch-settlement-form"
             disabled={isProcessing || payableTitles.length === 0}
-            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer"
+            className="min-h-[42px] px-5 sm:px-6 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
           >
             {isProcessing ? (
               <span>Processando {payableTitles.length} Baixas...</span>

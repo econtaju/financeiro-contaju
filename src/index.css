@@ -2,6 +2,27 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility tap-target {
+  min-height: 40px;
+  min-width: 40px;
+}
+
 @layer base {
   :root {
     /* ========================================================================= */
@@ -459,7 +480,7 @@ html.light [class*="text-red-"] {
   [role="button"], 
   input[type="button"], 
   input[type="submit"] {
-    min-height: 38px;
+    min-height: 40px;
   }
 
   input[type="text"],

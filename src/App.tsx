@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, NavigationScreen } from './components/Sidebar';
+import { BottomNavBar } from './components/Common/BottomNavBar';
 import { storage } from './services/storageService';
 import { User } from './types';
 
@@ -43,6 +44,12 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<User>(storage.getCurrentUser());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
+
+  // Badges de pendências para navegação mobile
+  const titles = storage.getTitles();
+  const todayStr = new Date().toISOString().split('T')[0];
+  const overduePayablesCount = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate < todayStr).length;
+  const overdueReceivablesCount = titles.filter(t => t.type === 'RECEBER' && t.balancePrincipal > 0 && t.dueDate < todayStr).length;
 
   // Sair do Modo Foco ao pressionar a tecla ESC
   useEffect(() => {
@@ -344,7 +351,7 @@ function AppContent() {
 
         {/* Main Dynamic View Scroll Area - Full Screen Width Responsivo */}
         <main className={`flex-1 overflow-y-auto overflow-x-hidden bg-[var(--bg-app)] text-[var(--text-primary)] w-full max-w-full min-w-0 ${
-          isFocusMode ? 'p-2 sm:p-4' : 'p-2 sm:p-3 md:p-4 lg:p-5'
+          isFocusMode ? 'p-2 sm:p-4' : 'p-2 sm:p-3 md:p-4 lg:p-5 pb-20 lg:pb-5'
         }`}>
           <div className="w-full max-w-full min-w-0 space-y-4">
             {renderActiveScreen()}
@@ -435,6 +442,17 @@ function AppContent() {
         onMinimize={() => setIsCalculatorMinimized(true)}
         onClose={() => setIsCalculatorOpen(false)}
       />
+
+      {/* Barra de Navegação Inferior Mobile */}
+      {!isFocusMode && (
+        <BottomNavBar
+          currentScreen={currentScreen}
+          onNavigate={(screen) => setCurrentScreen(screen)}
+          onOpenDrawer={() => setIsMobileSidebarOpen(true)}
+          overduePayablesCount={overduePayablesCount}
+          overdueReceivablesCount={overdueReceivablesCount}
+        />
+      )}
 
     </div>
   );

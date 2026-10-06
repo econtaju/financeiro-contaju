@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BarChart3, 
   Download, 
@@ -118,9 +118,19 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
   const effectiveYear = period.active ? period.year : selectedYear;
-  const [timeHorizon, setTimeHorizon] = useState<'ANO' | 'SEMESTRE' | 'TRIMESTRE'>('ANO');
+  const [timeHorizon, setTimeHorizon] = useState<'ANO' | 'SEMESTRE' | 'TRIMESTRE' | 'MES'>('ANO');
   const [selectedSemester, setSelectedSemester] = useState<1 | 2>(1);
   const [selectedQuarter, setSelectedQuarter] = useState<1 | 2 | 3 | 4>(1);
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+
+  // Detecção de viewport mobile para desativar fitToScreen forçado em telas < 640px
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Estados de visualização:
   // 1. Expandido vs Recolhido (Recolhido exibe apenas os títulos das categorias principais e análises de resultados, sem subcategorias)
@@ -249,6 +259,9 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
   // Filtragem dos meses ativos na visualização
   const activeMonthIndices = useMemo(() => {
+    if (timeHorizon === 'MES') {
+      return [selectedMonth];
+    }
     if (timeHorizon === 'SEMESTRE') {
       return selectedSemester === 1 ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11];
     }
@@ -257,7 +270,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       return [start, start + 1, start + 2];
     }
     return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-  }, [timeHorizon, selectedSemester, selectedQuarter]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth]);
 
   // Contagem de linhas analíticas sem movimentação no período ativo (Sugestão 4)
   const hiddenZeroCount = useMemo(() => {
@@ -422,18 +435,21 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   };
 
   const isFullYear = timeHorizon === 'ANO';
+  const canFitToScreen = fitToScreen && isFullYear && !isMobile;
 
   const horizonLabel = useMemo(() => {
+    if (timeHorizon === 'MES') return `${dreData.months[selectedMonth]}/${effectiveYear}`;
     if (timeHorizon === 'SEMESTRE') return `${selectedSemester}º Semestre/${effectiveYear}`;
     if (timeHorizon === 'TRIMESTRE') return `${selectedQuarter}º Trimestre/${effectiveYear}`;
     return `Exercício Completo ${effectiveYear}`;
-  }, [timeHorizon, selectedSemester, selectedQuarter, effectiveYear]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, effectiveYear, dreData.months]);
 
   const totalColLabel = useMemo(() => {
+    if (timeHorizon === 'MES') return `Total ${dreData.months[selectedMonth]}`;
     if (timeHorizon === 'SEMESTRE') return `Total ${selectedSemester}º Sem`;
     if (timeHorizon === 'TRIMESTRE') return `Total ${selectedQuarter}º Tri`;
     return 'Total Exercício';
-  }, [timeHorizon, selectedSemester, selectedQuarter]);
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth, dreData.months]);
 
   // Totalizador da linha no período selecionado
   const getLinePeriodTotal = (line: DRELineItem) => {
@@ -717,20 +733,39 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
               Período:
             </span>
             <div className="flex items-center bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)]">
-              {(['ANO', 'SEMESTRE', 'TRIMESTRE'] as const).map(h => (
+              {(['ANO', 'SEMESTRE', 'TRIMESTRE', 'MES'] as const).map(h => (
                 <button
                   key={h}
                   onClick={() => setTimeHorizon(h)}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  className={`px-2.5 sm:px-3 py-1.5 min-h-[40px] sm:min-h-0 rounded-lg text-xs font-medium transition-colors ${
                     timeHorizon === h 
                       ? 'bg-amber-500 text-[#0f172a] font-bold shadow-xs' 
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  {h === 'ANO' ? 'Ano Completo (12 Meses Lado a Lado)' : h === 'SEMESTRE' ? 'Semestre' : 'Trimestre'}
+                  {h === 'ANO' ? 'Ano Completo (12M)' : h === 'SEMESTRE' ? 'Semestre' : h === 'TRIMESTRE' ? 'Trimestre' : 'Mês'}
                 </button>
               ))}
             </div>
+
+            {timeHorizon === 'MES' && (
+              <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs overflow-x-auto scrollbar-none max-w-full">
+                {dreData.months.map((mName, mIdx) => (
+                  <button
+                    key={mIdx}
+                    type="button"
+                    onClick={() => setSelectedMonth(mIdx)}
+                    className={`px-2.5 py-1.5 min-h-[40px] rounded-lg font-medium transition-colors shrink-0 ${
+                      selectedMonth === mIdx
+                        ? 'bg-amber-500 text-[#0f172a] font-bold shadow-xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {mName}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {timeHorizon === 'SEMESTRE' && (
               <div className="flex items-center space-x-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
@@ -911,6 +946,32 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       {/* DRE Matrix Table com Degradês, Modo Expandido/Recolhido e Visualização Anual de 12 Meses */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
         
+        {/* Alternador Rápido Mobile: Consolidado vs Analítico com Tap Target >= 40px */}
+        <div className="p-2 sm:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)]">
+          <div className="grid grid-cols-2 p-1 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]">
+            <button
+              type="button"
+              onClick={() => handleSetStructureMode('COLLAPSED')}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition-all min-h-[40px] flex items-center justify-center gap-1.5 ${
+                isCollapsed ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Minimize2 className="w-4 h-4" />
+              Consolidado
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetStructureMode('EXPANDED')}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition-all min-h-[40px] flex items-center justify-center gap-1.5 ${
+                !isCollapsed ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Maximize2 className="w-4 h-4" />
+              Analítico
+            </button>
+          </div>
+        </div>
+
         {/* Barra de Ferramentas da Matriz: Controles de Exibição, Estrutura e Densidade */}
         <div className="p-3 sm:p-3.5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -1257,16 +1318,14 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
         )}
 
         {/* Tabela do DRE com Layout Responsivo para 12 Meses Lado a Lado em Alta Legibilidade */}
-        <div className={`max-h-[760px] scrollbar-thin ${fitToScreen && isFullYear ? 'overflow-x-auto md:overflow-x-hidden' : 'overflow-x-auto'}`}>
+        <div className={`max-h-[760px] scrollbar-thin ${canFitToScreen ? 'overflow-x-auto md:overflow-x-hidden' : 'overflow-x-auto'}`}>
           <table className={`w-full text-left border-collapse ${
-            fitToScreen && isFullYear ? 'table-fixed text-xs' : 'min-w-[1020px] text-xs'
+            canFitToScreen ? 'table-fixed text-xs' : 'min-w-[1020px] text-xs'
           }`}>
             <thead className="sticky top-0 z-20 bg-slate-200/90 dark:bg-[#1a2130] border-b-2 border-slate-300 dark:border-slate-600 shadow-xs">
               <tr className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                <th className={`py-2.5 px-2.5 sm:px-3 border-r border-slate-300 dark:border-slate-700 font-black ${
-                  isFullYear 
-                    ? (fitToScreen ? 'w-[23%] sm:w-[24%] sticky left-0 z-30 bg-slate-200 dark:bg-[#1a2130]' : 'w-[240px] sticky left-0 z-30 bg-slate-200 dark:bg-[#1a2130]') 
-                    : 'min-w-[250px]'
+                <th className={`py-2.5 px-2.5 sm:px-3 border-r border-slate-300 dark:border-slate-700 font-black min-w-[140px] max-w-[165px] sm:min-w-[240px] sticky left-0 z-30 bg-slate-200 dark:bg-[#1a2130] shadow-sm ${
+                  canFitToScreen ? 'w-[23%] sm:w-[24%]' : ''
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className="truncate text-slate-900 dark:text-white font-extrabold">Estrutura / Categoria</span>
@@ -1285,9 +1344,9 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                     <th 
                       key={mIdx} 
                       className={`py-2.5 px-1 sm:px-2 text-right border-r border-slate-300 dark:border-slate-700 font-extrabold uppercase tracking-tight text-xs ${
-                        isFullYear 
-                          ? (fitToScreen ? 'w-[4.8%] sm:w-[5.1%]' : 'min-w-[70px]') 
-                          : 'min-w-[90px]'
+                        canFitToScreen 
+                          ? 'w-[4.8%] sm:w-[5.1%]' 
+                          : 'min-w-[70px]'
                       } ${
                         isEven ? 'bg-slate-100 dark:bg-[#141924]' : 'bg-slate-200/80 dark:bg-[#1a2130]'
                       }`}
@@ -1299,9 +1358,9 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
                 {/* Coluna de Total do Período */}
                 <th className={`py-2.5 px-2 text-right font-black text-amber-950 dark:text-amber-300 border-l-2 border-amber-500/50 bg-amber-500/15 dark:bg-amber-500/20 ${
-                  isFullYear 
-                    ? (fitToScreen ? 'w-[9.4%] text-xs' : 'min-w-[100px] text-xs') 
-                    : 'min-w-[115px] text-xs'
+                  canFitToScreen 
+                    ? 'w-[9.4%] text-xs' 
+                    : 'min-w-[100px] text-xs'
                 }`}>
                   <span className="block truncate">{totalColLabel}</span>
                 </th>
@@ -1310,12 +1369,12 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 {showBudgetVariance && (
                   <>
                     <th className={`py-2.5 px-2 text-right font-black text-amber-900 dark:text-amber-300 border-l border-amber-500/30 bg-amber-500/10 ${
-                      isFullYear && fitToScreen ? 'w-[7%] text-xs' : 'min-w-[90px] text-xs'
+                      canFitToScreen ? 'w-[7%] text-xs' : 'min-w-[90px] text-xs'
                     }`}>
                       <span className="block truncate">Orçado</span>
                     </th>
                     <th className={`py-2.5 px-1.5 text-right font-black text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 bg-slate-200/90 dark:bg-[#1a2130] ${
-                      isFullYear && fitToScreen ? 'w-[6.5%] text-xs' : 'min-w-[80px] text-xs'
+                      canFitToScreen ? 'w-[6.5%] text-xs' : 'min-w-[80px] text-xs'
                     }`}>
                       <span className="block truncate">Desvio %</span>
                     </th>
@@ -1325,7 +1384,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 {/* Coluna de Conciliação Caixa x Competência (Sugestão 2) */}
                 {showCashReconciliation && (
                   <th className={`py-2.5 px-1.5 text-right font-black text-amber-950 dark:text-amber-300 border-l border-amber-500/40 bg-amber-500/15 ${
-                    isFullYear && fitToScreen ? 'w-[6.2%] text-xs' : 'min-w-[75px] text-xs'
+                    canFitToScreen ? 'w-[6.2%] text-xs' : 'min-w-[75px] text-xs'
                   }`} title="Taxa de realização financeira em caixa (% liquidado dos títulos vinculados a esta rubrica)">
                     <span className="block truncate">% Caixa</span>
                   </th>
@@ -1333,8 +1392,8 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
                 {/* Análise Vertical % AV */}
                 <th className={`py-2.5 px-1.5 text-right font-black text-slate-900 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 bg-slate-200/90 dark:bg-[#1a2130] ${
-                  isFullYear 
-                    ? (fitToScreen ? 'w-[5.4%] text-xs' : 'min-w-[55px] text-xs') 
+                  canFitToScreen 
+                    ? 'w-[5.4%] text-xs' 
                     : 'min-w-[70px] text-xs'
                 }`} title="Análise Vertical: Percentual de participação da rubrica sobre a Receita Operacional Bruta">
                   <span className="block truncate">% AV</span>
@@ -1343,10 +1402,10 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 {/* Análise Horizontal % AH (Sugestão 4) */}
                 {showHorizontalAnalysis && (
                   <th className={`py-2.5 px-1.5 text-right font-black text-amber-950 dark:text-amber-300 border-l border-amber-500/40 bg-amber-500/10 ${
-                    isFullYear 
-                      ? (fitToScreen ? 'w-[5.6%] text-xs' : 'min-w-[65px] text-xs') 
+                    canFitToScreen 
+                      ? 'w-[5.6%] text-xs' 
                       : 'min-w-[75px] text-xs'
-                  }`} title="Análise Horizontal: Evolução acumulada do período (Primeiro mês ativo vs Último mês ativo)">
+                  }`} title="Análise Horizontal: Evolução acumulada do período (Primeiro mês ativo vs脱ltimo mês ativo)">
                     <span className="block truncate">% AH</span>
                   </th>
                 )}
@@ -1354,8 +1413,8 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 {/* Minigráfico de Tendência Sparkline (Sugestão 3) */}
                 {showSparklines && (
                   <th className={`py-2.5 px-1 text-center font-black text-slate-900 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 bg-slate-200/90 dark:bg-[#1a2130] ${
-                    isFullYear 
-                      ? (fitToScreen ? 'w-[5.2%] text-[10px]' : 'min-w-[55px] text-[10px]') 
+                    canFitToScreen 
+                      ? 'w-[5.2%] text-[10px]' 
                       : 'min-w-[65px] text-[10px]'
                   }`}>
                     <span className="block truncate">Tendência</span>
@@ -1391,7 +1450,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   // Cabeçalho de Grupo Principal
                   if (isRevenue || isDeduction) {
                     rowBg = 'bg-amber-50/80 dark:bg-amber-950/40 font-black text-amber-950 dark:text-amber-300 uppercase tracking-wider border-t-2 border-slate-300 dark:border-slate-700';
-                    stickyBg = 'bg-amber-50/90 dark:bg-[#171b22] text-amber-950 dark:text-amber-300';
+                    stickyBg = 'bg-amber-50 dark:bg-[#171b22] text-amber-950 dark:text-amber-300';
                     valueColor = 'text-amber-950 dark:text-amber-300 font-black';
                   } else {
                     rowBg = 'bg-slate-100 dark:bg-slate-800/80 font-black text-slate-950 dark:text-white uppercase tracking-wider border-t-2 border-slate-300 dark:border-slate-700';
@@ -1411,8 +1470,8 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   <tr key={line.id} className={`${rowBg} transition-colors`}>
                     {/* Descrição da Rubrica com Recuo Hierárquico e Botão de Expandir/Recolher */}
                     <td 
-                      className={`py-2 px-2 sm:px-2.5 sticky left-0 z-10 border-r border-slate-200 dark:border-slate-800 ${stickyBg} ${
-                        fitToScreen && isFullYear ? 'w-[23%] sm:w-[24%]' : ''
+                      className={`py-2 px-2 sm:px-2.5 sticky left-0 z-10 border-r border-slate-300 dark:border-slate-700 shadow-sm min-w-[140px] max-w-[165px] sm:min-w-[240px] ${stickyBg} ${
+                        canFitToScreen ? 'w-[23%] sm:w-[24%]' : ''
                       }`}
                       style={{ paddingLeft: isCollapsed ? '10px' : `${Math.min(line.level * 10 + 8, 28)}px` }}
                     >
@@ -1610,8 +1669,8 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
               {/* Linha Final: (=) RESULTADO LÍQUIDO DO EXERCÍCIO */}
               <tr className="bg-amber-500/15 dark:bg-amber-500/20 text-amber-950 dark:text-amber-300 font-extrabold text-xs sm:text-sm border-y-2 border-amber-500">
-                <td className={`py-2.5 px-2 sm:px-2.5 sticky left-0 bg-amber-100 dark:bg-[#1a1812] z-10 border-r border-amber-500/50 ${
-                  fitToScreen && isFullYear ? 'w-[23%] sm:w-[24%]' : ''
+                <td className={`py-2.5 px-2 sm:px-2.5 sticky left-0 bg-amber-100 dark:bg-[#1a1812] z-10 border-r border-amber-500/50 shadow-sm min-w-[140px] max-w-[165px] sm:min-w-[240px] ${
+                  canFitToScreen ? 'w-[23%] sm:w-[24%]' : ''
                 }`}>
                   <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-0">
                     <span className="font-mono text-[10px] text-black bg-amber-400 font-extrabold px-1.5 py-0.5 rounded-sm shrink-0">9</span>

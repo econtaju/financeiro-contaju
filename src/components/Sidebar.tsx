@@ -31,7 +31,8 @@ import {
   CreditCard,
   Bell,
   Database,
-  LogOut
+  LogOut,
+  X
 } from 'lucide-react';
 import { storage } from '../services/storageService';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
@@ -100,6 +101,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
   const [isPinned, setIsPinned] = useState<boolean>(false);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Desacoplamento do mobile: o drawer mobile NUNCA é minimizado
+  const isEffectiveMinimized = isMinimized && !isOpenMobile;
+
+  // Bloqueio de rolagem do body enquanto o drawer móvel estiver aberto e fechamento via Escape
+  useEffect(() => {
+    if (isOpenMobile) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onCloseMobile();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isOpenMobile, onCloseMobile]);
 
   // Auto-minimize after 15 seconds of inactivity if not pinned and not already minimized
   const resetIdleTimer = useCallback(() => {
@@ -239,7 +263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onMouseMove={resetIdleTimer}
         className={`
           fixed lg:static top-0 bottom-0 left-0 z-50 lg:z-auto
-          ${isMinimized ? 'w-20' : 'w-72 max-w-[85vw]'} 
+          w-72 sm:w-80 max-w-[85vw] ${isMinimized ? 'lg:w-20' : 'lg:w-72'} 
           bg-[var(--surface-card)] text-[var(--text-primary)] flex flex-col flex-shrink-0
           transition-all duration-300 ease-in-out border-r border-[var(--border-subtle)] select-none shadow-2xl lg:shadow-none
           ${isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -248,7 +272,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         
         {/* Office Branding & Minimize Header */}
         <div className="p-3 border-b border-[var(--border-subtle)] flex items-center justify-between min-h-[58px]">
-          {!isMinimized ? (
+          {!isEffectiveMinimized ? (
             <>
               <div className="flex items-center space-x-2.5 truncate">
                 <GoldenLionLogo size="sm" />
@@ -288,10 +312,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 <button 
                   onClick={onCloseMobile} 
-                  className="lg:hidden p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  className="lg:hidden w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] active:scale-95 transition-all cursor-pointer"
                   aria-label="Fechar menu lateral"
+                  title="Fechar menu lateral"
                 >
-                  ✕
+                  <X className="w-5 h-5 text-slate-400 hover:text-white" />
                 </button>
               </div>
             </>
@@ -299,7 +324,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="w-full flex flex-col items-center justify-center">
               <button
                 onClick={toggleMinimized}
-                className="hover:scale-105 transition-transform relative group p-0.5"
+                className="hover:scale-105 transition-transform relative group p-0.5 cursor-pointer"
                 title="Expandir menu lateral"
               >
                 <GoldenLionLogo size="sm" />
@@ -315,7 +340,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <nav className="flex-1 overflow-y-auto px-1.5 py-3 space-y-4 text-xs scrollbar-thin">
           {groups.map((group, idx) => (
             <div key={idx} className="space-y-1">
-              {!isMinimized ? (
+              {!isEffectiveMinimized ? (
                 <h3 className="px-3 text-[10px] font-semibold tracking-wider text-[var(--text-secondary)] uppercase">
                   {group.title}
                 </h3>
@@ -333,7 +358,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ].includes(currentScreen);
                   const isActive = item.id === 'CONFIGURACOES' ? isConfigScreen : currentScreen === item.id;
 
-                  if (isMinimized) {
+                  if (isEffectiveMinimized) {
                     // Minimized display: Centered Icon + Micro Label underneath
                     return (
                       <button
@@ -377,7 +402,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onCloseMobile();
                       }}
                       className={`
-                        w-full flex items-center justify-between px-3 py-2 rounded-md text-xs transition-all cursor-pointer
+                        w-full flex items-center justify-between px-3 py-2.5 min-h-[40px] rounded-lg text-xs transition-all cursor-pointer
                         ${isActive 
                           ? 'border-l-3 border-amber-600 dark:border-amber-400 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-400 font-extrabold tracking-wide shadow-2xs' 
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#19202D] hover:text-slate-900 dark:hover:text-white font-medium border-l-3 border-transparent'
@@ -408,24 +433,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               storage.logout();
               if (onLogout) onLogout();
             }}
-            className={`w-full flex items-center ${isMinimized ? 'justify-center px-1.5' : 'px-3'} py-2 rounded-xl text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer font-bold gap-2`}
+            className={`w-full flex items-center ${isEffectiveMinimized ? 'justify-center px-1.5' : 'px-3'} py-2.5 min-h-[40px] rounded-xl text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer font-bold gap-2`}
             title="Encerrar Sessão (Sair da Conta)"
           >
             <LogOut className="w-4 h-4 shrink-0 text-rose-500" />
-            {!isMinimized && <span>Sair da Conta</span>}
+            {!isEffectiveMinimized && <span>Sair da Conta</span>}
           </button>
         </div>
 
         {/* Footer Info / Toggle */}
         <div className={`p-2.5 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] flex items-center ${
-          isMinimized ? 'justify-center flex-col gap-1 text-center' : 'justify-between'
+          isEffectiveMinimized ? 'justify-center flex-col gap-1 text-center' : 'justify-between'
         }`}>
-          {!isMinimized ? (
+          {!isEffectiveMinimized ? (
             <>
               <span>v1.0.0 Gerencial</span>
               <button
                 onClick={toggleMinimized}
-                className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium p-1 rounded hover:bg-[var(--surface-elevated)]"
+                className="hidden lg:flex text-xs text-amber-400 hover:text-amber-300 items-center gap-1 font-medium p-1.5 rounded hover:bg-[var(--surface-elevated)] cursor-pointer"
                 title="Minimizar barra lateral"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -435,7 +460,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <button
               onClick={toggleMinimized}
-              className="p-1.5 rounded-lg text-amber-400 hover:bg-[var(--surface-elevated)] hover:text-amber-300 transition-colors flex items-center justify-center"
+              className="p-1.5 rounded-lg text-amber-400 hover:bg-[var(--surface-elevated)] hover:text-amber-300 transition-colors flex items-center justify-center cursor-pointer"
               title="Expandir barra lateral"
             >
               <ChevronRight className="w-4 h-4" />

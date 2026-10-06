@@ -165,11 +165,11 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex justify-between items-center h-14 sm:h-16 gap-1.5 sm:gap-3">
           
           {/* Esquerda: Menu Hamburguer Mobile + Marca Contaju */}
-          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+          <div className="flex items-center space-x-1 sm:space-x-2.5 shrink-0">
             {onOpenMobileSidebar && (
               <button
                 onClick={onOpenMobileSidebar}
-                className="lg:hidden p-1.5 sm:p-2 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] cursor-pointer"
+                className="lg:hidden w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] active:scale-95 transition-all cursor-pointer"
                 aria-label="Abrir menu de navegação"
                 title="Abrir menu lateral"
               >
@@ -177,7 +177,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1.5 sm:space-x-2">
               <GoldenLionLogo size="sm" />
               <div className="hidden xs:block sm:block">
                 <div className="flex items-center space-x-1.5">
@@ -185,22 +185,22 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">CONTAJU</span>
                   </span>
                 </div>
-                <p className="text-[10px] text-[var(--text-secondary)] truncate max-w-[100px] sm:max-w-xs">{company.tradeName}</p>
+                <p className="text-[10px] text-[var(--text-secondary)] truncate max-w-[90px] sm:max-w-xs">{company.tradeName}</p>
               </div>
             </div>
           </div>
 
           {/* Centro: Barra de Busca Global no Desktop ou Atalho Rápido no Mobile */}
-          <div className="flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-1 sm:mx-2">
+          <div className="flex-1 min-w-0 max-w-xs sm:max-w-sm md:max-w-md mx-1 sm:mx-2">
             <button
               type="button"
               onClick={() => setIsSearchModalOpen(true)}
-              className="w-full h-8 sm:h-9 flex items-center justify-between px-2.5 sm:px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] hover:border-amber-500/50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer shadow-2xs group"
+              className="w-full h-9 min-h-[38px] flex items-center justify-between px-2 sm:px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] hover:border-amber-500/50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer shadow-2xs group"
               title="Buscar clientes, contratos, faturas, serviços (Ctrl+K ou ⌘K)"
             >
-              <div className="flex items-center space-x-2 truncate">
+              <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 truncate">
                 <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500/80 group-hover:text-amber-500 transition-colors shrink-0" />
-                <span className="text-[11px] sm:text-xs truncate">Buscar lançamentos...</span>
+                <span className="text-[11px] sm:text-xs truncate">Buscar...</span>
               </div>
               <kbd className="hidden md:inline-flex items-center gap-0.5 text-[10px] font-mono font-bold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)] shrink-0">
                 <span className="text-xs">⌘</span>K
@@ -294,7 +294,7 @@ export const Header: React.FC<HeaderProps> = ({
             {onToggleCalculator && (
               <button
                 onClick={onToggleCalculator}
-                className={`h-8 sm:h-9 flex items-center justify-center px-2 sm:px-2.5 rounded-lg border transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer ${
+                className={`h-9 min-h-[38px] min-w-[38px] sm:min-h-[40px] sm:min-w-[40px] flex items-center justify-center px-2 sm:px-2.5 rounded-lg border transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer ${
                   isCalculatorOpen && !isCalculatorMinimized
                     ? 'border-amber-500 bg-amber-500/15 text-amber-400 shadow-amber-500/10'
                     : 'border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-amber-400'
@@ -308,7 +308,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Notificações com Alerta Visual */}
             <button
               onClick={() => onNavigate && onNavigate('NOTIFICACOES')}
-              className="h-8 sm:h-9 w-8 sm:w-9 flex items-center justify-center relative rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-amber-400 transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer"
+              className="h-9 w-9 min-h-[38px] min-w-[38px] sm:min-h-[40px] sm:min-w-[40px] flex items-center justify-center relative rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-amber-400 transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer"
               title="Central de Notificações e Alertas"
             >
               <Bell className="w-4 h-4" />
@@ -322,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Alternador de Tema Dark / Light RESPONSIVO */}
             <button
               onClick={toggleTheme}
-              className="h-8 sm:h-9 flex items-center justify-center px-2 sm:px-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] hover:border-amber-500/50 hover:text-amber-400 transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer"
+              className="h-9 min-h-[38px] min-w-[38px] sm:min-h-[40px] sm:min-w-[40px] flex items-center justify-center px-2 sm:px-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] hover:border-amber-500/50 hover:text-amber-400 transition-all text-xs font-semibold shadow-xs shrink-0 cursor-pointer"
               title={theme === 'dark' ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro (Leão Dourado)'}
               aria-label="Alternar tema"
             >
@@ -340,7 +340,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="relative shrink-0">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="h-8 sm:h-9 flex items-center space-x-1.5 sm:space-x-2 px-1.5 sm:px-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] transition-colors cursor-pointer"
+                className="h-9 min-h-[38px] min-w-[38px] sm:min-h-[40px] sm:min-w-[40px] flex items-center space-x-1.5 sm:space-x-2 px-1.5 sm:px-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] transition-colors cursor-pointer"
                 title="Perfil e Configurações"
               >
                 <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0">
@@ -356,7 +356,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Dropdown de Usuário com Adaptação Completa ao Tema */}
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-72 bg-[var(--surface-card)] rounded-xl shadow-2xl border border-[var(--border-subtle)] text-[var(--text-primary)] py-2 z-50 animate-in fade-in zoom-in-95">
+                <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-24px)] bg-[var(--surface-card)] rounded-xl shadow-2xl border border-[var(--border-subtle)] text-[var(--text-primary)] py-2 z-50 animate-in fade-in zoom-in-95">
                   <div className="px-3.5 py-2 border-b border-[var(--border-subtle)]">
                     <p className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">Alternar Usuário de Teste</p>
                     <p className="text-[11px] text-[var(--text-secondary)]">Valide as permissões e alçadas do sistema</p>
@@ -416,17 +416,17 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* Botão Direto de Logout / Trocar Usuário */}
+            {/* Botão Direto de Logout / Trocar Usuário (Desktop/Tablet) */}
             <button
               onClick={() => {
                 storage.logout();
                 if (onLogout) onLogout();
               }}
-              className="h-8 sm:h-9 flex items-center justify-center px-2 sm:px-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 transition-all text-xs font-bold shadow-xs shrink-0 cursor-pointer gap-1"
+              className="hidden sm:flex h-9 min-h-[40px] items-center justify-center px-2 sm:px-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 transition-all text-xs font-bold shadow-xs shrink-0 cursor-pointer gap-1"
               title="Encerrar Sessão / Trocar de Usuário"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline text-[11px]">Sair</span>
+              <span className="text-[11px]">Sair</span>
             </button>
 
           </div>

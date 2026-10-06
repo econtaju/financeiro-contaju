@@ -31,7 +31,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   MessageCircle,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -69,7 +70,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       setStatusFilter('TODOS');
     }
   }, [initialSearch]);
-  const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO'>('ALL');
+  const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO' | 'ESTE_MES'>('ALL');
+  const [isPredictiveExpandedMobile, setIsPredictiveExpandedMobile] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [counterpartyFilter, setCounterpartyFilter] = useState<string>('ALL');
   const [bankFilter, setBankFilter] = useState<string>('ALL');
@@ -401,6 +403,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           if (t.documentState === 'CANCELADO' || balance <= 0 || due !== today) return false;
         } else if (quickDateFilter === 'ESTA_SEMANA') {
           if (t.documentState === 'CANCELADO' || balance <= 0 || due < weekRange.start || due > weekRange.end) return false;
+        } else if (quickDateFilter === 'ESTE_MES') {
+          if (t.documentState === 'CANCELADO' || balance <= 0 || !due.startsWith(today.slice(0, 7))) return false;
         } else if (quickDateFilter === 'VENCIDO') {
           if (t.documentState === 'CANCELADO' || balance <= 0 || due >= today) return false;
         } else if (quickDateFilter === 'LIQUIDADO') {
@@ -745,27 +749,44 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       </div>
 
       {/* Widget Preditivo de Inadimplência & Liquidez de Caixa */}
-      <div className="bg-white dark:bg-[#1B212D] p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-[#273040] pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4" />
+      <div className="bg-white dark:bg-[#1B212D] p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 dark:border-[#273040] pb-3">
+          <div className="flex items-center justify-between sm:justify-start gap-2.5 w-full sm:w-auto">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                  <span className="truncate">Alerta Preditivo de Inadimplência</span>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                    IA
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
+                  Score histórico de pontualidade por cliente, atrasos médios e títulos em risco de caixa
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Alerta Preditivo de Inadimplência & Pontualidade</span>
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                  Inteligência Financeira
-                </span>
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Score histórico de pontualidade por cliente, atrasos médios e títulos em risco de caixa
-              </p>
-            </div>
+
+            {/* Botão de Alternância Retrátil no Mobile */}
+            <button
+              type="button"
+              onClick={() => setIsPredictiveExpandedMobile(!isPredictiveExpandedMobile)}
+              className="sm:hidden min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer shrink-0"
+              aria-label={isPredictiveExpandedMobile ? 'Recolher Alerta de Risco' : 'Ver Alerta de Risco'}
+            >
+              <span>{isPredictiveExpandedMobile ? 'Recolher' : 'Ver Risco'}</span>
+              {isPredictiveExpandedMobile ? (
+                <ChevronUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              )}
+            </button>
           </div>
 
           {/* Filtro Rápido por Grau de Risco */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <div className={`${isPredictiveExpandedMobile ? 'flex' : 'hidden sm:flex'} items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x`}>
             <span className="text-[11px] font-bold text-slate-400 mr-1 hidden sm:inline">Filtrar:</span>
             {[
               { id: 'ALL', label: 'Todos' },
@@ -777,7 +798,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 key={rf.id}
                 type="button"
                 onClick={() => setRiskFilter(rf.id as any)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                className={`min-h-[40px] sm:min-h-0 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
                   riskFilter === rf.id
                     ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -790,7 +811,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         </div>
 
         {/* 3 Blocos de Visão de Risco do Caixa */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className={`${isPredictiveExpandedMobile ? 'grid' : 'hidden sm:grid'} grid-cols-1 sm:grid-cols-3 gap-3`}>
           <div className="p-3.5 rounded-xl bg-white dark:bg-[#151D2A] border border-emerald-200 dark:border-emerald-500/30 shadow-2xs">
             <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
               <span>Recebimento Seguro (Baixo Risco)</span>
@@ -840,7 +861,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         </div>
 
         {/* Abas Horizontais com Contadores em Destaque */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
           {[
             { id: 'ABERTO', label: 'Em Aberto', count: stats.openCount },
             { id: 'VENCIDO', label: 'Vencidos', count: stats.vencidosCount },
@@ -854,20 +875,49 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 setStatusFilter(tab.id as any);
                 setQuickDateFilter('ALL');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                 statusFilter === tab.id && quickDateFilter === 'ALL'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700'
               }`}
             >
               <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                 statusFilter === tab.id && quickDateFilter === 'ALL'
                   ? 'bg-emerald-800 text-white'
                   : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}>
                 {tab.count}
               </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Chips Rápidos de Data no Mobile */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
+          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0 mr-1">Prazo:</span>
+          {[
+            { id: 'ALL', label: 'Todos' },
+            { id: 'HOJE', label: 'Hoje' },
+            { id: 'ESTA_SEMANA', label: 'Esta Semana' },
+            { id: 'ESTE_MES', label: 'Este Mês' },
+          ].map(chip => (
+            <button
+              key={chip.id}
+              type="button"
+              onClick={() => {
+                setQuickDateFilter(chip.id as any);
+                if (chip.id !== 'ALL') {
+                  setStatusFilter('ABERTO');
+                }
+              }}
+              className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center whitespace-nowrap shrink-0 cursor-pointer ${
+                quickDateFilter === chip.id
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              {chip.label}
             </button>
           ))}
         </div>
@@ -1318,41 +1368,56 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         const totalSelectedBalance = selectedTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
 
         return (
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-3.5 rounded-xl border border-amber-500/40 shadow-xl flex flex-wrap justify-between items-center gap-3 animate-in slide-in-from-top duration-200">
-            <div className="flex items-center space-x-3">
-              <span className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-xs shadow-xs">
-                {selectedIds.length}
-              </span>
-              <div>
-                <div className="font-semibold text-xs flex items-center gap-2">
-                  <span>{selectedIds.length} recebimento(s) selecionado(s)</span>
-                  {hasClosedInSelection && (
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full inline-flex items-center gap-1 font-normal">
-                      <Lock className="w-3 h-3" /> Contém títulos em competência travada
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-300">
-                  Saldo total selecionado: <strong className="text-amber-400 font-bold">{formatBRL(totalSelectedBalance)}</strong>
+          <div className="fixed bottom-16 inset-x-3 z-40 sm:static sm:inset-auto bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-3 sm:p-3.5 rounded-2xl sm:rounded-xl border border-amber-500/40 shadow-2xl sm:shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 animate-in slide-in-from-bottom sm:slide-in-from-top duration-200">
+            {/* Header / Info counter */}
+            <div className="flex items-center justify-between sm:justify-start gap-3">
+              <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+                <span className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                  {selectedIds.length}
+                </span>
+                <div className="min-w-0">
+                  <div className="font-semibold text-xs flex items-center gap-1.5 flex-wrap">
+                    <span className="truncate">{selectedIds.length} recebimento(s)</span>
+                    {hasClosedInSelection && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full inline-flex items-center gap-1 font-normal">
+                        <Lock className="w-3 h-3" /> Travada
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate">
+                    Saldo: <strong className="text-amber-400 font-bold">{formatBRL(totalSelectedBalance)}</strong>
+                  </div>
                 </div>
               </div>
+
+              {/* Botão Desmarcar no mobile */}
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="sm:hidden min-h-[40px] px-3 py-1.5 text-xs text-slate-300 hover:text-white bg-white/10 active:bg-white/20 rounded-xl cursor-pointer shrink-0 font-medium flex items-center justify-center"
+              >
+                Desmarcar
+              </button>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2">
-              {/* Baixar em Lote (Melhoria 5) */}
+            {/* Ações em Lote: Primária em destaque + Secundárias em carrossel horizontal suave */}
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-nowrap pb-0.5 touch-pan-x">
+              {/* Baixar em Lote (Ação Primária com destaque e >= 44px) */}
               <button
+                type="button"
                 onClick={() => setIsBatchSettlementOpen(true)}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all flex items-center cursor-pointer"
+                className="min-h-[44px] px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center cursor-pointer shrink-0"
                 title="Liquidar e amortizar os títulos selecionados em lote"
               >
-                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                <CheckCircle2 className="w-4 h-4 mr-1.5" />
                 Baixar em Lote
               </button>
 
-              {/* Prorrogar Vencimento em Lote (Melhoria 5) */}
+              {/* Prorrogar Vencimento em Lote */}
               <button
+                type="button"
                 onClick={() => setIsBatchPostponeOpen(true)}
-                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center cursor-pointer shrink-0"
                 title="Prorrogar vencimentos dos títulos selecionados (+7, +15, +30 dias)"
               >
                 <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
@@ -1361,61 +1426,74 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
               {/* Exportar Lote */}
               <button
+                type="button"
                 onClick={handleExportSelectedExcel}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-semibold border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Exportar apenas os títulos selecionados para planilha Excel"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-emerald-400" />
-                Exportar Lote
+                Exportar
               </button>
 
+              {/* Alteração em Massa */}
               <button
+                type="button"
                 onClick={() => setIsBatchEditOpen(true)}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white border border-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center cursor-pointer shrink-0"
               >
                 <Edit3 className="w-3.5 h-3.5 mr-1.5" />
-                Alteração em Massa
+                Em Massa
               </button>
 
+              {/* Duplicar */}
               <button
+                type="button"
                 onClick={() => handleBatchDuplicate(false)}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Duplicar lançamentos para a mesma competência"
               >
                 <Copy className="w-3.5 h-3.5 mr-1.5" />
                 Duplicar
               </button>
 
+              {/* Duplicar (+1 Mês) */}
               <button
+                type="button"
                 onClick={() => handleBatchDuplicate(true)}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-medium border border-white/20 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Duplicar avançando competência e vencimento em +1 mês"
               >
                 <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-300" />
-                Duplicar (+1 Mês)
+                +1 Mês
               </button>
 
+              {/* Cancelar */}
               <button
+                type="button"
                 onClick={handleOpenBatchCancel}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center cursor-pointer shrink-0"
                 title="Alterar a situação dos títulos selecionados para CANCELADO"
               >
                 <Ban className="w-3.5 h-3.5 mr-1 text-amber-400" />
                 Cancelar
               </button>
 
+              {/* Excluir */}
               <button
+                type="button"
                 onClick={handleOpenBatchDelete}
-                className="px-2.5 py-1.5 bg-rose-700/70 hover:bg-rose-700 text-white rounded-lg text-xs font-bold border border-rose-500/40 transition-colors flex items-center cursor-pointer"
+                className="min-h-[40px] px-3 py-2 bg-rose-700/70 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold border border-rose-500/40 transition-colors flex items-center cursor-pointer shrink-0"
                 title="Excluir permanentemente os títulos selecionados do sistema"
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                 Excluir
               </button>
 
+              {/* Desmarcar desktop */}
               <button
+                type="button"
                 onClick={() => setSelectedIds([])}
-                className="px-2.5 py-1.5 text-xs text-slate-300 hover:text-white cursor-pointer"
+                className="hidden sm:inline-flex min-h-[40px] px-3 py-2 text-xs text-slate-300 hover:text-white cursor-pointer items-center shrink-0 font-medium"
               >
                 Desmarcar
               </button>
@@ -1441,9 +1519,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       </div>
 
       {/* Mobile View: Cards Expansíveis (Descrição, Data de Vencimento e Valor; clique na linha expande o restante) */}
-      <div className="block md:hidden space-y-2.5">
+      <div className={`block md:hidden space-y-2.5 ${selectedIds.length > 0 ? 'pb-28 sm:pb-0' : ''}`}>
         {sortedTitles.length === 0 ? (
-          <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-600 text-xs shadow-2xs">
+          <div className="bg-white dark:bg-[#1B212D] p-8 rounded-xl border border-slate-200 dark:border-[#273040] text-center text-slate-600 dark:text-slate-300 text-xs shadow-2xs">
             Nenhum título a receber localizado para os filtros informados.
           </div>
         ) : (
@@ -1496,63 +1574,96 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 key={t.id}
                 className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${cardBg} ${cardBorder}`}
               >
-                {/* Linha Principal Mobile: Descrição, Data de Vencimento e Valor */}
+                {/* Linha Principal Mobile: Status, Cliente, Descrição, Data e Valor Imediatos */}
                 <div 
                   onClick={() => toggleExpandMobile(t.id)}
                   className="p-3.5 cursor-pointer select-none active:bg-slate-100/60 dark:active:bg-slate-800/60 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
                     
-                    {/* Checkbox + Descrição + Data de Vencimento */}
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSelectOne(t.id, e as any);
-                        }}
-                        className="pt-0.5 cursor-pointer shrink-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 bg-white dark:bg-slate-800"
-                        />
+                    {/* Checkbox com Tap Target >= 40px */}
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleSelectOne(t.id, e as any);
+                      }}
+                      className="min-w-[40px] min-h-[40px] flex items-center justify-center -m-2 cursor-pointer shrink-0 pt-0.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        className="rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 bg-white dark:bg-slate-800"
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {/* Badge Temporal, Categoria e Risco Imediatos */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {balance > 0 && t.documentState !== 'CANCELADO' && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isOverdue
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                              : isNearDue
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {isOverdue ? 'Vencido' : isNearDue ? 'Vence Hoje' : 'Em dia'}
+                          </span>
+                        )}
+                        {t.documentState === 'CANCELADO' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                            Cancelado
+                          </span>
+                        )}
+                        {t.settlementState === 'LIQUIDADO' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            Recebido
+                          </span>
+                        )}
+                        {t.settlementState === 'PARCIAL' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            Parcial
+                          </span>
+                        )}
+                        {portfolioRisk.customerProfiles[t.counterpartyId] && (
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${portfolioRisk.customerProfiles[t.counterpartyId].riskColorClasses.badge}`}>
+                            {portfolioRisk.customerProfiles[t.counterpartyId].riskBadgeLabel}
+                          </span>
+                        )}
+                        {chartAcc && (
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
+                            • {chartAcc.name}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="min-w-0 flex-1">
-                        {/* Descrição */}
-                        <div className="font-semibold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug line-clamp-2">
-                          {t.description || 'Sem descrição'}
-                        </div>
+                      {/* Cliente / Devedor em Destaque */}
+                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug truncate">
+                        {customer?.tradeName || customer?.name || 'Cliente não especificado'}
+                      </div>
 
-                        {/* Cliente & Badge de Risco */}
-                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">
-                            {customer?.tradeName || customer?.name || 'Cliente'}
-                          </span>
-                          {portfolioRisk.customerProfiles[t.counterpartyId] && (
-                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${portfolioRisk.customerProfiles[t.counterpartyId].riskColorClasses.badge}`}>
-                              {portfolioRisk.customerProfiles[t.counterpartyId].riskBadgeLabel}
-                            </span>
-                          )}
-                        </div>
+                      {/* Descrição */}
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1">
+                        {t.description || 'Sem descrição'}
+                      </div>
 
-                        {/* Data de Vencimento */}
-                        <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                          <CalendarDays className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-                          <span>Vencimento:</span>
-                          <strong className="text-slate-800 dark:text-slate-200">{formatDateBR(t.dueDate)}</strong>
-                        </div>
+                      {/* Data de Vencimento com Ícone */}
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                        <CalendarDays className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                        <span>Vencimento:</span>
+                        <strong className={isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-200'}>
+                          {formatDateBR(t.dueDate)}
+                        </strong>
                       </div>
                     </div>
 
                     {/* Valor em Destaque + Toggle Indicator */}
-                    <div className="text-right shrink-0 flex flex-col items-end justify-between">
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 text-sm sm:text-base leading-tight">
+                    <div className="text-right shrink-0 flex flex-col items-end justify-between self-stretch">
+                      <div className="font-extrabold font-mono text-emerald-600 dark:text-emerald-400 text-sm sm:text-base leading-tight">
                         {formatBRL(balance > 0 ? balance : t.originalAmount)}
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 font-medium">
+                      <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-auto pt-2 font-medium">
                         <span>{isExpanded ? 'recolher' : 'detalhes'}</span>
                         {isExpanded ? (
                           <ChevronUp className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
@@ -1713,9 +1824,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                               setToastMessage({ text: 'Mensagem WhatsApp copiada com sucesso!', type: 'success' });
                             }
                           }}
-                          className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] flex items-center justify-center gap-1.5 border border-emerald-300 dark:border-emerald-700 transition-colors cursor-pointer"
+                          className="w-full min-h-[40px] py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 border border-emerald-300 dark:border-emerald-700 transition-colors cursor-pointer"
                         >
-                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                           <span>Copiar Mensagem de Cobrança WhatsApp</span>
                         </button>
                       </div>
@@ -1727,36 +1838,36 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <button
                           type="button"
                           onClick={() => setSelectedTitleForSettlement(t)}
-                          className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          className="min-h-[42px] flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          Receber / Baixar
+                          <span>Receber / Baixar</span>
                         </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => setSelectedTitleForEdit(t)}
-                        className="py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                       >
-                        <Edit3 className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        Editar
+                        <Edit3 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                        <span>Editar</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={(e) => handleDuplicateOne(t, e)}
-                        className="py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                         title="Duplicar lançamento"
                       >
-                        <Copy className="w-3.5 h-3.5 text-slate-600" />
-                        Duplicar
+                        <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                        <span>Duplicar</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setHistoryTitle(t)}
-                        className="p-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 rounded-lg text-xs shadow-2xs"
+                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                         title="Ver histórico de recebimentos"
                       >
                         <Eye className="w-4 h-4" />
@@ -1766,7 +1877,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <button
                           type="button"
                           onClick={(e) => handleOpenSingleCancel(t, e)}
-                          className="p-2 bg-white border border-amber-300 hover:bg-amber-50 text-amber-600 rounded-lg text-xs shadow-2xs"
+                          className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-600/50 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                           title="Cancelar título"
                         >
                           <Ban className="w-4 h-4" />
@@ -1776,7 +1887,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       <button
                         type="button"
                         onClick={(e) => handleOpenSingleDelete(t, e)}
-                        className="p-2 bg-white border border-rose-300 hover:bg-rose-50 text-rose-600 rounded-lg text-xs shadow-2xs"
+                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-600/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
                         title="Excluir definitivamente"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -2160,51 +2271,55 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       {/* History and Settlement Details Modal */}
       {historyTitle && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-slate-50">
-              <h2 className="text-base font-semibold text-slate-900">
+          <div className="bg-white dark:bg-[#131720] rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 Histórico do Título: {historyTitle.titleNumber}
               </h2>
-              <button onClick={() => setHistoryTitle(null)} className="text-slate-400 hover:text-slate-700 p-1">
-                ✕
+              <button 
+                onClick={() => setHistoryTitle(null)} 
+                className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Fechar histórico"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 space-y-4 text-xs">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1">
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-slate-700">Valor Original:</span>
-                  <span className="font-semibold text-slate-800">{formatBRL(historyTitle.originalAmount)}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Valor Original:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">{formatBRL(historyTitle.originalAmount)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-700">Principal Baixado:</span>
-                  <span className="font-semibold text-emerald-700">{formatBRL(historyTitle.settledPrincipal)}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Principal Baixado:</span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">{formatBRL(historyTitle.settledPrincipal)}</span>
                 </div>
-                <div className="flex justify-between border-t border-slate-200 pt-1">
-                  <span className="text-slate-800 font-medium">Saldo Restante:</span>
-                  <span className="font-bold text-slate-900">{formatBRL(historyTitle.balancePrincipal)}</span>
+                <div className="flex justify-between border-t border-slate-200 dark:border-slate-800 pt-1">
+                  <span className="text-slate-800 dark:text-slate-200 font-medium">Saldo Restante:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{formatBRL(historyTitle.balancePrincipal)}</span>
                 </div>
               </div>
 
               <div>
-                <h3 className="font-bold text-slate-900 mb-2">Liquidações Realizadas</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white mb-2">Liquidações Realizadas</h3>
                 {settlements.filter(s => s.titleId === historyTitle.id).length === 0 ? (
-                  <p className="text-slate-700 p-3 bg-slate-50 rounded border border-slate-100">
+                  <p className="text-slate-700 dark:text-slate-300 p-3 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800">
                     Nenhuma baixa registrada até o momento.
                   </p>
                 ) : (
                   <div className="space-y-2">
                     {settlements.filter(s => s.titleId === historyTitle.id).map(s => (
-                      <div key={s.id} className="p-3 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
-                        <div className="flex justify-between font-semibold text-slate-800">
+                      <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+                        <div className="flex justify-between font-semibold text-slate-800 dark:text-slate-200">
                           <span>Data: {formatDateBR(s.settlementDate)}</span>
-                          <span className="text-emerald-700">+{formatBRL(s.components.netFinancialAmount)}</span>
+                          <span className="text-emerald-700 dark:text-emerald-400">+{formatBRL(s.components.netFinancialAmount)}</span>
                         </div>
-                        <div className="text-slate-600 text-[11px]">
+                        <div className="text-slate-600 dark:text-slate-400 text-[11px]">
                           Principal baixado: {formatBRL(s.components.principalSettled)} | Desc: {formatBRL(s.components.discount)} | Juros: {formatBRL(s.components.interest)} | Tarifa: {formatBRL(s.components.bankFee)}
                         </div>
                         {s.voucherRef && (
-                          <div className="text-slate-700 text-[10px]">Autenticação: {s.voucherRef}</div>
+                          <div className="text-slate-700 dark:text-slate-300 text-[10px]">Autenticação: {s.voucherRef}</div>
                         )}
                       </div>
                     ))}
@@ -2213,10 +2328,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex justify-end">
               <button
                 onClick={() => setHistoryTitle(null)}
-                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg"
+                className="min-h-[40px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
               >
                 Fechar
               </button>

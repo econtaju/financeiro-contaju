@@ -501,25 +501,25 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-4 flex flex-col max-h-[92vh]">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl max-w-4xl w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] overflow-hidden border border-slate-200 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 my-0 sm:my-4 flex flex-col">
           
-          {/* Header Superior */}
-          <div className="px-6 py-3.5 flex items-center justify-between border-b border-slate-200 bg-slate-50/80">
-            <div className="flex items-center space-x-2.5">
-              <div className={`p-2 rounded-xl text-white ${type === 'PAGAR' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+          {/* Header Superior Fixo */}
+          <div className="shrink-0 px-4 py-3 sm:px-6 sm:py-3.5 flex items-center justify-between border-b border-slate-200 bg-slate-50/90 backdrop-blur z-10">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className={`p-2 rounded-xl text-white shrink-0 ${type === 'PAGAR' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
                 {type === 'PAGAR' ? <CreditCard className="w-5 h-5" /> : <DollarSign className="w-5 h-5" />}
               </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span>{type === 'PAGAR' ? 'Lançamento de Contas a Pagar' : 'Lançamento de Contas a Receber'}</span>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate flex items-center gap-2">
+                  <span className="truncate">{type === 'PAGAR' ? 'Lançamento de Contas a Pagar' : 'Lançamento de Contas a Receber'}</span>
+                  <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
                     type === 'PAGAR' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
                   }`}>
                     {type === 'PAGAR' ? 'Saída / Custo' : 'Entrada / Receita'}
                   </span>
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-[11px] sm:text-xs text-slate-500 truncate hidden xs:block">
                   Lançamento avulso, parcelamento de compras ou contas recorrentes com Magic Board
                 </p>
               </div>
@@ -528,7 +528,8 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
             <button 
               onClick={onClose} 
               type="button"
-              className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer shrink-0"
+              aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -536,80 +537,81 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
 
           {/* Mensagem de Erro */}
           {errorMessage && (
-            <div className="mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center text-xs text-rose-800">
+            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center text-xs text-rose-800">
               <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
-          {/* Conteúdo com Scroll */}
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs">
+          {/* Formulário com Corpo Rolável e Rodapé Fixo */}
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5 text-xs pb-28 sm:pb-6 scroll-smooth [scroll-padding-bottom:7rem]">
             
             {/* TABS DE MODO DE LANÇAMENTO (MAGIC BOARD SELECTOR) */}
             <div className="bg-slate-100/80 p-1.5 rounded-xl border border-slate-200/80 grid grid-cols-3 gap-1.5">
               <button
                 type="button"
                 onClick={() => setLaunchMode('UNICO')}
-                className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
+                className={`min-h-[40px] py-2 px-1 sm:px-3 rounded-lg font-semibold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
                   launchMode === 'UNICO'
                     ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
-                <Receipt className="w-4 h-4" />
-                <span>Lançamento Único (1x)</span>
+                <Receipt className="w-4 h-4 shrink-0" />
+                <span className="text-center">Único (1x)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setLaunchMode('PARCELADO')}
-                className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
+                className={`min-h-[40px] py-2 px-1 sm:px-3 rounded-lg font-semibold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
                   launchMode === 'PARCELADO'
                     ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
-                <Layers className="w-4 h-4" />
-                <span>Compra Parcelada (Nx)</span>
+                <Layers className="w-4 h-4 shrink-0" />
+                <span className="text-center">Parcelado (Nx)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setLaunchMode('RECORRENTE')}
-                className={`py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2 ${
+                className={`min-h-[40px] py-2 px-1 sm:px-3 rounded-lg font-semibold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
                   launchMode === 'RECORRENTE'
                     ? 'bg-white text-amber-600 shadow-xs border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
-                <Repeat className="w-4 h-4" />
-                <span>Conta Recorrente Fixa</span>
+                <Repeat className="w-4 h-4 shrink-0" />
+                <span className="text-center">Recorrente</span>
               </button>
             </div>
 
             {/* Alternador de Tipo de Título (Pagar / Receber) */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center space-x-4">
+            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                 <span className="font-semibold text-slate-700">Fluxo:</span>
-                <label className="flex items-center space-x-1.5 cursor-pointer">
+                <label className="flex items-center space-x-1.5 cursor-pointer min-h-[36px] py-1">
                   <input
                     type="radio"
                     name="titleType"
                     checked={type === 'PAGAR'}
                     onChange={() => handleTypeChange('PAGAR')}
-                    className="text-rose-600 focus:ring-rose-500"
+                    className="text-rose-600 focus:ring-rose-500 cursor-pointer"
                   />
-                  <span className="font-semibold text-rose-700">Conta a Pagar (Despesa / Custo)</span>
+                  <span className="font-semibold text-rose-700">Conta a Pagar</span>
                 </label>
-                <label className="flex items-center space-x-1.5 cursor-pointer">
+                <label className="flex items-center space-x-1.5 cursor-pointer min-h-[36px] py-1">
                   <input
                     type="radio"
                     name="titleType"
                     checked={type === 'RECEBER'}
                     onChange={() => handleTypeChange('RECEBER')}
-                    className="text-emerald-600 focus:ring-emerald-500"
+                    className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                   />
-                  <span className="font-semibold text-emerald-700">Conta a Receber (Receita)</span>
+                  <span className="font-semibold text-emerald-700">Conta a Receber</span>
                 </label>
               </div>
 
@@ -688,7 +690,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                   value={baseTitleNumber}
                   onChange={(e) => setBaseTitleNumber(e.target.value)}
                   placeholder="Ex: NF-12345, BOLETO-99"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm sm:text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   required
                 />
               </div>
@@ -704,7 +706,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Ex: Licença de software Figma, Fatura de Internet Fibra, Aluguel do Escritório, Compra de computadores..."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm sm:text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 required
               />
             </div>
@@ -768,6 +770,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="number"
                         step="0.01"
                         min="0.01"
+                        inputMode="decimal"
                         value={originalAmount || ''}
                         onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
                         className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
@@ -831,6 +834,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           type="number"
                           step="0.01"
                           min="0.01"
+                          inputMode="decimal"
                           value={originalAmount || ''}
                           onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
                           className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
@@ -885,9 +889,10 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             type="number"
                             min={2}
                             max={120}
+                            inputMode="numeric"
                             value={installmentsCount}
                             onChange={(e) => setInstallmentsCount(Math.max(2, Math.min(120, parseInt(e.target.value, 10) || 2)))}
-                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
+                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-sm sm:text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
                             placeholder="Qtd (ex: 7, 14, 25...)"
                           />
                           <button
@@ -930,6 +935,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           type="number"
                           step="0.01"
                           min="0.01"
+                          inputMode="decimal"
                           value={originalAmount || ''}
                           onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
                           className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
@@ -1011,9 +1017,10 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                             type="number"
                             min={1}
                             max={120}
+                            inputMode="numeric"
                             value={recurringMonths}
                             onChange={(e) => setRecurringMonths(Math.max(1, Math.min(120, parseInt(e.target.value, 10) || 1)))}
-                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
+                            className="w-full rounded-xl border border-amber-400 px-2.5 py-1.5 text-sm sm:text-xs bg-amber-500/10 font-bold text-center text-slate-950 focus:ring-2 focus:ring-amber-500"
                             placeholder="Qtd de meses (ex: 7, 15...)"
                           />
                           <button
@@ -1226,10 +1233,11 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="number"
                         step="0.01"
                         min="0"
+                        inputMode="decimal"
                         value={settlementDiscount || ''}
                         onChange={(e) => setSettlementDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
                         placeholder="0,00"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm sm:text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
 
@@ -1241,10 +1249,11 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         type="number"
                         step="0.01"
                         min="0"
+                        inputMode="decimal"
                         value={settlementInterest || ''}
                         onChange={(e) => setSettlementInterest(Math.max(0, parseFloat(e.target.value) || 0))}
                         placeholder="0,00"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm sm:text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
 
@@ -1257,10 +1266,11 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                           type="number"
                           step="0.01"
                           min="0"
+                          inputMode="decimal"
                           value={settlementBankFee || ''}
                           onChange={(e) => setSettlementBankFee(Math.max(0, parseFloat(e.target.value) || 0))}
                           placeholder="0,00"
-                          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
+                          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm sm:text-xs bg-white focus:ring-1 focus:ring-amber-500"
                         />
                       </div>
                     )}
@@ -1274,7 +1284,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                         value={settlementVoucherRef}
                         onChange={(e) => setSettlementVoucherRef(e.target.value)}
                         placeholder="Ex: AUT-987654"
-                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-amber-500"
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm sm:text-xs bg-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
                   </div>
@@ -1383,7 +1393,7 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Detalhes opcionais sobre o lançamento, forma de pagamento, etc."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm sm:text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
               />
             </div>
 
@@ -1395,25 +1405,29 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                     Novo parceiro cadastrado rapidamente!
                   </span>
                 </div>
-                <label className="flex items-center space-x-1.5 cursor-pointer text-xs text-amber-600 font-semibold">
+                <label className="flex items-center space-x-1.5 cursor-pointer text-xs text-amber-600 font-semibold min-h-[36px]">
                   <input
                     type="checkbox"
                     checked={openCompleteAfterSave}
                     onChange={(e) => setOpenCompleteAfterSave(e.target.checked)}
-                    className="rounded text-amber-500 focus:ring-amber-500"
+                    className="rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
                   />
                   <span>Completar cadastro cadastral após salvar</span>
                 </label>
               </div>
             )}
 
-            {/* Footer com Botão de Confirmação */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-              <div className="text-xs text-slate-600">
-                <span>Total a registrar: </span>
-                <span className="font-bold text-slate-900 text-sm ml-1">
-                  {formatBRL(totalCalculatedAmount || originalAmount)}
-                </span>
+            </div>
+
+            {/* Rodapé Fixo de Ações (Sticky Footer) */}
+            <div className="shrink-0 sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 sm:p-4 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+              <div className="text-xs text-slate-600 flex items-center justify-between sm:justify-start">
+                <div>
+                  <span>Total a registrar: </span>
+                  <span className="font-bold text-slate-900 text-sm ml-1">
+                    {formatBRL(totalCalculatedAmount || originalAmount)}
+                  </span>
+                </div>
                 {calculatedItems.length > 1 && (
                   <span className="text-slate-500 ml-1.5">
                     ({calculatedItems.length} {launchMode === 'PARCELADO' ? 'parcelas' : 'meses'})
@@ -1421,23 +1435,23 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 justify-end">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="min-h-[42px] px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all flex items-center gap-2 ${
+                  className={`min-h-[42px] px-5 sm:px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer flex-1 sm:flex-none ${
                     type === 'PAGAR' 
                       ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20' 
                       : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                   }`}
                 >
-                  <PlusCircle className="w-4 h-4" />
+                  <PlusCircle className="w-4 h-4 shrink-0" />
                   <span>
                     {calculatedItems.length > 1 
                       ? `Lançar ${calculatedItems.length} Títulos (${formatBRL(totalCalculatedAmount)})`
