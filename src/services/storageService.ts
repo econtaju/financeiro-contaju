@@ -148,6 +148,14 @@ class StorageService {
       const hasKey = localStorage.getItem('contaju_supabase_anon_key') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
 
       if (isAutoSync && hasUrl && hasKey) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          // Salva na fila offline para quando a rede retornar
+          import('./offlineSyncService').then(({ OfflineSyncService }) => {
+            OfflineSyncService.enqueue('UPDATE_TITLE', { timestamp: Date.now() });
+          }).catch(() => {});
+          return;
+        }
+
         if (this.debouncedSyncTimeout) {
           clearTimeout(this.debouncedSyncTimeout);
         }

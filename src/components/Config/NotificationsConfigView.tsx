@@ -14,10 +14,14 @@ import {
   ArrowRight,
   ShieldAlert,
   Info,
-  ExternalLink
+  ExternalLink,
+  Monitor,
+  Smartphone,
+  Sparkles
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
+import { NotificationService } from '../../services/notificationService';
 import { NavigationScreen } from '../Sidebar';
 
 interface NotificationPreferences {
@@ -55,6 +59,35 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'CONTRATOS' | 'PAGAR' | 'CONCILIACAO'>('ALL');
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => NotificationService.getPermission());
+  const [isPushEnabled, setIsPushEnabled] = useState<boolean>(() => NotificationService.isEnabledByUser());
+  const [testNotificationFeedback, setTestNotificationFeedback] = useState<string | null>(null);
+
+  const handleRequestPush = async () => {
+    const res = await NotificationService.requestPermission();
+    setPushPermission(res);
+    setIsPushEnabled(res === 'granted');
+    if (res === 'granted') {
+      setTestNotificationFeedback('Notificações ativadas no seu dispositivo com sucesso!');
+      setTimeout(() => setTestNotificationFeedback(null), 4000);
+    }
+  };
+
+  const handleTestPushToday = async () => {
+    setTestNotificationFeedback('Verificando contas e enviando notificação nativa...');
+    const res = await NotificationService.checkAndNotifyDueToday(true);
+    if (res.notified) {
+      setTestNotificationFeedback(`Notificação enviada com sucesso! (${res.payablesCount} a pagar, ${res.receivablesCount} a receber hoje)`);
+    } else {
+      // Se não houver contas hoje, envia notificação de exemplo
+      await NotificationService.showNotification('Contaju: Teste de Notificação Nativa', {
+        body: 'Seu sistema está pronto para alertar sobre contas a pagar e receber vencendo no dia!',
+        tag: 'contaju-test-manual'
+      });
+      setTestNotificationFeedback('Notificação de teste disparada com sucesso!');
+    }
+    setTimeout(() => setTestNotificationFeedback(null), 5000);
+  };
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayDate = new Date();
@@ -378,6 +411,61 @@ export const NotificationsConfigView: React.FC<NotificationsConfigViewProps> = (
               </button>
             </div>
 
+          </div>
+
+          {/* Card de Notificações Push Nativas no Dispositivo / Computador */}
+          <div className="bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 border-b border-[var(--border-subtle)] pb-3">
+              <Bell className="w-4 h-4 text-amber-400" />
+              <h2 className="text-sm font-bold text-[var(--text-primary)]">
+                Notificações Nativas no Dispositivo
+              </h2>
+            </div>
+
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Receba alertas do sistema operacional no seu computador ou celular sobre contas a pagar e a receber que vencem no dia, sem depender de e-mail.
+            </p>
+
+            {testNotificationFeedback && (
+              <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs text-amber-900 dark:text-amber-200 font-medium">
+                {testNotificationFeedback}
+              </div>
+            )}
+
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)]">
+                <div>
+                  <span className="text-xs font-semibold text-[var(--text-primary)] block">Permissão do Navegador</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                    pushPermission === 'granted' ? 'text-emerald-500' : pushPermission === 'denied' ? 'text-rose-500' : 'text-amber-500'
+                  }`}>
+                    {pushPermission === 'granted' ? '● Ativada' : pushPermission === 'denied' ? '● Bloqueada' : '● Pendente'}
+                  </span>
+                </div>
+                {pushPermission !== 'granted' && (
+                  <button
+                    type="button"
+                    onClick={handleRequestPush}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs cursor-pointer shadow-xs transition-colors"
+                  >
+                    Ativar Agora
+                  </button>
+                )}
+              </div>
+
+              {pushPermission === 'granted' && (
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestPushToday}
+                    className="w-full py-2 bg-[var(--surface-elevated)] hover:bg-[var(--surface-elevated)]/80 text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Disparar Alerta de Teste Agora</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -29,6 +29,8 @@ import { useGlobalPeriod } from '../hooks/useGlobalPeriod';
 import { GlobalPeriodSelectorModal } from './Common/GlobalPeriodSelectorModal';
 import { GlobalSearchModal } from './Common/GlobalSearchModal';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
+import { PWAInstallButton } from './Common/PWAInstallButton';
+import { OfflineSyncIndicator } from './Common/OfflineSyncIndicator';
 
 interface HeaderProps {
   currentUser: User;
@@ -289,6 +291,12 @@ export const Header: React.FC<HeaderProps> = ({
                 Transferir
               </button>
             </div>
+
+            {/* Indicador de Conexão e Sincronização em Segundo Plano */}
+            <OfflineSyncIndicator />
+
+            {/* Botão de Instalação do App PWA no Desktop / Navegador */}
+            <PWAInstallButton variant="header" />
 
             {/* Calculadora Flutuante */}
             {onToggleCalculator && (

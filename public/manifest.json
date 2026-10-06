@@ -1,12 +1,18 @@
 {
   "short_name": "Contaju",
   "name": "Contaju Gestão Financeira",
-  "description": "Sistema integrado de gestão financeira, DRE gerencial, fluxo de caixa e conciliação bancária.",
+  "description": "Sistema integrado de gestão financeira empresarial, DRE gerencial, fluxo de caixa e conciliação bancária.",
   "start_url": "/",
   "id": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
+  "orientation": "any",
   "theme_color": "#0b0f19",
   "background_color": "#0b0f19",
   "categories": ["finance", "business", "productivity"],
@@ -22,6 +28,29 @@
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Contas a Pagar",
+      "short_name": "Pagar",
+      "description": "Consultar e liquidar obrigações a pagar",
+      "url": "/#pagar",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Contas a Receber",
+      "short_name": "Receber",
+      "description": "Acompanhar faturamento e cobranças",
+      "url": "/#receber",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "DRE Gerencial",
+      "short_name": "DRE",
+      "description": "Demonstração do Resultado por Competência e Caixa",
+      "url": "/#dre",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
     }
   ]
 }

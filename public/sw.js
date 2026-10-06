@@ -1,4 +1,4 @@
-const CACHE_NAME = 'contaju-pwa-v1';
+const CACHE_NAME = 'contaju-pwa-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -78,7 +78,6 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         }).catch(() => {
-          // Se for imagem, pode retornar ícone padrão
           if (req.destination === 'image') {
             return caches.match('/pwa-icon.svg');
           }
@@ -88,7 +87,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Requisições externas (fontes, APIs): Network First com fallback para cache se houver
+  // Requisições externas: Network First com fallback para cache se houver
   event.respondWith(
     fetch(req).then((networkResponse) => {
       return networkResponse;
@@ -96,4 +95,91 @@ self.addEventListener('fetch', (event) => {
       return caches.match(req);
     })
   );
+});
+
+// Suporte a Background Sync
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'contaju-sync-queue' || event.tag === 'sync-financial-queue') {
+    event.waitUntil(
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'BACKGROUND_SYNC_TRIGGERED'
+          });
+        });
+      })
+    );
+  }
+});
+
+// Suporte a Notificações Web Push
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'Contaju Gestão Financeira',
+    body: 'Atualização importante nas suas contas.',
+    icon: '/pwa-icon.svg',
+    badge: '/pwa-icon.svg',
+    tag: 'contaju-notification'
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon || '/pwa-icon.svg',
+      badge: data.badge || '/pwa-icon.svg',
+      tag: data.tag || 'contaju-notification',
+      data: data.data || { url: '/' }
+    })
+  );
+});
+
+// Clique na Notificação Nativa: Foca ou abre a janela do aplicativo
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          if (client.url.includes(self.location.origin)) {
+            client.postMessage({
+              type: 'NOTIFICATION_CLICKED',
+              target: targetUrl
+            });
+            return client.focus();
+          }
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
+// Comunicação bidirecional com a aplicação
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+
+  if (event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, options } = event.data;
+    self.registration.showNotification(title, {
+      icon: '/pwa-icon.svg',
+      badge: '/pwa-icon.svg',
+      ...options
+    });
+  }
+
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
