@@ -1,5 +1,6 @@
 import { storage } from './storageService';
 import { FinancialTitle, Settlement } from '../types';
+import { ConflictResolutionEngine } from './conflictResolutionEngine';
 
 export type OfflineActionType = 
   | 'CREATE_TITLE'
@@ -20,9 +21,10 @@ export interface OfflineQueueItem {
 export type SyncState = 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR';
 
 export interface SyncNotificationEvent {
-  type: 'SUCCESS' | 'ERROR' | 'OFFLINE_QUEUED' | 'NETWORK_RESTORED';
+  type: 'SUCCESS' | 'ERROR' | 'OFFLINE_QUEUED' | 'NETWORK_RESTORED' | 'CONFLICT_RESOLVED';
   message: string;
   count?: number;
+  conflictDetails?: any;
 }
 
 type SyncListener = (state: {
@@ -248,31 +250,95 @@ export class OfflineSyncService {
   }
 
   /**
-   * Executa uma ação específica da fila
+   * Notifica a aplicação sobre resolução de conflitos entre múltiplos dispositivos
+   */
+  public static notifyConflictResolved(message: string, count: number, details?: any): void {
+    this.lastEvent = {
+      type: 'CONFLICT_RESOLVED',
+      message,
+      count,
+      conflictDetails: details
+    };
+    this.notifyListeners();
+
+    setTimeout(() => {
+      if (this.lastEvent?.type === 'CONFLICT_RESOLVED') {
+        this.lastEvent = undefined;
+        this.notifyListeners();
+      }
+    }, 6000);
+  }
+
+  /**
+   * Executa uma ação específica da fila com resolução semântica de conflitos
    */
   private static async executeQueueItem(item: OfflineQueueItem): Promise<void> {
     switch (item.type) {
       case 'CREATE_TITLE': {
         const title: FinancialTitle = item.payload;
         const titles = storage.getTitles();
-        if (!titles.some(t => t.id === title.id)) {
+        const existing = titles.find(t => t.id === title.id);
+        if (!existing) {
           storage.saveTitles([title, ...titles]);
+        } else {
+          // Já existe: resolve possível conflito concorrente
+          const settlements = storage.getSettlements().filter(s => s.titleId === title.id);
+          const { resolved, conflictReport } = ConflictResolutionEngine.resolveTitle(existing, title, settlements);
+          const updated = titles.map(t => t.id === title.id ? resolved : t);
+          storage.saveTitles(updated);
+          if (conflictReport) {
+            this.notifyConflictResolved(
+              `Título #${resolved.titleNumber} sincronizado: conflito resolvido preservando a versão mais recente.`,
+              1,
+              conflictReport
+            );
+          }
         }
         break;
       }
       case 'UPDATE_TITLE': {
         const title: FinancialTitle = item.payload;
         const titles = storage.getTitles();
-        const updated = titles.map(t => t.id === title.id ? title : t);
-        storage.saveTitles(updated);
+        const existing = titles.find(t => t.id === title.id);
+        if (existing) {
+          const settlements = storage.getSettlements().filter(s => s.titleId === title.id);
+          const { resolved, conflictReport } = ConflictResolutionEngine.resolveTitle(existing, title, settlements);
+          const updated = titles.map(t => t.id === title.id ? resolved : t);
+          storage.saveTitles(updated);
+          if (conflictReport) {
+            this.notifyConflictResolved(
+              `Título #${resolved.titleNumber} atualizado com resolução de concorrência Last-Write-Wins.`,
+              1,
+              conflictReport
+            );
+          }
+        } else {
+          storage.saveTitles([title, ...titles]);
+        }
         break;
       }
       case 'SETTLE_TITLE': {
         const { settlement } = item.payload;
         if (settlement) {
-          const settlements = storage.getSettlements();
-          if (!settlements.some(s => s.id === settlement.id)) {
-            storage.saveSettlements([settlement, ...settlements]);
+          const currentSettlements = storage.getSettlements();
+          const { mergedSettlements } = ConflictResolutionEngine.mergeSettlements(currentSettlements, [settlement]);
+          storage.saveSettlements(mergedSettlements);
+
+          // Atualiza o saldo do título de forma atômica e consistente
+          const titles = storage.getTitles();
+          const targetTitle = titles.find(t => t.id === settlement.titleId);
+          if (targetTitle) {
+            const validSettlements = mergedSettlements.filter(s => s.titleId === targetTitle.id && !s.isReversed);
+            const totalSettled = validSettlements.reduce((sum, s) => sum + (s.components?.principalSettled || 0), 0);
+            const balance = Math.max(0, Number(((targetTitle.originalAmount || 0) - totalSettled).toFixed(2)));
+            const updatedTitle: FinancialTitle = {
+              ...targetTitle,
+              settledPrincipal: Number(totalSettled.toFixed(2)),
+              balancePrincipal: balance,
+              settlementState: balance <= 0.001 && targetTitle.originalAmount > 0 ? 'LIQUIDADO' : totalSettled > 0 ? 'PARCIAL' : targetTitle.settlementState,
+              updatedAt: new Date().toISOString()
+            };
+            storage.saveTitles(titles.map(t => t.id === updatedTitle.id ? updatedTitle : t));
           }
         }
         break;
@@ -287,7 +353,26 @@ export class OfflineSyncService {
         const { settlements } = item.payload;
         if (Array.isArray(settlements) && settlements.length > 0) {
           const currentSettlements = storage.getSettlements();
-          storage.saveSettlements([...settlements, ...currentSettlements]);
+          const { mergedSettlements } = ConflictResolutionEngine.mergeSettlements(currentSettlements, settlements);
+          storage.saveSettlements(mergedSettlements);
+
+          // Recalcula saldos de todos os títulos afetados
+          const affectedTitleIds = new Set(settlements.map(s => s.titleId));
+          const titles = storage.getTitles();
+          const updatedTitles: FinancialTitle[] = titles.map(t => {
+            if (!affectedTitleIds.has(t.id)) return t;
+            const validSettlements = mergedSettlements.filter(s => s.titleId === t.id && !s.isReversed);
+            const totalSettled = validSettlements.reduce((sum, s) => sum + (s.components?.principalSettled || 0), 0);
+            const balance = Math.max(0, Number(((t.originalAmount || 0) - totalSettled).toFixed(2)));
+            return {
+              ...t,
+              settledPrincipal: Number(totalSettled.toFixed(2)),
+              balancePrincipal: balance,
+              settlementState: balance <= 0.001 && t.originalAmount > 0 ? 'LIQUIDADO' : totalSettled > 0 ? 'PARCIAL' : t.settlementState,
+              updatedAt: new Date().toISOString()
+            };
+          });
+          storage.saveTitles(updatedTitles);
         }
         break;
       }

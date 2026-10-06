@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff, RefreshCw, CheckCircle2, AlertTriangle, X, Bell } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, CheckCircle2, AlertTriangle, X, Bell, ShieldCheck } from 'lucide-react';
 import { OfflineSyncService, SyncState, SyncNotificationEvent } from '../../services/offlineSyncService';
 import { NotificationService } from '../../services/notificationService';
 
@@ -76,6 +76,8 @@ export const OfflineSyncIndicator: React.FC = () => {
           <div className={`p-3.5 rounded-xl border shadow-xl flex items-start justify-between gap-3 backdrop-blur-md ${
             toastEvent.type === 'SUCCESS'
               ? 'bg-emerald-950/90 text-emerald-100 border-emerald-500/40'
+              : toastEvent.type === 'CONFLICT_RESOLVED'
+              ? 'bg-indigo-950/90 text-indigo-100 border-indigo-500/40'
               : toastEvent.type === 'ERROR'
               ? 'bg-rose-950/90 text-rose-100 border-rose-500/40'
               : toastEvent.type === 'NETWORK_RESTORED'
@@ -85,6 +87,9 @@ export const OfflineSyncIndicator: React.FC = () => {
             <div className="flex items-start gap-2.5 min-w-0">
               {toastEvent.type === 'SUCCESS' && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              )}
+              {toastEvent.type === 'CONFLICT_RESOLVED' && (
+                <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
               )}
               {toastEvent.type === 'ERROR' && (
                 <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
@@ -99,6 +104,7 @@ export const OfflineSyncIndicator: React.FC = () => {
               <div className="min-w-0 text-left">
                 <p className="text-xs font-bold leading-snug">
                   {toastEvent.type === 'SUCCESS' ? 'Sincronização Concluída'
+                    : toastEvent.type === 'CONFLICT_RESOLVED' ? 'Conflito Multi-Dispositivo Resolvido'
                     : toastEvent.type === 'ERROR' ? 'Aviso de Sincronização'
                     : toastEvent.type === 'NETWORK_RESTORED' ? 'Conexão Restaurada'
                     : 'Gravado Offline'}

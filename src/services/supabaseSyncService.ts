@@ -24,6 +24,8 @@ import {
   SavedCashSimulationScenario,
   ImprovementRequest
 } from '../types';
+import { ConflictResolutionEngine } from './conflictResolutionEngine';
+import { OfflineSyncService } from './offlineSyncService';
 
 export interface SyncStats {
   companies: number;
@@ -1145,20 +1147,42 @@ class SupabaseSyncService {
         stats.sales = salesData.length;
       }
 
-      // 9. Títulos Financeiros
+      // 9 e 10. Títulos Financeiros e Baixas com Resolução Automática de Conflitos (LWW + Preservação de Saldo)
       const { data: titlesData, error: titlesErr } = await client.from(CONTAJU_TABLES.TITLES).select('*');
       if (titlesErr) errors.push(`Títulos: ${titlesErr.message}`);
-      else if (titlesData && titlesData.length > 0) {
-        storage.saveTitles(titlesData.map(mapTitleFromDb));
-        stats.titles = titlesData.length;
-      }
 
-      // 10. Baixas
       const { data: settData, error: settErr } = await client.from(CONTAJU_TABLES.SETTLEMENTS).select('*');
       if (settErr) errors.push(`Liquidações: ${settErr.message}`);
-      else if (settData && settData.length > 0) {
-        storage.saveSettlements(settData.map(mapSettlementFromDb));
-        stats.settlements = settData.length;
+
+      // 1. Consolida Settlements (Baixas) primeiro, unificando registros remotos e locais
+      const remoteSettlements: Settlement[] = (settData && settData.length > 0)
+        ? settData.map(mapSettlementFromDb)
+        : [];
+      const localSettlements = storage.getSettlements();
+      const settlementMergeResult = ConflictResolutionEngine.mergeSettlements(localSettlements, remoteSettlements);
+      storage.saveSettlements(settlementMergeResult.mergedSettlements);
+      stats.settlements = settlementMergeResult.mergedSettlements.length;
+
+      // 2. Consolida Títulos Financeiros usando LWW e recalculando saldos com as baixas unificadas
+      const remoteTitles: FinancialTitle[] = (titlesData && titlesData.length > 0)
+        ? titlesData.map(mapTitleFromDb)
+        : [];
+      const localTitles = storage.getTitles();
+      const titleMergeResult = ConflictResolutionEngine.mergeTitleCollections(
+        localTitles,
+        remoteTitles,
+        settlementMergeResult.mergedSettlements
+      );
+      storage.saveTitles(titleMergeResult.mergedTitles);
+      stats.titles = titleMergeResult.mergedTitles.length;
+
+      // 3. Notifica se conflitos concorrentes foram mitigados
+      if (titleMergeResult.conflictsResolvedCount > 0) {
+        OfflineSyncService.notifyConflictResolved(
+          `${titleMergeResult.conflictsResolvedCount} conflito(s) entre dispositivos foram resolvidos automaticamente sem perda de saldo.`,
+          titleMergeResult.conflictsResolvedCount,
+          titleMergeResult.conflictReports
+        );
       }
 
       // 11. Movimentações
