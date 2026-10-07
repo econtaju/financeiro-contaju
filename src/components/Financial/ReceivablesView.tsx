@@ -46,6 +46,7 @@ import { BatchSettlementModal } from '../Modals/BatchSettlementModal';
 import { BatchPostponeModal } from '../Modals/BatchPostponeModal';
 import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
+import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { SwipeableCard } from '../Common/SwipeableCard';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
@@ -105,6 +106,15 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   }>({
     isOpen: false,
     mode: 'DELETE',
+    titles: []
+  });
+
+  // Modal de Reabertura de Recebimentos (Voltar para Em Aberto)
+  const [reopenModalState, setReopenModalState] = useState<{
+    isOpen: boolean;
+    titles: FinancialTitle[];
+  }>({
+    isOpen: false,
     titles: []
   });
 
@@ -601,6 +611,34 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       isOpen: true,
       mode: 'CANCEL',
       titles: [t]
+    });
+  };
+
+  const handleOpenSingleReopen = (t: FinancialTitle, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setReopenModalState({
+      isOpen: true,
+      titles: [t]
+    });
+  };
+
+  const handleOpenBatchReopen = () => {
+    if (selectedIds.length === 0) return;
+    const allTitles = storage.getTitles();
+    const targetTitles = allTitles.filter(t => 
+      selectedIds.includes(t.id) && 
+      (t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL')
+    );
+    if (targetTitles.length === 0) {
+      setToastMessage({
+        type: 'info',
+        text: 'Nenhum dos títulos selecionados possui recebimento para voltar a ficar em aberto.'
+      });
+      return;
+    }
+    setReopenModalState({
+      isOpen: true,
+      titles: targetTitles
     });
   };
 
@@ -1415,6 +1453,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         const selectedTitles = titles.filter(t => selectedIds.includes(t.id));
         const hasClosedInSelection = selectedTitles.some(t => FinancialEngine.isPeriodClosed(t.competence));
         const totalSelectedBalance = selectedTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
+        const settledCountInSelection = selectedTitles.filter(t => t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL').length;
 
         return (
           <div className="fixed bottom-16 inset-x-3 z-40 sm:static sm:inset-auto bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-3 sm:p-3.5 rounded-2xl sm:rounded-xl border border-amber-500/40 shadow-2xl sm:shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 animate-in slide-in-from-bottom sm:slide-in-from-top duration-200">
@@ -1461,6 +1500,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 <CheckCircle2 className="w-4 h-4 mr-1.5" />
                 Baixar em Lote
               </button>
+
+              {/* Voltar para Em Aberto em Lote */}
+              {settledCountInSelection > 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenBatchReopen}
+                  className="min-h-[44px] px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center cursor-pointer shrink-0 animate-in fade-in"
+                  title="Estornar os recebimentos e voltar os títulos selecionados para EM ABERTO"
+                >
+                  <RotateCcw className="w-4 h-4 mr-1.5" />
+                  Voltar para Aberto ({settledCountInSelection})
+                </button>
+              )}
 
               {/* Prorrogar Vencimento em Lote */}
               <button
@@ -1902,6 +1954,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         </button>
                       )}
 
+                      {/* Voltar para Aberto (quando há valor recebido/liquidado) */}
+                      {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenSingleReopen(t, e)}
+                          className="min-h-[42px] py-2.5 px-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700/60 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                          title="Estornar recebimentos e voltar este título para EM ABERTO"
+                        >
+                          <RotateCcw className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <span>Voltar Aberto</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setSelectedTitleForEdit(t)}
@@ -2286,6 +2351,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                           <Eye className="w-4 h-4" />
                         </button>
 
+                        {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                          <button
+                            onClick={(e) => handleOpenSingleReopen(t, e)}
+                            className="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
+                            title="Voltar para Em Aberto (estorna recebimentos e devolve saldo)"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        )}
+
                         {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
                           <button
                             onClick={(e) => handleOpenSingleCancel(t, e)}
@@ -2471,6 +2546,22 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         titles={confirmModalState.titles}
         onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false, titles: [] }))}
         onConfirm={handleExecuteConfirmedAction}
+      />
+
+      {/* Modal de Reabertura de Recebimento / Voltar para Em Aberto */}
+      <ConfirmReopenTitlesModal
+        isOpen={reopenModalState.isOpen}
+        titles={reopenModalState.titles}
+        type="RECEBER"
+        onClose={() => setReopenModalState({ isOpen: false, titles: [] })}
+        onConfirmed={(reopenedCount, message) => {
+          setSelectedIds([]);
+          setRefreshKey(k => k + 1);
+          setToastMessage({
+            type: 'success',
+            text: message || `${reopenedCount} recebimento(s) voltaram para EM ABERTO!`
+          });
+        }}
       />
 
       {/* In-App Toast Notification */}

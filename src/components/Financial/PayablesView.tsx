@@ -41,6 +41,7 @@ import { BatchSettlementModal } from '../Modals/BatchSettlementModal';
 import { BatchPostponeModal } from '../Modals/BatchPostponeModal';
 import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
+import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { SwipeableCard } from '../Common/SwipeableCard';
@@ -101,6 +102,15 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
   }>({
     isOpen: false,
     mode: 'DELETE',
+    titles: []
+  });
+
+  // Modal de Reabertura de Pagamentos (Voltar para Em Aberto)
+  const [reopenModalState, setReopenModalState] = useState<{
+    isOpen: boolean;
+    titles: FinancialTitle[];
+  }>({
+    isOpen: false,
     titles: []
   });
 
@@ -595,6 +605,34 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       isOpen: true,
       mode: 'CANCEL',
       titles: [t]
+    });
+  };
+
+  const handleOpenSingleReopen = (t: FinancialTitle, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setReopenModalState({
+      isOpen: true,
+      titles: [t]
+    });
+  };
+
+  const handleOpenBatchReopen = () => {
+    if (selectedIds.length === 0) return;
+    const allTitles = storage.getTitles();
+    const targetTitles = allTitles.filter(t => 
+      selectedIds.includes(t.id) && 
+      (t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL')
+    );
+    if (targetTitles.length === 0) {
+      setToastMessage({
+        type: 'info',
+        text: 'Nenhuma das obrigações selecionadas possui pagamento para voltar a ficar em aberto.'
+      });
+      return;
+    }
+    setReopenModalState({
+      isOpen: true,
+      titles: targetTitles
     });
   };
 
@@ -1331,6 +1369,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         const selectedTitles = titles.filter(t => selectedIds.includes(t.id));
         const hasClosedInSelection = selectedTitles.some(t => FinancialEngine.isPeriodClosed(t.competence));
         const totalSelectedBalance = selectedTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
+        const settledCountInSelection = selectedTitles.filter(t => t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL').length;
 
         return (
           <div className="fixed bottom-16 inset-x-3 z-40 sm:static sm:inset-auto bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white p-3 sm:p-3.5 rounded-2xl sm:rounded-xl border border-rose-800 shadow-2xl sm:shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 animate-in slide-in-from-bottom sm:slide-in-from-top duration-200">
@@ -1377,6 +1416,19 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 <CheckCircle2 className="w-4 h-4 mr-1.5" />
                 Baixar em Lote
               </button>
+
+              {/* Voltar para Em Aberto em Lote */}
+              {settledCountInSelection > 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenBatchReopen}
+                  className="min-h-[44px] px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center cursor-pointer shrink-0 animate-in fade-in"
+                  title="Estornar os pagamentos e voltar as obrigações selecionadas para EM ABERTO"
+                >
+                  <RotateCcw className="w-4 h-4 mr-1.5" />
+                  Voltar para Aberto ({settledCountInSelection})
+                </button>
+              )}
 
               {/* Prorrogar Vencimento em Lote */}
               <button
@@ -1786,6 +1838,18 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         </button>
                       )}
 
+                      {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenSingleReopen(t, e)}
+                          className="min-h-[42px] flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                          title="Voltar obrigação para EM ABERTO (Estornar pagamento)"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Voltar Aberto</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setSelectedTitleForEdit(t)}
@@ -2160,6 +2224,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                           </button>
                         )}
 
+                        {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                          <button
+                            onClick={(e) => handleOpenSingleReopen(t, e)}
+                            className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded shadow-2xs transition-colors inline-flex items-center cursor-pointer"
+                            title="Voltar obrigação para EM ABERTO (Estornar pagamento)"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                            Voltar Aberto
+                          </button>
+                        )}
+
                         <button
                           onClick={() => setSelectedTitleForEdit(t)}
                           className="p-1 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
@@ -2369,6 +2444,22 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         titles={confirmModalState.titles}
         onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false, titles: [] }))}
         onConfirm={handleExecuteConfirmedAction}
+      />
+
+      {/* Modal de Reabertura de Pagamento / Voltar para Em Aberto */}
+      <ConfirmReopenTitlesModal
+        isOpen={reopenModalState.isOpen}
+        titles={reopenModalState.titles}
+        type="PAGAR"
+        onClose={() => setReopenModalState({ isOpen: false, titles: [] })}
+        onConfirmed={(reopenedCount, message) => {
+          setSelectedIds([]);
+          setRefreshKey(k => k + 1);
+          setToastMessage({
+            type: 'success',
+            text: message || `${reopenedCount} obrigação(ões) voltaram para EM ABERTO!`
+          });
+        }}
       />
 
       {/* Leitor e Baixa de Boletos em Lote por Linha Digitável */}

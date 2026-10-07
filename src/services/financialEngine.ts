@@ -167,17 +167,23 @@ export class FinancialEngine {
       return { success: false, message: 'Data efetiva não pode ser futura. Para agendamento, utilize a data prevista.' };
     }
 
+    const discount = Number(params.discount) || 0;
+    const interest = Number(params.interest) || 0;
+    const fine = Number(params.fine) || 0;
+    const bankFee = Number(params.bankFee) || 0;
+    const principalSettled = Number(params.principalSettled) || 0;
+
     // Number validations
-    if (params.principalSettled <= 0) {
+    if (principalSettled <= 0) {
       return { success: false, message: 'O principal baixado deve ser superior a zero.' };
     }
-    if (params.discount > params.principalSettled) {
+    if (discount > principalSettled) {
       return { success: false, message: 'O desconto não pode ser superior ao principal baixado.' };
     }
-    if (params.principalSettled > title.balancePrincipal + 0.001) {
+    if (principalSettled > title.balancePrincipal + 0.001) {
       return { 
         success: false, 
-        message: `Principal baixado (${formatBRL(params.principalSettled)}) não pode exceder o saldo restante (${formatBRL(title.balancePrincipal)}).` 
+        message: `Principal baixado (${formatBRL(principalSettled)}) não pode exceder o saldo restante (${formatBRL(title.balancePrincipal)}).` 
       };
     }
 
@@ -190,13 +196,13 @@ export class FinancialEngine {
     // Net cash movement
     let netFinancialAmount = 0;
     if (title.type === 'RECEBER') {
-      netFinancialAmount = params.principalSettled - params.discount + params.interest + params.fine - params.bankFee;
+      netFinancialAmount = principalSettled - discount + interest + fine - bankFee;
     } else {
-      netFinancialAmount = params.principalSettled - params.discount + params.interest + params.fine + params.bankFee;
+      netFinancialAmount = principalSettled - discount + interest + fine + bankFee;
     }
     netFinancialAmount = Math.round(netFinancialAmount * 100) / 100;
 
-    const newSettledPrincipal = Math.round((title.settledPrincipal + params.principalSettled) * 100) / 100;
+    const newSettledPrincipal = Math.round((title.settledPrincipal + principalSettled) * 100) / 100;
     const newBalancePrincipal = Math.round((title.originalAmount - newSettledPrincipal) * 100) / 100;
     
     let newSettlementState: TitleSettlementState = 'PARCIAL';
@@ -212,11 +218,11 @@ export class FinancialEngine {
       settlementDate: params.settlementDate,
       bankAccountId: params.bankAccountId,
       components: {
-        principalSettled: params.principalSettled,
-        discount: params.discount,
-        interest: params.interest,
-        fine: params.fine,
-        bankFee: params.bankFee,
+        principalSettled,
+        discount,
+        interest,
+        fine,
+        bankFee,
         netFinancialAmount
       },
       notes: params.notes,
@@ -246,7 +252,7 @@ export class FinancialEngine {
     const newMovements: FinancialMovement[] = [];
 
     if (title.type === 'RECEBER') {
-      const grossSettlementAmount = Math.round((params.principalSettled - params.discount + params.interest + params.fine) * 100) / 100;
+      const grossSettlementAmount = Math.round((principalSettled - discount + interest + fine) * 100) / 100;
       
       // Main inflow movement (gross receipt before bank fee deduction)
       if (grossSettlementAmount > 0) {
@@ -267,13 +273,13 @@ export class FinancialEngine {
       }
 
       // Bank fee retained by bank (outflow expense, ensuring net bank balance matches netFinancialAmount exactly)
-      if (params.bankFee > 0) {
+      if (bankFee > 0) {
         newMovements.push({
           id: `mov-${Date.now()}-fee`,
           bankAccountId: params.bankAccountId,
           date: params.settlementDate,
           direction: 'SAIDA',
-          amount: params.bankFee,
+          amount: bankFee,
           originType: 'BAIXA_TITULO',
           originReferenceId: settlementId,
           description: `Tarifa bancária retida - Tit. ${title.titleNumber}`,
@@ -284,9 +290,9 @@ export class FinancialEngine {
       }
     } else {
       // PAGAR
-      const grossPaymentAmount = Math.round((params.principalSettled - params.discount + params.interest + params.fine) * 100) / 100;
+      const grossPaymentAmount = Math.round((principalSettled - discount + interest + fine) * 100) / 100;
 
-      if (params.bankFee > 0) {
+      if (bankFee > 0) {
         // Outflow for title principal/components
         if (grossPaymentAmount > 0) {
           newMovements.push({
@@ -310,7 +316,7 @@ export class FinancialEngine {
           bankAccountId: params.bankAccountId,
           date: params.settlementDate,
           direction: 'SAIDA',
-          amount: params.bankFee,
+          amount: bankFee,
           originType: 'BAIXA_TITULO',
           originReferenceId: settlementId,
           description: `Tarifa bancária de liquidação - Tit. ${title.titleNumber}`,
@@ -337,6 +343,20 @@ export class FinancialEngine {
     }
 
     storage.saveMovements([...newMovements, ...movements]);
+
+    // Atualizar snapshot do saldo da conta bancária
+    const currentBankAccounts = storage.getBankAccounts();
+    const updatedBankAccounts = currentBankAccounts.map(ba => {
+      if (ba.id === params.bankAccountId) {
+        return {
+          ...ba,
+          currentBalance: FinancialEngine.getAccountBalance(ba.id),
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return ba;
+    });
+    storage.saveBankAccounts(updatedBankAccounts);
 
     // Audit log
     storage.addAuditLog({
@@ -442,6 +462,210 @@ export class FinancialEngine {
     });
 
     return { success: true, message: 'Estorno realizado com sucesso!' };
+  }
+
+  /**
+   * REABRIR TÍTULO PARA EM ABERTO (Individual)
+   * Estorna todas as liquidações do título, desvincula/reverte o saldo bancário da conta
+   * e restabelece o título com saldo integral em aberto de acordo com a data de vencimento.
+   */
+  public static reopenTitleToOpen(titleId: string, reason?: string): { 
+    success: boolean; 
+    message: string; 
+    reversedSettlementsCount: number;
+    title?: FinancialTitle;
+  } {
+    const res = this.reopenTitlesToOpenBatch([titleId], reason);
+    return {
+      success: res.success,
+      message: res.message,
+      reversedSettlementsCount: res.reversedSettlementsCount,
+      title: res.reopenedTitles[0]
+    };
+  }
+
+  /**
+   * REABRIR TÍTULOS PARA EM ABERTO EM LOTE (Batch)
+   * Estorna em massa os pagamentos ou recebimentos dos títulos informados,
+   * desvinculando movimentações e saldos bancários com integridade contábil atômica.
+   */
+  public static reopenTitlesToOpenBatch(titleIds: string[], reason?: string): {
+    success: boolean;
+    message: string;
+    reopenedCount: number;
+    reversedSettlementsCount: number;
+    reopenedTitles: FinancialTitle[];
+    errors: string[];
+  } {
+    if (!titleIds || titleIds.length === 0) {
+      return {
+        success: false,
+        message: 'Nenhum título informado para reabertura.',
+        reopenedCount: 0,
+        reversedSettlementsCount: 0,
+        reopenedTitles: [],
+        errors: ['Nenhum ID informado.']
+      };
+    }
+
+    const currentUser = storage.getCurrentUser();
+    if (currentUser.role === 'CONSULTA') {
+      return {
+        success: false,
+        message: 'Perfil de Consulta não possui permissão para reabrir títulos.',
+        reopenedCount: 0,
+        reversedSettlementsCount: 0,
+        reopenedTitles: [],
+        errors: ['Permissão insuficiente.']
+      };
+    }
+
+    const titles = storage.getTitles();
+    const settlements = storage.getSettlements();
+    const bankAccounts = storage.getBankAccounts();
+    const movements = storage.getMovements();
+    const statementEntries = storage.getStatementEntries();
+
+    const titleIdSet = new Set(titleIds);
+    const targetTitles = titles.filter(t => titleIdSet.has(t.id));
+
+    if (targetTitles.length === 0) {
+      return {
+        success: false,
+        message: 'Nenhum dos títulos selecionados foi localizado.',
+        reopenedCount: 0,
+        reversedSettlementsCount: 0,
+        reopenedTitles: [],
+        errors: ['Títulos não localizados.']
+      };
+    }
+
+    // Verifica fechamento de período contábil
+    const closedPeriodErrors: string[] = [];
+    targetTitles.forEach(t => {
+      if (this.isPeriodClosed(t.competence)) {
+        closedPeriodErrors.push(`O título ${t.titleNumber} pertence à competência ${t.competence} que está encerrada.`);
+      }
+    });
+
+    if (closedPeriodErrors.length > 0 && closedPeriodErrors.length === targetTitles.length) {
+      return {
+        success: false,
+        message: 'Todos os títulos selecionados pertencem a períodos contábeis encerrados.',
+        reopenedCount: 0,
+        reversedSettlementsCount: 0,
+        reopenedTitles: [],
+        errors: closedPeriodErrors
+      };
+    }
+
+    const validTitlesToReopen = targetTitles.filter(t => !this.isPeriodClosed(t.competence));
+    const validTitleIdsSet = new Set(validTitlesToReopen.map(t => t.id));
+
+    // Identifica baixas ativas vinculadas
+    const activeLinkedSettlements = settlements.filter(s => validTitleIdsSet.has(s.titleId) && !s.isReversed);
+    const linkedSettlementIds = new Set(activeLinkedSettlements.map(s => s.id));
+
+    const defaultReason = reason || 'Reabertura de pagamento/recebimento para Em Aberto';
+    const nowIso = new Date().toISOString();
+
+    // 1. Marcar movimentos bancários vinculados como estornados
+    const updatedMovements = movements.map(m => {
+      if (m.originReferenceId && linkedSettlementIds.has(m.originReferenceId)) {
+        return { ...m, isReversed: true };
+      }
+      return m;
+    });
+    storage.saveMovements(updatedMovements);
+
+    // 2. Atualizar Contas Bancárias (Desvincular e estornar saldo bancário)
+    const updatedBankAccounts = bankAccounts.map(ba => {
+      return {
+        ...ba,
+        currentBalance: FinancialEngine.getAccountBalance(ba.id),
+        updatedAt: nowIso
+      };
+    });
+    storage.saveBankAccounts(updatedBankAccounts);
+
+    // 3. Marcar baixas como estornadas
+    const updatedSettlements = settlements.map(s => {
+      if (linkedSettlementIds.has(s.id)) {
+        return {
+          ...s,
+          isReversed: true,
+          reversedAt: nowIso,
+          reversedBy: currentUser.name,
+          reversalReason: defaultReason
+        };
+      }
+      return s;
+    });
+
+    // 4. Desvincular extratos bancários conciliados
+    const updatedStatements = statementEntries.map(stmt => {
+      if (stmt.matchedTitleId && validTitleIdsSet.has(stmt.matchedTitleId)) {
+        return {
+          ...stmt,
+          reconciliationStatus: 'PENDENTE' as const,
+          matchedMovementId: undefined,
+          matchedTitleId: undefined
+        };
+      }
+      return stmt;
+    });
+
+    // 5. Restaurar os títulos para EM ABERTO com saldo total
+    const reopenedTitles: FinancialTitle[] = [];
+    const updatedTitles = titles.map(t => {
+      if (validTitleIdsSet.has(t.id)) {
+        const restored: FinancialTitle = {
+          ...t,
+          settledPrincipal: 0,
+          balancePrincipal: t.originalAmount,
+          settlementState: 'ABERTO',
+          accruedInterest: 0,
+          accruedFine: 0,
+          updatedAt: nowIso
+        };
+        reopenedTitles.push(restored);
+        return restored;
+      }
+      return t;
+    });
+
+    // Salvar restantes das estruturas no storage
+    storage.saveSettlements(updatedSettlements);
+    storage.saveStatementEntries(updatedStatements);
+    storage.saveTitles(updatedTitles);
+
+    // 6. Auditoria
+    reopenedTitles.forEach(t => {
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'REABERTURA_TITULO_EM_ABERTO',
+        module: t.type === 'RECEBER' ? 'Contas a Receber' : 'Contas a Pagar',
+        recordId: t.titleNumber,
+        details: `Título ${t.titleNumber} (${t.description}) voltou para EM ABERTO. Saldo restaurado para ${formatBRL(t.originalAmount)}. Data de vencimento: ${t.dueDate}. Saldo bancário desvinculado e estornado. Motivo: ${defaultReason}.`,
+        previousValue: 'Quitado / Parcial',
+        newValue: `Saldo ${formatBRL(t.originalAmount)} (ABERTO)`
+      });
+    });
+
+    const isPlural = reopenedTitles.length > 1;
+    const msg = isPlural
+      ? `✓ ${reopenedTitles.length} títulos voltaram para EM ABERTO com sucesso! ${activeLinkedSettlements.length} baixa(s) estornada(s) e saldos bancários atualizados.`
+      : `✓ O título ${reopenedTitles[0]?.titleNumber} voltou para EM ABERTO com sucesso! Saldo bancário desvinculado.`;
+
+    return {
+      success: true,
+      message: msg,
+      reopenedCount: reopenedTitles.length,
+      reversedSettlementsCount: activeLinkedSettlements.length,
+      reopenedTitles,
+      errors: closedPeriodErrors
+    };
   }
 
   /**
