@@ -26,6 +26,7 @@ import { FinancialEngine, formatBRL, formatDateBR, formatCompetence } from '../.
 import { FinancialTitle, Sale, SaleItem } from '../../types';
 import { matchesSearch } from '../../utils/searchUtils';
 import { addMonthsSafe } from '../../utils/dateUtils';
+import { BatchEditSalesModal } from '../Modals/BatchEditSalesModal';
 
 interface SalesViewProps {
   onOpenBillingModal?: () => void;
@@ -88,6 +89,11 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   // Modal de Exclusão de Venda
   const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
   const [deleteLinkedTitles, setDeleteLinkedTitles] = useState<boolean>(true);
+
+  // Operações em Lote de Vendas
+  const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
+  const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
+  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
 
   const installmentValue = installmentsCount > 0 ? totalAmount / installmentsCount : totalAmount;
 
@@ -337,6 +343,60 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     return Array.from(set).sort().reverse();
   }, [sales]);
 
+  // Lógica de Operações em Lote de Vendas
+  const isAllSelected = useMemo(() => {
+    return filteredSales.length > 0 && selectedSaleIds.length === filteredSales.length;
+  }, [filteredSales, selectedSaleIds]);
+
+  const selectedSalesTotal = useMemo(() => {
+    return sales
+      .filter(s => selectedSaleIds.includes(s.id))
+      .reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
+  }, [sales, selectedSaleIds]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedSaleIds([]);
+    } else {
+      setSelectedSaleIds(filteredSales.map(s => s.id));
+    }
+  };
+
+  const handleToggleSelectSale = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedSaleIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleConfirmBatchDelete = () => {
+    if (selectedSaleIds.length === 0) return;
+    const currentUser = storage.getCurrentUser();
+    let deletedCount = 0;
+    let deletedTitlesTotal = 0;
+
+    for (const id of selectedSaleIds) {
+      const res = storage.deleteSale(id, { deleteLinkedTitles: true });
+      deletedCount++;
+      deletedTitlesTotal += res.deletedTitlesCount;
+    }
+
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_LOTE_VENDAS',
+      module: 'Vendas e Faturamento',
+      recordId: `batch-${selectedSaleIds.length}`,
+      details: `${deletedCount} vendas excluídas em lote do sistema. ${deletedTitlesTotal} parcela(s) vinculada(s) em aberto removida(s).`
+    });
+
+    setSuccessMessage(`✓ ${deletedCount} venda(s) excluída(s) em lote com sucesso! (${deletedTitlesTotal} parcelas em aberto removidas)`);
+    setTimeout(() => setSuccessMessage(''), 5000);
+
+    setSelectedSaleIds([]);
+    setIsBatchDeleteModalOpen(false);
+  };
+
   // Métricas agregadas
   const metrics = useMemo(() => {
     const totalSalesAmount = sales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
@@ -536,6 +596,57 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         </div>
       </div>
 
+      {/* Batch Actions Toolbar */}
+      {selectedSaleIds.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white p-3.5 rounded-2xl border border-amber-600/40 shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 animate-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center space-x-3">
+            <span className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs shadow-xs shrink-0">
+              {selectedSaleIds.length}
+            </span>
+            <div>
+              <div className="font-bold text-xs flex items-center gap-2">
+                <span>{selectedSaleIds.length} venda(s) selecionada(s)</span>
+                <span className="text-amber-400 font-mono font-normal">
+                  ({formatBRL(selectedSalesTotal)})
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-300">
+                Ações em massa para agilizar faturamento, dados cadastrais e categorias
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsBatchEditModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+            >
+              <Layers className="w-4 h-4" />
+              Editar em Lote ({selectedSaleIds.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsBatchDeleteModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir em Lote
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedSaleIds([])}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              title="Limpar seleção"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sales Table */}
       <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
         <div className="p-4 border-b border-[var(--border-subtle)] flex justify-between items-center bg-[var(--surface-elevated)]/50">
@@ -551,6 +662,16 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           <table className="w-full text-left text-xs min-w-[850px]">
             <thead className="bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] text-[var(--text-secondary)] font-semibold uppercase tracking-wider text-[11px]">
               <tr>
+                <th className="py-3 px-3 w-[44px] text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={handleToggleSelectAll}
+                    className="w-4 h-4 rounded-md border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                    title="Selecionar todas as vendas filtradas"
+                    aria-label="Selecionar todas as vendas filtradas"
+                  />
+                </th>
                 <th className="py-3 px-4 w-[130px]">Nº da Venda</th>
                 <th className="py-3 px-4 w-[150px]">Origem / Vínculo</th>
                 <th className="py-3 px-4">Cliente</th>
@@ -565,7 +686,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             <tbody className="divide-y divide-[var(--border-subtle)]">
               {filteredSales.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-[var(--text-secondary)] italic">
+                  <td colSpan={10} className="p-8 text-center text-[var(--text-secondary)] italic">
                     Nenhuma venda encontrada com os filtros selecionados.
                   </td>
                 </tr>
@@ -574,6 +695,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   const client = counterparties.find(c => c.id === s.customerId);
                   const isContract = s.originType === 'CONTRATO';
                   const contract = isContract ? contracts.find(c => c.id === s.contractId || c.contractNumber === s.contractNumber) : null;
+                  const isSelected = selectedSaleIds.includes(s.id);
 
                   // Encontrar títulos vinculados a essa venda
                   const titlesForSale = allTitles.filter(t =>
@@ -584,7 +706,24 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   const settledCount = titlesForSale.filter(t => t.settlementState === 'LIQUIDADO').length;
 
                   return (
-                    <tr key={s.id} className="hover:bg-[var(--surface-elevated)]/50 transition-colors">
+                    <tr 
+                      key={s.id} 
+                      className={`transition-colors ${
+                        isSelected 
+                          ? 'bg-amber-500/10 hover:bg-amber-500/15' 
+                          : 'hover:bg-[var(--surface-elevated)]/50'
+                      }`}
+                    >
+                      <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleToggleSelectSale(s.id, e)}
+                          className="w-4 h-4 rounded-md border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                          title={`Selecionar venda ${s.saleNumber}`}
+                          aria-label={`Selecionar venda ${s.saleNumber}`}
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono font-bold text-[var(--text-primary)]">
                         {s.saleNumber}
                       </td>
@@ -1261,6 +1400,56 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   Excluir Definitivamente
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Vendas em Lote */}
+      <BatchEditSalesModal
+        isOpen={isBatchEditModalOpen}
+        selectedSaleIds={selectedSaleIds}
+        sales={sales}
+        onClose={() => setIsBatchEditModalOpen(false)}
+        onSaved={(count) => {
+          setSelectedSaleIds([]);
+          setSuccessMessage(`✓ ${count} venda(s) atualizada(s) em lote com sucesso!`);
+          setTimeout(() => setSuccessMessage(''), 5000);
+        }}
+      />
+
+      {/* Modal de Exclusão em Lote */}
+      {isBatchDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-md w-full p-5 border border-[var(--border-subtle)] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3 text-rose-600">
+              <div className="p-2.5 rounded-xl bg-rose-500/10">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Excluir Vendas em Lote</h3>
+                <p className="text-xs text-[var(--text-secondary)]">{selectedSaleIds.length} vendas selecionadas ({formatBRL(selectedSalesTotal)})</p>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Tem certeza que deseja excluir definitivamente as <strong>{selectedSaleIds.length}</strong> vendas selecionadas? As parcelas vinculadas em aberto também serão removidas do Contas a Receber.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBatchDelete}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-500 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirmar Exclusão em Lote
+              </button>
             </div>
           </div>
         </div>
