@@ -1092,12 +1092,24 @@ class StorageService {
   }
 
   public saveSales(sales: Sale[]): void {
-    this.set(STORAGE_KEYS.SALES, sales);
+    const seen = new Set<string>();
+    const deduplicated: Sale[] = [];
+    for (const s of sales) {
+      if (s && s.id && !seen.has(s.id)) {
+        seen.add(s.id);
+        deduplicated.push(s);
+      }
+    }
+    this.set(STORAGE_KEYS.SALES, deduplicated);
   }
 
   public addSale(sale: Sale): void {
     const sales = this.getSales();
-    this.saveSales([sale, ...sales]);
+    const filtered = sales.filter(s => 
+      s.id !== sale.id && 
+      !(s.saleNumber && sale.saleNumber && s.saleNumber === sale.saleNumber && s.customerId === sale.customerId)
+    );
+    this.saveSales([sale, ...filtered]);
   }
 
   public updateSale(updatedSale: Sale, updateLinkedTitles = true): void {
@@ -1469,7 +1481,15 @@ class StorageService {
     return this.get(STORAGE_KEYS.TITLES, INITIAL_TITLES);
   }
   public saveTitles(titles: FinancialTitle[]) {
-    this.set(STORAGE_KEYS.TITLES, titles);
+    const seen = new Set<string>();
+    const deduplicated: FinancialTitle[] = [];
+    for (const t of titles) {
+      if (t && t.id && !seen.has(t.id)) {
+        seen.add(t.id);
+        deduplicated.push(t);
+      }
+    }
+    this.set(STORAGE_KEYS.TITLES, deduplicated);
   }
 
   // Settlements (Baixas)

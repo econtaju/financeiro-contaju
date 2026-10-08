@@ -69,7 +69,15 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
   const [firstDueDate, setFirstDueDate] = useState(today);
   const [accountId, setAccountId] = useState(chartAccounts[0]?.id || '');
+  const [distributeCompetence, setDistributeCompetence] = useState<boolean>(true);
+  const [isGeneratingSale, setIsGeneratingSale] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Identificação de contratos ativos do cliente selecionado (Prevenção de duplicidade)
+  const clientActiveContracts = useMemo(() => {
+    if (!customerId) return [];
+    return contracts.filter(c => c.customerId === customerId && c.status === 'ATIVO');
+  }, [customerId, contracts]);
 
   // Modal de Detalhes da Venda & Vínculos
   const [selectedSaleForDetails, setSelectedSaleForDetails] = useState<Sale | null>(null);
@@ -209,6 +217,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     e.preventDefault();
     setSuccessMessage('');
 
+    if (isGeneratingSale) return;
     if (!customerId || totalAmount <= 0 || installmentsCount <= 0) return;
 
     if (FinancialEngine.isPeriodClosed(competence)) {
@@ -216,99 +225,113 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
       return;
     }
 
-    const titles = storage.getTitles();
-    const currentUser = storage.getCurrentUser();
-    const newTitles: FinancialTitle[] = [];
+    setIsGeneratingSale(true);
 
-    const baseNumber = `VEN-${Date.now().toString().slice(-4)}`;
-    const saleId = `sale-manual-${Date.now()}`;
-    const generatedTitleIds: string[] = [];
+    try {
+      const titles = storage.getTitles();
+      const currentUser = storage.getCurrentUser();
+      const newTitles: FinancialTitle[] = [];
 
-    const firstDueDay = parseInt(firstDueDate.split('-')[2], 10);
+      const baseNumber = `VEN-${Date.now().toString().slice(-4)}`;
+      const saleId = `sale-manual-${Date.now()}`;
+      const generatedTitleIds: string[] = [];
 
-    for (let i = 1; i <= installmentsCount; i++) {
-      const dueDateStr = addMonthsSafe(firstDueDate, i - 1, firstDueDay);
-      const titleId = `tit-sale-${Date.now()}-${i}`;
-      generatedTitleIds.push(titleId);
+      const firstDueDay = parseInt(firstDueDate.split('-')[2], 10);
+      const [compBaseYear, compBaseMonth] = competence.split('-').map(Number);
 
-      const title: FinancialTitle = {
-        id: titleId,
-        companyId: 'comp-1',
-        type: 'RECEBER',
-        titleNumber: `${baseNumber}/${i.toString().padStart(2, '0')}`,
-        counterpartyId: customerId,
-        description: `${description} (Parcela ${i}/${installmentsCount})`,
-        accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01',
-        launchDate: today,
-        competence: competence,
-        issueDate: today,
-        dueDate: dueDateStr,
-        expectedCashDate: dueDateStr,
-        originalAmount: installmentValue,
-        settledPrincipal: 0,
-        balancePrincipal: installmentValue,
-        accruedInterest: 0,
-        accruedFine: 0,
-        documentState: 'CONFIRMADO',
-        settlementState: 'ABERTO',
-        originType: 'VENDA',
-        saleId: saleId,
-        saleNumber: baseNumber,
-        installmentIndex: i,
-        totalInstallments: installmentsCount,
-        notes: `Faturamento parcelado em ${installmentsCount}x da venda ${baseNumber}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      newTitles.push(title);
-    }
+      for (let i = 1; i <= installmentsCount; i++) {
+        const dueDateStr = addMonthsSafe(firstDueDate, i - 1, firstDueDay);
+        const titleId = `tit-sale-${Date.now()}-${i}`;
+        generatedTitleIds.push(titleId);
 
-    // Salvar Títulos a Receber
-    storage.saveTitles([...newTitles, ...titles]);
-
-    // Salvar a Venda vinculada
-    const newSale: Sale = {
-      id: saleId,
-      saleNumber: baseNumber,
-      customerId,
-      competence,
-      date: today,
-      items: [
-        {
-          id: `item-${Date.now()}`,
-          serviceId: 'srv-1',
-          description,
-          quantity: 1,
-          unitPrice: totalAmount,
-          discount: 0,
-          total: totalAmount,
-          accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01'
+        // Competência: distribuída mensalmente ou única
+        let installmentComp = competence;
+        if (distributeCompetence && installmentsCount > 1) {
+          const targetDate = new Date(compBaseYear, compBaseMonth - 1 + (i - 1), 1);
+          installmentComp = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
         }
-      ],
-      grossTotal: totalAmount,
-      discountTotal: 0,
-      netTotal: totalAmount,
-      installmentsCount,
-      notes: `Venda avulsa faturada em ${installmentsCount} parcelas.`,
-      createdAt: new Date().toISOString(),
-      originType: 'AVULSO',
-      status: 'CONFIRMADA',
-      titleIds: generatedTitleIds
-    };
-    storage.addSale(newSale);
 
-    const client = counterparties.find(c => c.id === customerId);
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'VENDA_PARCELADA_GERADA',
-      module: 'Vendas e Faturamento',
-      recordId: baseNumber,
-      details: `Venda ${baseNumber} de ${formatBRL(totalAmount)} em ${installmentsCount}x para ${client?.name}. Competência econômica DRE: ${competence}.`
-    });
+        const title: FinancialTitle = {
+          id: titleId,
+          companyId: 'comp-1',
+          type: 'RECEBER',
+          titleNumber: `${baseNumber}/${i.toString().padStart(2, '0')}`,
+          counterpartyId: customerId,
+          description: `${description} (Parcela ${i}/${installmentsCount})`,
+          accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01',
+          launchDate: today,
+          competence: installmentComp,
+          issueDate: today,
+          dueDate: dueDateStr,
+          expectedCashDate: dueDateStr,
+          originalAmount: installmentValue,
+          settledPrincipal: 0,
+          balancePrincipal: installmentValue,
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: 'VENDA',
+          saleId: saleId,
+          saleNumber: baseNumber,
+          installmentIndex: i,
+          totalInstallments: installmentsCount,
+          notes: `Faturamento parcelado em ${installmentsCount}x da venda ${baseNumber}${distributeCompetence ? ' (competência mês a mês)' : ''}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        newTitles.push(title);
+      }
 
-    setSuccessMessage(`Venda ${baseNumber} gerada com sucesso! ${installmentsCount} parcelas de ${formatBRL(installmentValue)} criadas com competência econômica única em ${competence}.`);
-    setIsModalOpen(false);
+      // Salvar Títulos a Receber
+      storage.saveTitles([...newTitles, ...titles]);
+
+      // Salvar a Venda vinculada
+      const newSale: Sale = {
+        id: saleId,
+        saleNumber: baseNumber,
+        customerId,
+        competence,
+        date: today,
+        items: [
+          {
+            id: `item-${Date.now()}`,
+            serviceId: 'srv-1',
+            description,
+            quantity: 1,
+            unitPrice: totalAmount,
+            discount: 0,
+            total: totalAmount,
+            accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01'
+          }
+        ],
+        grossTotal: totalAmount,
+        discountTotal: 0,
+        netTotal: totalAmount,
+        installmentsCount,
+        notes: `Venda avulsa faturada em ${installmentsCount} parcelas.${distributeCompetence ? ' Competências distribuídas mensalmente.' : ''}`,
+        createdAt: new Date().toISOString(),
+        originType: 'AVULSO',
+        status: 'CONFIRMADA',
+        titleIds: generatedTitleIds
+      };
+      storage.addSale(newSale);
+
+      const client = counterparties.find(c => c.id === customerId);
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'VENDA_PARCELADA_GERADA',
+        module: 'Vendas e Faturamento',
+        recordId: baseNumber,
+        details: `Venda ${baseNumber} de ${formatBRL(totalAmount)} em ${installmentsCount}x para ${client?.name}. Competência inicial: ${competence}.${distributeCompetence ? ' Distribuída mês a mês no DRE.' : ''}`
+      });
+
+      setSuccessMessage(`✓ Venda ${baseNumber} gerada com sucesso! ${installmentsCount} parcelas de ${formatBRL(installmentValue)} criadas ${distributeCompetence ? 'com competências mês a mês no DRE' : `com competência em ${competence}`}.`);
+      setIsModalOpen(false);
+    } finally {
+      setIsGeneratingSale(false);
+    }
   };
 
   // Filtragem e Métricas
@@ -978,6 +1001,24 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+
+                {/* ALERTA CRÍTICO ANTI-DUPLICAÇÃO COM CONTRATOS ATIVOS */}
+                {clientActiveContracts.length > 0 && (
+                  <div className="mt-2.5 p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-xs space-y-1.5 animate-in fade-in">
+                    <div className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>Atenção: Este cliente já possui Contrato Recorrente Ativo!</span>
+                    </div>
+                    <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                      O cliente possui o(s) contrato(s):{' '}
+                      <strong>{clientActiveContracts.map(c => `${c.contractNumber} (${formatBRL(c.monthlyTotal)}/mês)`).join(', ')}</strong>{' '}
+                      com títulos e faturamento programados automaticamente.
+                    </p>
+                    <p className="text-[10px] text-amber-800 dark:text-amber-400 font-semibold bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
+                      ⚠️ <strong>Apenas lance aqui se for um serviço extraordinário/avulso.</strong> Se você estiver tentando faturar a mensalidade do contrato, não é necessário gerar venda avulsa, pois o contrato já gera os títulos e faturas para evitar duplicidade.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1024,9 +1065,55 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 </div>
               </div>
 
+              {/* Opção de Distribuição de Competência para Parcelamentos */}
+              {installmentsCount > 1 && (
+                <div className="p-3 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] space-y-1.5">
+                  <span className="block font-semibold text-[var(--text-primary)] text-xs">
+                    Distribuição da Competência Contábil no DRE:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <label className={`p-2 rounded-lg border flex items-center gap-2 cursor-pointer transition-colors ${
+                      distributeCompetence
+                        ? 'border-amber-500 bg-amber-500/10 font-bold text-amber-900 dark:text-amber-300'
+                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="distributeComp"
+                        checked={distributeCompetence}
+                        onChange={() => setDistributeCompetence(true)}
+                        className="text-amber-500 focus:ring-amber-500"
+                      />
+                      <div>
+                        <div>Distribuir Mês a Mês</div>
+                        <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400">1 parcela por competência (Recomendado)</div>
+                      </div>
+                    </label>
+
+                    <label className={`p-2 rounded-lg border flex items-center gap-2 cursor-pointer transition-colors ${
+                      !distributeCompetence
+                        ? 'border-amber-500 bg-amber-500/10 font-bold text-amber-900 dark:text-amber-300'
+                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="distributeComp"
+                        checked={!distributeCompetence}
+                        onChange={() => setDistributeCompetence(false)}
+                        className="text-amber-500 focus:ring-amber-500"
+                      />
+                      <div>
+                        <div>Competência Única</div>
+                        <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400">Total reconhecido no 1º mês</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-[var(--text-primary)] mb-1">Competência DRE *</label>
+                  <label className="block font-semibold text-[var(--text-primary)] mb-1">Competência Inicial DRE *</label>
                   <input
                     type="month"
                     value={competence}
@@ -1034,7 +1121,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                     className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 font-semibold text-[var(--text-primary)]"
                     required
                   />
-                  <span className="text-[10px] text-[var(--text-secondary)]">Reconhecimento da receita</span>
+                  <span className="text-[10px] text-[var(--text-secondary)]">
+                    {distributeCompetence && installmentsCount > 1 ? 'Mês inicial do cronograma' : 'Reconhecimento da receita'}
+                  </span>
                 </div>
 
                 <div>
@@ -1073,7 +1162,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   {installmentsCount}x de <strong>{formatBRL(installmentValue)}</strong>
                 </div>
                 <div className="text-[11px] text-[var(--text-secondary)]">
-                  Total reconhecido no DRE ({formatCompetence(competence)}): <strong>{formatBRL(totalAmount)}</strong>
+                  {distributeCompetence && installmentsCount > 1 
+                    ? `Reconhecido no DRE: ${formatBRL(installmentValue)} por mês ao longo de ${installmentsCount} meses`
+                    : `Total reconhecido no DRE (${formatCompetence(competence)}): ${formatBRL(totalAmount)}`}
                 </div>
               </div>
 
@@ -1081,15 +1172,24 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
+                  disabled={isGeneratingSale}
                   className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-xl shadow-md cursor-pointer"
+                  disabled={isGeneratingSale}
+                  className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-1.5"
                 >
-                  Confirmar Faturamento
+                  {isGeneratingSale ? (
+                    <span>Processando...</span>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-slate-950" />
+                      <span>Confirmar Faturamento</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

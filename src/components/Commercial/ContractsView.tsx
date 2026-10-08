@@ -93,6 +93,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   // Controle do mês inicial de faturamento das parcelas do contrato
   const [generationStartMode, setGenerationStartMode] = useState<'CURRENT_MONTH' | 'ENTRY_MONTH' | 'CUSTOM'>('CURRENT_MONTH');
   const [customStartCompetence, setCustomStartCompetence] = useState<string>(() => new Date().toISOString().substring(0, 7));
+  const [isSubmittingContract, setIsSubmittingContract] = useState(false);
 
   // Reajustes Form State
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
@@ -394,143 +395,164 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingContract) return;
     if (!formData.customerId || !formData.contractNumber) return;
 
-    const all = storage.getContracts();
-    const currentUser = storage.getCurrentUser();
+    setIsSubmittingContract(true);
 
-    const isContractRecurring = formData.contractType !== 'AVULSO' && formData.isRecurring !== false;
-    const shouldAutoGenerate = isContractRecurring && formData.autoGenerateFutureMonths !== false;
-    const monthsCount = Number(formData.futureMonthsCount) || 12;
+    try {
+      const all = storage.getContracts();
+      const currentUser = storage.getCurrentUser();
 
-    if (editingContract) {
-      let updatedStatusHistory = editingContract.statusHistory || [];
-      if (formData.status && formData.status !== editingContract.status) {
-        const historyEntry: ContractStatusHistoryEntry = {
-          id: `csh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          contractId: editingContract.id,
-          previousStatus: editingContract.status,
-          newStatus: formData.status as any,
-          changedAt: new Date().toISOString(),
-          changedBy: currentUser.name,
-          userRole: currentUser.role,
-          reason: formData.cancellationReason || `Alteração manual no cadastro (${editingContract.status} ➔ ${formData.status})`,
-          notes: formData.cancellationNotes,
-          effectiveDate: formData.cancellationDate || new Date().toISOString().split('T')[0]
-        };
-        updatedStatusHistory = [historyEntry, ...updatedStatusHistory];
-      }
+      const isContractRecurring = formData.contractType !== 'AVULSO' && formData.isRecurring !== false;
+      const shouldAutoGenerate = isContractRecurring && formData.autoGenerateFutureMonths !== false;
+      const monthsCount = Number(formData.futureMonthsCount) || 12;
 
-      const updated = all.map(c => c.id === editingContract.id ? { 
-        ...c, 
-        ...formData,
-        contractType: isContractRecurring ? 'RECORRENTE' : 'AVULSO',
-        isRecurring: isContractRecurring,
-        futureMonthsCount: monthsCount,
-        adjustments: formData.adjustments || c.adjustments || [],
-        annualBalanceFee: formData.annualBalanceFee || c.annualBalanceFee,
-        statusHistory: updatedStatusHistory
-      } as Contract : c);
-      storage.saveContracts(updated);
+      // Calcular competência inicial efetiva conforme modo selecionado
+      const todayYmd = new Date().toISOString().split('T')[0];
+      const currentMonthComp = todayYmd.substring(0, 7);
+      const entryMonthComp = (formData.entryDate || formData.startDate || todayYmd).substring(0, 7);
+      const effectiveStartComp = generationStartMode === 'ENTRY_MONTH'
+        ? entryMonthComp
+        : generationStartMode === 'CUSTOM' && customStartCompetence
+        ? customStartCompetence
+        : currentMonthComp;
 
-      let generationMsg = '';
-      if (shouldAutoGenerate && formData.status === 'ATIVO') {
-        const savedContract = updated.find(c => c.id === editingContract.id)!;
-        const res = FinancialEngine.generateContractFutureInstallments(savedContract, monthsCount, effectiveStartComp);
-        if (res.generatedCount > 0) {
-          generationMsg = ` • ${res.generatedCount} títulos gerados para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
-        }
-      }
-
-      storage.addAuditLog({
-        userName: currentUser.name,
-        userRole: currentUser.role,
-        action: 'EDICAO_CONTRATO',
-        module: 'Contratos Recorrentes',
-        recordId: editingContract.id,
-        details: `Alteração do contrato ${formData.contractNumber}.${generationMsg}`
-      });
-      setSuccessToast(`Contrato ${formData.contractNumber} atualizado com sucesso!${generationMsg}`);
-    } else {
-      const newContract: Contract = {
-        id: `ctr-${Date.now()}`,
-        companyId: 'comp-1',
-        contractNumber: formData.contractNumber!,
-        customerId: formData.customerId!,
-        description: formData.description || 'Honorários Contábeis',
-        startDate: formData.startDate || new Date().toISOString().split('T')[0],
-        entryDate: formData.entryDate || formData.startDate || new Date().toISOString().split('T')[0],
-        endDate: formData.endDate || undefined,
-        contractType: isContractRecurring ? 'RECORRENTE' : 'AVULSO',
-        isRecurring: isContractRecurring,
-        autoGenerateFutureMonths: shouldAutoGenerate,
-        futureMonthsCount: monthsCount,
-        acquisitionChannel: formData.acquisitionChannel || 'OUTRO',
-        acquisitionReferrerName: formData.acquisitionReferrerName || undefined,
-        acquisitionSocialNetwork: formData.acquisitionSocialNetwork || undefined,
-        acquisitionNotes: formData.acquisitionNotes || undefined,
-        billingFrequency: 'MENSAL',
-        dueDay: Number(formData.dueDay) || 10,
-        dueRule: formData.dueRule as 'SAME_MONTH' | 'NEXT_MONTH' || 'NEXT_MONTH',
-        billingMethod: formData.billingMethod as any || 'BOLETO',
-        monthlyTotal: Number(formData.monthlyTotal) || 0,
-        periodicity: 'MENSAL',
-        items: [
-          {
-            id: `item-${Date.now()}`,
-            serviceId: services[0]?.id || 'srv-1',
-            description: formData.description || 'Honorários Contábeis',
-            quantity: 1,
-            unitPrice: Number(formData.monthlyTotal) || 0,
-            accountId: services[0]?.defaultAccountId || 'acc-rec-01',
-            total: Number(formData.monthlyTotal) || 0
-          }
-        ],
-        status: formData.status as any || 'ATIVO',
-        cancellationDate: formData.cancellationDate || undefined,
-        cancellationReason: formData.cancellationReason || undefined,
-        cancellationNotes: formData.cancellationNotes || undefined,
-        statusHistory: [
-          {
-            id: `csh-${Date.now()}`,
-            contractId: `ctr-${Date.now()}`,
-            previousStatus: 'RASCUNHO',
-            newStatus: (formData.status as any) || 'ATIVO',
+      if (editingContract) {
+        let updatedStatusHistory = editingContract.statusHistory || [];
+        if (formData.status && formData.status !== editingContract.status) {
+          const historyEntry: ContractStatusHistoryEntry = {
+            id: `csh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            contractId: editingContract.id,
+            previousStatus: editingContract.status,
+            newStatus: formData.status as any,
             changedAt: new Date().toISOString(),
             changedBy: currentUser.name,
             userRole: currentUser.role,
-            reason: 'Cadastro inicial do contrato',
-            effectiveDate: formData.startDate || new Date().toISOString().split('T')[0]
-          }
-        ],
-        adjustments: formData.adjustments || [],
-        annualBalanceFee: formData.annualBalanceFee,
-        notes: formData.notes || '',
-        createdAt: new Date().toISOString()
-      };
-      storage.saveContracts([...all, newContract]);
-
-      let generationMsg = '';
-      if (shouldAutoGenerate && newContract.status === 'ATIVO') {
-        const res = FinancialEngine.generateContractFutureInstallments(newContract, monthsCount, effectiveStartComp);
-        if (res.generatedCount > 0) {
-          generationMsg = ` • ${res.generatedCount} títulos a receber gerados automaticamente para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
+            reason: formData.cancellationReason || `Alteração manual no cadastro (${editingContract.status} ➔ ${formData.status})`,
+            notes: formData.cancellationNotes,
+            effectiveDate: formData.cancellationDate || new Date().toISOString().split('T')[0]
+          };
+          updatedStatusHistory = [historyEntry, ...updatedStatusHistory];
         }
+
+        const updated = all.map(c => c.id === editingContract.id ? { 
+          ...c, 
+          ...formData,
+          contractType: isContractRecurring ? 'RECORRENTE' : 'AVULSO',
+          isRecurring: isContractRecurring,
+          futureMonthsCount: monthsCount,
+          adjustments: formData.adjustments || c.adjustments || [],
+          annualBalanceFee: formData.annualBalanceFee || c.annualBalanceFee,
+          statusHistory: updatedStatusHistory
+        } as Contract : c);
+        storage.saveContracts(updated);
+
+        let generationMsg = '';
+        if (shouldAutoGenerate && formData.status === 'ATIVO') {
+          const savedContract = updated.find(c => c.id === editingContract.id)!;
+          const res = FinancialEngine.generateContractFutureInstallments(savedContract, monthsCount, effectiveStartComp);
+          if (res.generatedCount > 0) {
+            generationMsg = ` • ${res.generatedCount} títulos gerados para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
+          }
+        }
+
+        storage.addAuditLog({
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'EDICAO_CONTRATO',
+          module: 'Contratos Recorrentes',
+          recordId: editingContract.id,
+          details: `Alteração do contrato ${formData.contractNumber}.${generationMsg}`
+        });
+        setSuccessToast(`Contrato ${formData.contractNumber} atualizado com sucesso!${generationMsg}`);
+      } else {
+        const newContract: Contract = {
+          id: `ctr-${Date.now()}`,
+          companyId: 'comp-1',
+          contractNumber: formData.contractNumber!,
+          customerId: formData.customerId!,
+          description: formData.description || 'Honorários Contábeis',
+          startDate: formData.startDate || new Date().toISOString().split('T')[0],
+          entryDate: formData.entryDate || formData.startDate || new Date().toISOString().split('T')[0],
+          endDate: formData.endDate || undefined,
+          contractType: isContractRecurring ? 'RECORRENTE' : 'AVULSO',
+          isRecurring: isContractRecurring,
+          autoGenerateFutureMonths: shouldAutoGenerate,
+          futureMonthsCount: monthsCount,
+          acquisitionChannel: formData.acquisitionChannel || 'OUTRO',
+          acquisitionReferrerName: formData.acquisitionReferrerName || undefined,
+          acquisitionSocialNetwork: formData.acquisitionSocialNetwork || undefined,
+          acquisitionNotes: formData.acquisitionNotes || undefined,
+          billingFrequency: 'MENSAL',
+          dueDay: Number(formData.dueDay) || 10,
+          dueRule: formData.dueRule as 'SAME_MONTH' | 'NEXT_MONTH' || 'NEXT_MONTH',
+          billingMethod: formData.billingMethod as any || 'BOLETO',
+          monthlyTotal: Number(formData.monthlyTotal) || 0,
+          periodicity: 'MENSAL',
+          items: [
+            {
+              id: `item-${Date.now()}`,
+              serviceId: services[0]?.id || 'srv-1',
+              description: formData.description || 'Honorários Contábeis',
+              quantity: 1,
+              unitPrice: Number(formData.monthlyTotal) || 0,
+              accountId: services[0]?.defaultAccountId || 'acc-rec-01',
+              total: Number(formData.monthlyTotal) || 0
+            }
+          ],
+          status: formData.status as any || 'ATIVO',
+          cancellationDate: formData.cancellationDate || undefined,
+          cancellationReason: formData.cancellationReason || undefined,
+          cancellationNotes: formData.cancellationNotes || undefined,
+          statusHistory: [
+            {
+              id: `csh-${Date.now()}`,
+              contractId: `ctr-${Date.now()}`,
+              previousStatus: 'RASCUNHO',
+              newStatus: (formData.status as any) || 'ATIVO',
+              changedAt: new Date().toISOString(),
+              changedBy: currentUser.name,
+              userRole: currentUser.role,
+              reason: 'Cadastro inicial do contrato',
+              effectiveDate: formData.startDate || new Date().toISOString().split('T')[0]
+            }
+          ],
+          adjustments: formData.adjustments || [],
+          annualBalanceFee: formData.annualBalanceFee,
+          notes: formData.notes || '',
+          createdAt: new Date().toISOString()
+        };
+        storage.saveContracts([...all, newContract]);
+
+        let generationMsg = '';
+        if (shouldAutoGenerate && newContract.status === 'ATIVO') {
+          const res = FinancialEngine.generateContractFutureInstallments(newContract, monthsCount, effectiveStartComp);
+          if (res.generatedCount > 0) {
+            generationMsg = ` • ${res.generatedCount} títulos a receber gerados automaticamente para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
+          }
+        }
+
+        storage.addAuditLog({
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'CADASTRO_CONTRATO',
+          module: 'Contratos Recorrentes',
+          recordId: newContract.id,
+          details: `Cadastro de novo contrato ${newContract.contractNumber} (${formatBRL(newContract.monthlyTotal)}/mês).${generationMsg}`
+        });
+
+        const antiDupInfo = shouldAutoGenerate && newContract.status === 'ATIVO'
+          ? ' (As faturas já estão geradas no Contas a Receber e Vendas — não é necessário faturar novamente em Vendas).'
+          : '';
+        setSuccessToast(`Contrato ${newContract.contractNumber} cadastrado com sucesso!${generationMsg}${antiDupInfo}`);
       }
 
-      storage.addAuditLog({
-        userName: currentUser.name,
-        userRole: currentUser.role,
-        action: 'CADASTRO_CONTRATO',
-        module: 'Contratos Recorrentes',
-        recordId: newContract.id,
-        details: `Cadastro de novo contrato ${newContract.contractNumber} (${formatBRL(newContract.monthlyTotal)}/mês).${generationMsg}`
-      });
-      setSuccessToast(`Contrato ${newContract.contractNumber} cadastrado com sucesso!${generationMsg}`);
+      setTimeout(() => setSuccessToast(''), 7000);
+      setIsModalOpen(false);
+    } finally {
+      setIsSubmittingContract(false);
     }
-
-    setTimeout(() => setSuccessToast(''), 6000);
-    setIsModalOpen(false);
   };
 
   return (
@@ -2413,10 +2435,17 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                       </button>
                       <button
                         type="submit"
-                        className="px-6 py-2 text-xs font-bold text-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                        disabled={isSubmittingContract}
+                        className="px-6 py-2 text-xs font-bold text-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
                       >
-                        <CheckCircle className="w-4 h-4 text-black stroke-[2.5]" />
-                        Salvar Contrato
+                        {isSubmittingContract ? (
+                          <span>Salvando Contrato...</span>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-black stroke-[2.5]" />
+                            <span>Salvar Contrato</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </>
