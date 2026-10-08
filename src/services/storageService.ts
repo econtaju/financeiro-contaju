@@ -1839,6 +1839,59 @@ class StorageService {
   }
 
   // ==========================================
+  // DETECÇÃO E RESOLUÇÃO DE DUPLICIDADES
+  // ==========================================
+  public findDuplicateTitleCandidates(type?: 'RECEBER' | 'PAGAR'): Array<{
+    groupKey: string;
+    counterpartyId: string;
+    counterpartyName: string;
+    competence: string;
+    amount: number;
+    titles: FinancialTitle[];
+  }> {
+    const titles = this.getTitles().filter(t => t.documentState !== 'CANCELADO');
+    const filteredTitles = type ? titles.filter(t => t.type === type) : titles;
+    const counterparties = this.getCounterparties();
+    const cpMap = new Map(counterparties.map(c => [c.id, c.name]));
+
+    // Agrupar por (counterpartyId + competence + amount.toFixed(2) + type)
+    const groups = new Map<string, FinancialTitle[]>();
+    for (const t of filteredTitles) {
+      if (!t.counterpartyId || !t.competence) continue;
+      const amountVal = (Number(t.balancePrincipal) || Number(t.originalAmount) || 0).toFixed(2);
+      const key = `${t.type}_${t.counterpartyId}_${t.competence}_${amountVal}`;
+      const existing = groups.get(key) || [];
+      existing.push(t);
+      groups.set(key, existing);
+    }
+
+    const duplicates: Array<{
+      groupKey: string;
+      counterpartyId: string;
+      counterpartyName: string;
+      competence: string;
+      amount: number;
+      titles: FinancialTitle[];
+    }> = [];
+
+    for (const [key, groupTitles] of groups.entries()) {
+      if (groupTitles.length > 1) {
+        const first = groupTitles[0];
+        duplicates.push({
+          groupKey: key,
+          counterpartyId: first.counterpartyId,
+          counterpartyName: cpMap.get(first.counterpartyId) || 'Não identificado',
+          competence: first.competence,
+          amount: Number(first.originalAmount) || Number(first.balancePrincipal) || 0,
+          titles: groupTitles
+        });
+      }
+    }
+
+    return duplicates;
+  }
+
+  // ==========================================
   // CREDIT CARDS & PURCHASES
   // ==========================================
   public getCreditCards(): CreditCard[] {

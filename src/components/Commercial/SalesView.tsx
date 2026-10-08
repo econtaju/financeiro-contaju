@@ -69,7 +69,6 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
   const [firstDueDate, setFirstDueDate] = useState(today);
   const [accountId, setAccountId] = useState(chartAccounts[0]?.id || '');
-  const [distributeCompetence, setDistributeCompetence] = useState<boolean>(true);
   const [isGeneratingSale, setIsGeneratingSale] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -78,6 +77,20 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     if (!customerId) return [];
     return contracts.filter(c => c.customerId === customerId && c.status === 'ATIVO');
   }, [customerId, contracts]);
+
+  // Detecção de títulos já existentes para o cliente na mesma competência
+  const existingTitlesForClientAndComp = useMemo(() => {
+    if (!customerId || !competence) return [];
+    return allTitles.filter(t => 
+      t.type === 'RECEBER' && 
+      t.counterpartyId === customerId && 
+      t.competence === competence &&
+      t.documentState !== 'CANCELADO'
+    );
+  }, [customerId, competence, allTitles]);
+
+  // Modal de Confirmação de Duplicidade / Faturamento Sobreposto
+  const [showDuplicateWarningModal, setShowDuplicateWarningModal] = useState(false);
 
   // Modal de Detalhes da Venda & Vínculos
   const [selectedSaleForDetails, setSelectedSaleForDetails] = useState<Sale | null>(null);
@@ -213,7 +226,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     setSaleToDelete(null);
   };
 
-  const handleGenerateSale = (e: React.FormEvent) => {
+  const handleGenerateSale = (e: React.FormEvent, forceBypassWarning = false) => {
     e.preventDefault();
     setSuccessMessage('');
 
@@ -222,6 +235,12 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
     if (FinancialEngine.isPeriodClosed(competence)) {
       alert(`O período ${competence} está fechado.`);
+      return;
+    }
+
+    // Se já existem títulos para este cliente na mesma competência e não foi confirmado bypass
+    if (!forceBypassWarning && existingTitlesForClientAndComp.length > 0) {
+      setShowDuplicateWarningModal(true);
       return;
     }
 
@@ -244,13 +263,6 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         const titleId = `tit-sale-${Date.now()}-${i}`;
         generatedTitleIds.push(titleId);
 
-        // Competência: distribuída mensalmente ou única
-        let installmentComp = competence;
-        if (distributeCompetence && installmentsCount > 1) {
-          const targetDate = new Date(compBaseYear, compBaseMonth - 1 + (i - 1), 1);
-          installmentComp = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        }
-
         const title: FinancialTitle = {
           id: titleId,
           companyId: 'comp-1',
@@ -260,7 +272,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           description: `${description} (Parcela ${i}/${installmentsCount})`,
           accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01',
           launchDate: today,
-          competence: installmentComp,
+          competence: competence, // Competência econômica contábil da venda (regime de competência único no DRE)
           issueDate: today,
           dueDate: dueDateStr,
           expectedCashDate: dueDateStr,
@@ -276,7 +288,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           saleNumber: baseNumber,
           installmentIndex: i,
           totalInstallments: installmentsCount,
-          notes: `Faturamento parcelado em ${installmentsCount}x da venda ${baseNumber}${distributeCompetence ? ' (competência mês a mês)' : ''}`,
+          notes: `Faturamento parcelado em ${installmentsCount}x da venda ${baseNumber} (Competência DRE: ${competence})`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -309,7 +321,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         discountTotal: 0,
         netTotal: totalAmount,
         installmentsCount,
-        notes: `Venda avulsa faturada em ${installmentsCount} parcelas.${distributeCompetence ? ' Competências distribuídas mensalmente.' : ''}`,
+        notes: `Venda avulsa faturada em ${installmentsCount} parcelas.`,
         createdAt: new Date().toISOString(),
         originType: 'AVULSO',
         status: 'CONFIRMADA',
@@ -324,10 +336,10 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         action: 'VENDA_PARCELADA_GERADA',
         module: 'Vendas e Faturamento',
         recordId: baseNumber,
-        details: `Venda ${baseNumber} de ${formatBRL(totalAmount)} em ${installmentsCount}x para ${client?.name}. Competência inicial: ${competence}.${distributeCompetence ? ' Distribuída mês a mês no DRE.' : ''}`
+        details: `Venda ${baseNumber} de ${formatBRL(totalAmount)} em ${installmentsCount}x para ${client?.name}. Competência econômica DRE: ${competence}.`
       });
 
-      setSuccessMessage(`✓ Venda ${baseNumber} gerada com sucesso! ${installmentsCount} parcelas de ${formatBRL(installmentValue)} criadas ${distributeCompetence ? 'com competências mês a mês no DRE' : `com competência em ${competence}`}.`);
+      setSuccessMessage(`✓ Venda ${baseNumber} gerada com sucesso! ${installmentsCount} parcelas de ${formatBRL(installmentValue)} criadas com competência econômica única em ${competence}.`);
       setIsModalOpen(false);
     } finally {
       setIsGeneratingSale(false);
@@ -1065,55 +1077,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 </div>
               </div>
 
-              {/* Opção de Distribuição de Competência para Parcelamentos */}
-              {installmentsCount > 1 && (
-                <div className="p-3 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] space-y-1.5">
-                  <span className="block font-semibold text-[var(--text-primary)] text-xs">
-                    Distribuição da Competência Contábil no DRE:
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <label className={`p-2 rounded-lg border flex items-center gap-2 cursor-pointer transition-colors ${
-                      distributeCompetence
-                        ? 'border-amber-500 bg-amber-500/10 font-bold text-amber-900 dark:text-amber-300'
-                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="distributeComp"
-                        checked={distributeCompetence}
-                        onChange={() => setDistributeCompetence(true)}
-                        className="text-amber-500 focus:ring-amber-500"
-                      />
-                      <div>
-                        <div>Distribuir Mês a Mês</div>
-                        <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400">1 parcela por competência (Recomendado)</div>
-                      </div>
-                    </label>
-
-                    <label className={`p-2 rounded-lg border flex items-center gap-2 cursor-pointer transition-colors ${
-                      !distributeCompetence
-                        ? 'border-amber-500 bg-amber-500/10 font-bold text-amber-900 dark:text-amber-300'
-                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="distributeComp"
-                        checked={!distributeCompetence}
-                        onChange={() => setDistributeCompetence(false)}
-                        className="text-amber-500 focus:ring-amber-500"
-                      />
-                      <div>
-                        <div>Competência Única</div>
-                        <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400">Total reconhecido no 1º mês</div>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              )}
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-[var(--text-primary)] mb-1">Competência Inicial DRE *</label>
+                  <label className="block font-semibold text-[var(--text-primary)] mb-1">Competência DRE *</label>
                   <input
                     type="month"
                     value={competence}
@@ -1121,9 +1087,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                     className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 font-semibold text-[var(--text-primary)]"
                     required
                   />
-                  <span className="text-[10px] text-[var(--text-secondary)]">
-                    {distributeCompetence && installmentsCount > 1 ? 'Mês inicial do cronograma' : 'Reconhecimento da receita'}
-                  </span>
+                  <span className="text-[10px] text-[var(--text-secondary)]">Reconhecimento integral da receita</span>
                 </div>
 
                 <div>
@@ -1156,15 +1120,13 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
               <div className="p-3 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl text-xs space-y-1">
                 <div className="font-semibold text-[var(--text-primary)] flex items-center">
                   <Layers className="w-3.5 h-3.5 mr-1 text-amber-500" />
-                  Simulação do Cronograma Financeiro:
+                  Simulação Contábil (DRE) vs Financeiro (Caixa):
                 </div>
                 <div className="text-[var(--text-secondary)]">
-                  {installmentsCount}x de <strong>{formatBRL(installmentValue)}</strong>
+                  Total reconhecido no DRE em <strong>{formatCompetence(competence)}</strong>: <strong>{formatBRL(totalAmount)}</strong>
                 </div>
                 <div className="text-[11px] text-[var(--text-secondary)]">
-                  {distributeCompetence && installmentsCount > 1 
-                    ? `Reconhecido no DRE: ${formatBRL(installmentValue)} por mês ao longo de ${installmentsCount} meses`
-                    : `Total reconhecido no DRE (${formatCompetence(competence)}): ${formatBRL(totalAmount)}`}
+                  Fluxo de Caixa: {installmentsCount} parcela(s) de <strong>{formatBRL(installmentValue)}</strong> distribuídas nos vencimentos
                 </div>
               </div>
 
@@ -1193,6 +1155,84 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Alerta e Confirmação de Duplicidade / Faturamento Sobreposto */}
+      {showDuplicateWarningModal && (
+        <div className="fixed inset-0 z-60 overflow-y-auto bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-amber-500/40 animate-in fade-in zoom-in-95">
+            <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-subtle)] bg-amber-500/15">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-amber-900 dark:text-amber-300">
+                    Aviso de Faturamento Sobreposto
+                  </h2>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Possível duplicidade identificada
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDuplicateWarningModal(false)}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-xl hover:bg-[var(--surface-elevated)] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
+                Já existe(m) <strong>{existingTitlesForClientAndComp.length} título(s) a receber</strong> cadastrado(s) para este cliente na competência <strong>{formatCompetence(competence)}</strong>:
+              </p>
+
+              <div className="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]">
+                {existingTitlesForClientAndComp.map(t => (
+                  <div key={t.id} className="flex justify-between items-center text-[11px] p-1.5 rounded bg-[var(--surface-card)]">
+                    <span className="font-mono font-bold text-[var(--text-primary)]">
+                      {t.titleNumber} ({t.originType})
+                    </span>
+                    <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">
+                      {formatBRL(t.originalAmount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1 text-slate-800 dark:text-slate-200">
+                <p className="font-bold text-amber-900 dark:text-amber-300">
+                  Deseja realmente gerar este novo faturamento?
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Se esta venda for uma cobrança avulsa ou serviço extra independente da mensalidade, clique em <strong>"Sim, Criar Cobrança Adicional"</strong>. Se for apenas a mensalidade regular, cancele para não duplicar o contas a receber.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-2.5 pt-3 border-t border-[var(--border-subtle)]">
+                <button
+                  type="button"
+                  onClick={() => setShowDuplicateWarningModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] transition-colors cursor-pointer"
+                >
+                  Cancelar (Evitar Duplicata)
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setShowDuplicateWarningModal(false);
+                    handleGenerateSale(e as any, true);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  Sim, Criar Cobrança Adicional
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -47,6 +47,7 @@ import { BatchPostponeModal } from '../Modals/BatchPostponeModal';
 import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
+import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { SwipeableCard } from '../Common/SwipeableCard';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
@@ -89,6 +90,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const [isBatchSettlementOpen, setIsBatchSettlementOpen] = useState(false);
   const [isBatchPostponeOpen, setIsBatchPostponeOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isDedupModalOpen, setIsDedupModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedMobileIds, setExpandedMobileIds] = useState<Record<string, boolean>>({});
   const [historyTitle, setHistoryTitle] = useState<FinancialTitle | null>(null);
@@ -777,6 +779,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           >
             <Upload className="w-4 h-4 mr-1.5 text-amber-500" />
             Importar
+          </button>
+          <button
+            onClick={() => setIsDedupModalOpen(true)}
+            className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs shrink-0 cursor-pointer"
+            title="Assistente de conciliação e limpeza de títulos duplicados"
+          >
+            <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
+            Limpeza de Duplicidades
           </button>
           <button
             onClick={handleExportExcel}
@@ -1735,6 +1745,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             Parcial
                           </span>
                         )}
+                        {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                            🏷️ Contrato {t.contractNumber || ''}
+                          </span>
+                        )}
+                        {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                            🏷️ Venda {t.saleNumber || ''}
+                          </span>
+                        )}
                         {portfolioRisk.customerProfiles[t.counterpartyId] && (
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${portfolioRisk.customerProfiles[t.counterpartyId].riskColorClasses.badge}`}>
                             {portfolioRisk.customerProfiles[t.counterpartyId].riskBadgeLabel}
@@ -2238,8 +2258,26 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       </td>
 
                       <td className="py-3 px-4">
-                        <div className="font-mono font-semibold text-slate-900">{t.titleNumber}</div>
-                        <div className="text-[11px] text-slate-700 truncate max-w-[200px]">{t.description}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{t.titleNumber}</span>
+                          {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                            <span 
+                              title={`Título originado de Contrato Recorrente${t.contractNumber ? `: ${t.contractNumber}` : ''}`}
+                              className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                            >
+                              🏷️ Contrato {t.contractNumber || ''}
+                            </span>
+                          )}
+                          {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
+                            <span 
+                              title={`Título originado de Venda Avulsa / Parcelada${t.saleNumber ? `: ${t.saleNumber}` : ''}`}
+                              className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30"
+                            >
+                              🏷️ Venda {t.saleNumber || ''}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{t.description}</div>
                       </td>
 
                       <td className="py-3 px-4">
@@ -2560,6 +2598,20 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           setToastMessage({
             type: 'success',
             text: message || `${reopenedCount} recebimento(s) voltaram para EM ABERTO!`
+          });
+        }}
+      />
+
+      {/* Assistente de Limpeza de Duplicidades */}
+      <DeduplicationWizardModal
+        isOpen={isDedupModalOpen}
+        type="RECEBER"
+        onClose={() => setIsDedupModalOpen(false)}
+        onResolved={(deletedCount) => {
+          setRefreshKey(k => k + 1);
+          setToastMessage({
+            type: 'success',
+            text: `✓ ${deletedCount} duplicata(s) de títulos a receber removida(s) com sucesso!`
           });
         }}
       />

@@ -42,6 +42,7 @@ import { BatchPostponeModal } from '../Modals/BatchPostponeModal';
 import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
+import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { SwipeableCard } from '../Common/SwipeableCard';
@@ -85,6 +86,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
   const [isBatchPostponeOpen, setIsBatchPostponeOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBoletoModalOpen, setIsBoletoModalOpen] = useState(false);
+  const [isDedupModalOpen, setIsDedupModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedMobileIds, setExpandedMobileIds] = useState<Record<string, boolean>>({});
   const [historyTitle, setHistoryTitle] = useState<FinancialTitle | null>(null);
@@ -778,6 +780,14 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           >
             <Upload className="w-4 h-4 mr-1.5 text-amber-500" />
             Importar
+          </button>
+          <button
+            onClick={() => setIsDedupModalOpen(true)}
+            className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs shrink-0 cursor-pointer"
+            title="Assistente de conciliação e limpeza de contas a pagar duplicadas"
+          >
+            <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
+            Limpeza de Duplicidades
           </button>
           <button
             onClick={handleExportExcel}
@@ -2132,6 +2142,19 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{t.titleNumber}</span>
+                          {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                            <span 
+                              title={`Origem: Contrato ${t.contractNumber || ''}`}
+                              className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                            >
+                              🏷️ Contrato {t.contractNumber || ''}
+                            </span>
+                          )}
+                          {t.originType === 'RECORRENCIA_PAGAR' && (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                              🏷️ Recorrência
+                            </span>
+                          )}
                           {t.originType === 'CARTAO_CREDITO' && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-2xs">
                               <CreditCard className="w-3 h-3 text-amber-500" />
@@ -2472,6 +2495,20 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         onSuccess={(msg) => {
           setToastMessage({ text: msg, type: 'success' });
           setRefreshKey(k => k + 1);
+        }}
+      />
+
+      {/* Assistente de Limpeza de Duplicidades */}
+      <DeduplicationWizardModal
+        isOpen={isDedupModalOpen}
+        type="PAGAR"
+        onClose={() => setIsDedupModalOpen(false)}
+        onResolved={(deletedCount) => {
+          setRefreshKey(k => k + 1);
+          setToastMessage({
+            type: 'success',
+            text: `✓ ${deletedCount} duplicata(s) de títulos a pagar removida(s) com sucesso!`
+          });
         }}
       />
 
