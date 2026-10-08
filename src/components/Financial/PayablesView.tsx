@@ -403,12 +403,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           return false;
         }
 
-        // Origin filter (Cartão de Crédito vs outros)
+        // Origin filter
         if (originFilter === 'CARTAO_CREDITO' && t.originType !== 'CARTAO_CREDITO') {
           return false;
         }
-        if (originFilter === 'OUTROS' && t.originType === 'CARTAO_CREDITO') {
-          return false;
+        if (originFilter === 'CONTRATO') {
+          const isContract = t.originType === 'CONTRATO' || t.originType === 'RECORRENCIA_PAGAR' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || Boolean(t.contractNumber);
+          if (!isContract) return false;
+        }
+        if (originFilter === 'OUTROS') {
+          const isContractOrCard = t.originType === 'CARTAO_CREDITO' || t.originType === 'CONTRATO' || t.originType === 'RECORRENCIA_PAGAR' || Boolean(t.contractNumber);
+          if (isContractOrCard) return false;
         }
 
         const balance = Number(t.balancePrincipal) || 0;
@@ -1284,19 +1289,20 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
             </select>
           </div>
 
-          {/* Origem / Modalidade (Cartão de Crédito vs Título) */}
+          {/* Origem / Modalidade */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              Modalidade / Origem:
+              Origem do Título:
             </label>
             <select
               value={originFilter}
               onChange={(e) => setOriginFilter(e.target.value as any)}
               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
             >
-              <option value="ALL">Todas as Modalidades</option>
+              <option value="ALL">Todas as Origens</option>
               <option value="CARTAO_CREDITO">💳 Cartão de Crédito</option>
-              <option value="OUTROS">📄 Boletos / Títulos Tradicionais</option>
+              <option value="CONTRATO">🏷️ Contratos / Recorrências</option>
+              <option value="OUTROS">📄 Boletos / Despesas Manuais</option>
             </select>
           </div>
 

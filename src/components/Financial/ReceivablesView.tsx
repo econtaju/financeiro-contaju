@@ -32,6 +32,8 @@ import {
   ShieldCheck,
   MessageCircle,
   Lock,
+  Printer,
+  FileCheck,
   X
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
@@ -48,6 +50,7 @@ import { ImportSpreadsheetModal } from '../Modals/ImportSpreadsheetModal';
 import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
+import { ReceiptModal } from '../Modals/ReceiptModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { SwipeableCard } from '../Common/SwipeableCard';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
@@ -76,6 +79,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO' | 'ESTE_MES'>('ALL');
   const [isPredictiveExpandedMobile, setIsPredictiveExpandedMobile] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [originFilter, setOriginFilter] = useState<'ALL' | 'CONTRATO' | 'VENDA' | 'MANUAL'>('ALL');
   const [counterpartyFilter, setCounterpartyFilter] = useState<string>('ALL');
   const [bankFilter, setBankFilter] = useState<string>('ALL');
   const [riskFilter, setRiskFilter] = useState<'ALL' | 'BAIXO' | 'MODERADO' | 'ALTO'>('ALL');
@@ -86,6 +90,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
   const [selectedTitleForSettlement, setSelectedTitleForSettlement] = useState<FinancialTitle | null>(null);
   const [selectedTitleForEdit, setSelectedTitleForEdit] = useState<FinancialTitle | null>(null);
+  const [receiptTitle, setReceiptTitle] = useState<FinancialTitle | null>(null);
   const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
   const [isBatchSettlementOpen, setIsBatchSettlementOpen] = useState(false);
   const [isBatchPostponeOpen, setIsBatchPostponeOpen] = useState(false);
@@ -408,6 +413,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           }
         }
 
+        // Origin filter (Contrato Recorrente vs Venda Avulsa/Parcelada vs Manual)
+        if (originFilter !== 'ALL') {
+          const isContract = t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || Boolean(t.contractNumber);
+          const isSale = t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || Boolean(t.saleNumber);
+
+          if (originFilter === 'CONTRATO' && !isContract) return false;
+          if (originFilter === 'VENDA' && !isSale) return false;
+          if (originFilter === 'MANUAL' && (isContract || isSale)) return false;
+        }
+
         // Counterparty filter
         if (counterpartyFilter !== 'ALL' && t.counterpartyId !== counterpartyFilter) {
           return false;
@@ -525,13 +540,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const handleClearFilters = () => {
     setSearchTerm('');
     setCategoryFilter('ALL');
+    setOriginFilter('ALL');
     setCounterpartyFilter('ALL');
     setBankFilter('ALL');
     setQuickDateFilter('ALL');
     setStatusFilter('ABERTO');
   };
 
-  const hasActiveFilters = searchTerm !== '' || categoryFilter !== 'ALL' || counterpartyFilter !== 'ALL' || bankFilter !== 'ALL' || quickDateFilter !== 'ALL';
+  const hasActiveFilters = searchTerm !== '' || categoryFilter !== 'ALL' || originFilter !== 'ALL' || counterpartyFilter !== 'ALL' || bankFilter !== 'ALL' || quickDateFilter !== 'ALL';
 
   // Batch selection helpers - Permite selecionar qualquer lançamento, inclusive cancelados para exclusão em lote
   const selectableTitles = filteredTitles;
@@ -1360,6 +1376,23 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
             </select>
           </div>
 
+          {/* Origem do Lançamento (Contrato vs Venda vs Manual) */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Origem do Título:
+            </label>
+            <select
+              value={originFilter}
+              onChange={(e) => setOriginFilter(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            >
+              <option value="ALL">Todas as Origens</option>
+              <option value="CONTRATO">🏷️ Contratos Recorrentes</option>
+              <option value="VENDA">🏷️ Vendas Avulsas / Parceladas</option>
+              <option value="MANUAL">🏷️ Lançamentos Diretos / Manuais</option>
+            </select>
+          </div>
+
           {/* Banco / Conta Prevista */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -2015,6 +2048,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <Eye className="w-4 h-4" />
                       </button>
 
+                      {/* Botão de Recibo Mobile */}
+                      {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                        <button
+                          type="button"
+                          onClick={() => setReceiptTitle(t)}
+                          className="min-h-[40px] py-2 px-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                          title="Gerar e Imprimir Recibo Oficial de Quitação"
+                        >
+                          <Printer className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Recibo</span>
+                        </button>
+                      )}
+
                       {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
                         <button
                           type="button"
@@ -2389,6 +2435,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                           <Eye className="w-4 h-4" />
                         </button>
 
+                        {/* Gerar Recibo Oficial para o Cliente */}
+                        {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                          <button
+                            onClick={() => setReceiptTitle(t)}
+                            className="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors"
+                            title="Gerar e Imprimir Recibo Oficial de Quitação para o Cliente"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        )}
+
                         {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
                           <button
                             onClick={(e) => handleOpenSingleReopen(t, e)}
@@ -2614,6 +2671,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
             text: `✓ ${deletedCount} duplicata(s) de títulos a receber removida(s) com sucesso!`
           });
         }}
+      />
+
+      {/* Modal de Emissão de Recibo Oficial */}
+      <ReceiptModal
+        isOpen={!!receiptTitle}
+        title={receiptTitle}
+        onClose={() => setReceiptTitle(null)}
       />
 
       {/* In-App Toast Notification */}
