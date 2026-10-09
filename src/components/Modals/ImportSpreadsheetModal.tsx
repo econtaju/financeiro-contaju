@@ -556,8 +556,6 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const availableGroups = useMemo(() => {
     return groupedAccounts.filter(g => {
       if (targetType === 'PAGAR') {
@@ -607,6 +605,8 @@ export const CategoryQuickSearchModal: React.FC<CategoryQuickSearchModalProps> =
       onClose();
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in">

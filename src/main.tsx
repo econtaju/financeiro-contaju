@@ -31,9 +31,13 @@ if (typeof window !== 'undefined') {
   }, { passive: true });
 }
 
+import { AppErrorBoundary } from './components/Common/AppErrorBoundary';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </StrictMode>,
 );
 

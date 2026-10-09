@@ -54,6 +54,8 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string>(row?.matchedChartAccountId || '');
   const [centroCusto, setCentroCusto] = useState<string>(row?.normalized?.centroCusto || '');
   const [customFields, setCustomFields] = useState<Record<string, any>>(row?.normalized?.customFields || {});
+  const [showCategorySearch, setShowCategorySearch] = useState(false);
+  const groupedAccounts = React.useMemo(() => getGroupedChartAccounts(chartAccounts, tipo), [chartAccounts, tipo]);
 
   // Reset form when row changes
   useEffect(() => {
@@ -88,8 +90,6 @@ export const ImportEditRowModal: React.FC<ImportEditRowModalProps> = ({
 
   // Filtrar contas analíticas de acordo com o tipo
   const relevantAccounts = chartAccounts.filter(a => a.isAnalytical);
-  const [showCategorySearch, setShowCategorySearch] = useState(false);
-  const groupedAccounts = React.useMemo(() => getGroupedChartAccounts(chartAccounts, tipo), [chartAccounts, tipo]);
   const currentAccount = chartAccounts.find(a => a.id === selectedAccountId);
 
   const handleSubmit = (e: React.FormEvent) => {

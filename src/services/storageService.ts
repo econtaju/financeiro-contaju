@@ -1487,7 +1487,23 @@ class StorageService {
 
   // Titles (Receivables & Payables)
   public getTitles(): FinancialTitle[] {
-    return this.get(STORAGE_KEYS.TITLES, INITIAL_TITLES);
+    const raw = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, INITIAL_TITLES);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(t => t && typeof t === 'object' && t.id).map(t => {
+      const orig = Number(t.originalAmount) || 0;
+      const settled = Number(t.settledPrincipal) || 0;
+      const bal = typeof t.balancePrincipal === 'number' && !isNaN(t.balancePrincipal)
+        ? t.balancePrincipal
+        : Math.max(0, orig - settled);
+      return {
+        ...t,
+        originalAmount: orig,
+        settledPrincipal: settled,
+        balancePrincipal: bal,
+        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+        competence: t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : new Date().toISOString().substring(0, 7))
+      };
+    });
   }
   public saveTitles(titles: FinancialTitle[]) {
     const seen = new Set<string>();
@@ -1681,9 +1697,16 @@ class StorageService {
     const titles = this.getTitles();
     const updated = titles.map(t => {
       if (t.id === titleId) {
+        const nextOriginal = updates.originalAmount !== undefined ? Number(updates.originalAmount) : t.originalAmount;
+        const nextSettled = updates.settledPrincipal !== undefined ? Number(updates.settledPrincipal) : t.settledPrincipal;
+        const nextBalance = updates.balancePrincipal !== undefined ? Number(updates.balancePrincipal) : Math.max(0, nextOriginal - nextSettled);
+
         return {
           ...t,
           ...updates,
+          originalAmount: nextOriginal,
+          settledPrincipal: nextSettled,
+          balancePrincipal: Math.max(0, nextBalance),
           updatedAt: new Date().toISOString()
         };
       }

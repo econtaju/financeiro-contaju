@@ -99,43 +99,71 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     return filtered;
   }, [title?.type, accountId, isOpen]);
 
+  const allCounterparties = useMemo(() => {
+    try {
+      const data = storage.getCounterparties();
+      return Array.isArray(data) ? data.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }, [counterpartyRefreshTrigger, isOpen]);
+
+  const bankAccounts = useMemo(() => {
+    try {
+      const data = storage.getBankAccounts();
+      return Array.isArray(data) ? data.filter(a => a && a.status === 'ATIVO') : [];
+    } catch {
+      return [];
+    }
+  }, [isOpen]);
+
   if (!isOpen || !title) return null;
 
   const isReceber = title.type === 'RECEBER';
-  const hasSettlements = title.settledPrincipal > 0;
+  const hasSettlements = (title.settledPrincipal || 0) > 0;
 
-  const allCounterparties = useMemo(() => storage.getCounterparties(), [counterpartyRefreshTrigger, isOpen]);
-  const counterparties = allCounterparties.filter(c => {
+  const counterparties = (allCounterparties || []).filter(c => {
+    if (!c) return false;
     if (isReceber) return c.type === 'CLIENTE' || c.type === 'AMBOS';
     if (counterpartyFilter === 'FORNECEDORES') return c.type === 'FORNECEDOR' || c.type === 'AMBOS';
     if (counterpartyFilter === 'CLIENTES') return c.type === 'CLIENTE' || c.type === 'AMBOS';
     return true; // TODOS
   });
-  const bankAccounts = storage.getBankAccounts().filter(a => a.status === 'ATIVO');
 
-  const counterpartyOptions: SelectOption[] = counterparties.map(c => {
-    let typeBadge = '';
-    if (c.type === 'CLIENTE') typeBadge = 'Cliente';
-    else if (c.type === 'FORNECEDOR') typeBadge = 'Fornecedor';
-    else if (c.type === 'AMBOS') typeBadge = 'Cliente & Forn.';
+  const counterpartyOptions: SelectOption[] = counterparties
+    .filter(c => c && c.id)
+    .map(c => {
+      let typeBadge = '';
+      if (c.type === 'CLIENTE') typeBadge = 'Cliente';
+      else if (c.type === 'FORNECEDOR') typeBadge = 'Fornecedor';
+      else if (c.type === 'AMBOS') typeBadge = 'Cliente & Forn.';
 
-    return {
-      value: c.id,
-      label: c.name,
-      sublabel: c.document ? `Doc: ${c.document}` : (c.tradeName || undefined),
-      badge: c.status === 'ATIVO' ? typeBadge : 'Inativo'
-    };
-  });
+      return {
+        value: c.id,
+        label: c.name || 'Sem Nome',
+        sublabel: c.document ? `Doc: ${c.document}` : (c.tradeName || undefined),
+        badge: c.status === 'ATIVO' ? typeBadge : 'Inativo'
+      };
+    });
 
-  const chartAccountOptions: SelectOption[] = formatChartAccountSelectOptions(chartAccounts);
+  const chartAccountOptions: SelectOption[] = formatChartAccountSelectOptions(chartAccounts || []);
 
   const bankAccountOptions: SelectOption[] = [
     { value: '', label: 'Indiferente / Não definida' },
-    ...bankAccounts.map(b => ({
-      value: b.id,
-      label: b.name,
-      sublabel: `${b.institution} - Saldo R$ ${FinancialEngine.getAccountBalance(b.id).toFixed(2)}`
-    }))
+    ...bankAccounts.map(b => {
+      let balanceStr = '0.00';
+      try {
+        const bal = FinancialEngine.getAccountBalance(b.id);
+        balanceStr = Number(bal || 0).toFixed(2);
+      } catch {
+        balanceStr = '0.00';
+      }
+      return {
+        value: b.id,
+        label: b.name || 'Conta Bancária',
+        sublabel: `${b.institution || 'Banco'} - Saldo R$ ${balanceStr}`
+      };
+    })
   ];
 
   const handleQuickCreateCounterparty = (name: string) => {

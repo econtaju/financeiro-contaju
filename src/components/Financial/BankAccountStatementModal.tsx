@@ -47,8 +47,6 @@ export const BankAccountStatementModal: React.FC<BankAccountStatementModalProps>
   initialPeriodYear,
   initialPeriodMonth
 }) => {
-  if (!isOpen || !account) return null;
-
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('DAY');
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('ALL');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('CURRENT_MONTH');
@@ -63,6 +61,7 @@ export const BankAccountStatementModal: React.FC<BankAccountStatementModalProps>
 
   // 1. Obter todas as movimentações da conta em ordem cronológica para cálculo do saldo progressivo
   const allAccountMovements = useMemo(() => {
+    if (!account) return [];
     const rawMovements = storage.getMovements().filter(m => m.bankAccountId === account.id && !m.isReversed);
     // Ordenação cronológica crescente para computar o saldo contínuo
     const sortedAsc = [...rawMovements].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
@@ -274,6 +273,8 @@ export const BankAccountStatementModal: React.FC<BankAccountStatementModalProps>
       exportToCSV(filename, headers, rows);
     }
   };
+
+  if (!isOpen || !account) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">

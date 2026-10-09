@@ -4,6 +4,7 @@ import { Sidebar, NavigationScreen } from './components/Sidebar';
 import { BottomNavBar } from './components/Common/BottomNavBar';
 import { storage } from './services/storageService';
 import { User } from './types';
+import { AppErrorBoundary } from './components/Common/AppErrorBoundary';
 
 // Modals
 import { NewTitleModal } from './components/Modals/NewTitleModal';
@@ -355,7 +356,9 @@ function AppContent() {
           isFocusMode ? 'p-2 sm:p-4' : 'p-2 sm:p-3 md:p-4 lg:p-5 pb-20 lg:pb-5'
         }`}>
           <div className="w-full max-w-full min-w-0 space-y-4">
-            {renderActiveScreen()}
+            <AppErrorBoundary fallbackTitle="Falha na exibição desta tela">
+              {renderActiveScreen()}
+            </AppErrorBoundary>
           </div>
         </main>
       </div>

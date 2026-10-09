@@ -49,8 +49,6 @@ export const CashSimulationModal: React.FC<CashSimulationModalProps> = ({
   nominalPayablesThisMonth,
   onSaved
 }) => {
-  if (!isOpen) return null;
-
   const [scenarios, setScenarios] = useState<SavedCashSimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
   
@@ -231,6 +229,8 @@ export const CashSimulationModal: React.FC<CashSimulationModalProps> = ({
       onSaved?.();
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
