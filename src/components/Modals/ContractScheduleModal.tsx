@@ -41,7 +41,14 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
   const [startMonthMode, setStartMonthMode] = useState<'CURRENT_MONTH' | 'NEXT_MONTH' | 'CONTRACT_START' | 'CUSTOM'>('CURRENT_MONTH');
   const [customStartMonth, setCustomStartMonth] = useState<string>(currentMonth);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [feedback, setFeedback] = useState<{ count: number; amount: number; existing: number } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    count: number;
+    amount: number;
+    existing: number;
+    updated?: number;
+    error?: string;
+    isSyncSuggestion?: boolean;
+  } | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Quick edit value state
@@ -142,25 +149,53 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
 
   if (!isOpen || !contract) return null;
 
-  const handleGenerate = () => {
+  const handleGenerate = (options?: { updateExistingOpen?: boolean }) => {
     setIsGenerating(true);
     setFeedback(null);
 
     try {
+      const freshContract = storage.getContracts().find(c => c.id === contract.id) || contract;
       const res = FinancialEngine.generateContractFutureInstallments(
-        contract, 
+        freshContract, 
         monthsCount, 
-        effectiveStartCompetence
+        effectiveStartCompetence,
+        options
       );
-      setFeedback({
-        count: res.generatedCount,
-        amount: res.totalAmountGenerated,
-        existing: res.alreadyExistingCount
-      });
+
+      if (res.error) {
+        setFeedback({
+          count: 0,
+          amount: 0,
+          existing: res.alreadyExistingCount,
+          updated: res.updatedCount,
+          error: res.error
+        });
+      } else if (res.generatedCount === 0 && (res.updatedCount || 0) === 0 && res.alreadyExistingCount > 0) {
+        setFeedback({
+          count: 0,
+          amount: 0,
+          existing: res.alreadyExistingCount,
+          updated: 0,
+          isSyncSuggestion: true
+        });
+      } else {
+        setFeedback({
+          count: res.generatedCount,
+          amount: res.totalAmountGenerated,
+          existing: res.alreadyExistingCount,
+          updated: res.updatedCount
+        });
+      }
       setRefreshTrigger(prev => prev + 1);
       if (onUpdate) onUpdate();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao gerar parcelas futuras:', err);
+      setFeedback({
+        count: 0,
+        amount: 0,
+        existing: 0,
+        error: `Erro ao processar: ${err?.message || 'Falha inesperada'}`
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -450,31 +485,90 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={handleGenerate}
+                  onClick={() => handleGenerate()}
                   disabled={isGenerating}
                   className="px-4 py-2 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Gerar títulos para as competências selecionadas"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>{isGenerating ? 'Gerando...' : 'Gerar Meses'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleGenerate({ updateExistingOpen: true })}
+                  disabled={isGenerating}
+                  className="px-3.5 py-2 bg-[var(--surface-card)] hover:bg-[var(--surface-elevated)] text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Atualizar valores e datas de todas as parcelas em aberto com base no contrato atual"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Sincronizar em Aberto</span>
                 </button>
               </div>
             </div>
 
             {feedback && (
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
-                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>
-                    Execução concluída: <strong>{feedback.count} novas faturas geradas</strong> ({formatBRL(feedback.amount)}).
-                    {feedback.existing > 0 && ` (${feedback.existing} competências já existiam e foram preservadas).`}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setFeedback(null)}
-                  className="text-emerald-700 dark:text-emerald-400 hover:underline text-[11px] cursor-pointer"
-                >
-                  OK
-                </button>
+              <div className="space-y-2">
+                {feedback.error ? (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-between text-xs text-rose-800 dark:text-rose-300 font-semibold animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                      <span>{feedback.error}</span>
+                    </div>
+                    <button
+                      onClick={() => setFeedback(null)}
+                      className="text-rose-700 dark:text-rose-400 hover:underline text-[11px] cursor-pointer"
+                    >
+                      OK
+                    </button>
+                  </div>
+                ) : feedback.isSyncSuggestion ? (
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
+                    <div className="flex items-start gap-2.5 text-amber-900 dark:text-amber-200">
+                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Todas as {feedback.existing} competências deste período já possuem faturas geradas.</div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                          Para atualizar os valores das parcelas em aberto para o valor atual ({formatBRL(contract.monthlyTotal)}), clique em sincronizar.
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleGenerate({ updateExistingOpen: true })}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Sincronizar Agora</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeedback(null)}
+                        className="px-2.5 py-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs cursor-pointer"
+                      >
+                        Dispensar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+                    <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>
+                        Execução concluída: <strong>{feedback.count} novas faturas geradas</strong>
+                        {(feedback.updated || 0) > 0 && ` e ${feedback.updated} parcelas em aberto atualizadas`} ({formatBRL(feedback.amount)}).
+                        {feedback.existing > 0 && ` (${feedback.existing} competências preservadas).`}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setFeedback(null)}
+                      className="text-emerald-700 dark:text-emerald-400 hover:underline text-[11px] cursor-pointer"
+                    >
+                      OK
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

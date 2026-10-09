@@ -793,15 +793,9 @@ export class FinancialEngine {
     const compMonthFormatted = compMonth.toString().padStart(2, '0');
 
     for (const contract of contracts) {
+      const statusNorm = String(contract.status || '').toUpperCase();
       // Ignorar contratos cancelados, inativos ou suspensos
-      if (contract.status !== 'ATIVO') {
-        ignoredCount++;
-        results.push({ contract, status: 'IGNORADO' });
-        continue;
-      }
-
-      // Se o contrato foi cancelado/inativado a partir de uma data, ignorar competências posteriores ou iguais
-      if (contract.cancellationDate && contract.cancellationDate.substring(0, 7) <= competence) {
+      if (statusNorm !== 'ATIVO') {
         ignoredCount++;
         results.push({ contract, status: 'IGNORADO' });
         continue;
@@ -1039,33 +1033,60 @@ export class FinancialEngine {
    * FATURAMENTO AUTOMÁTICO DE PRÓXIMOS MESES DO CONTRATO
    * Gera antecipadamente todos os títulos a receber futuros para a vigência do contrato
    */
+  /**
+   * FATURAMENTO AUTOMÁTICO DE PRÓXIMOS MESES DO CONTRATO
+   * Gera antecipadamente todos os títulos a receber futuros para a vigência do contrato
+   * com suporte a sincronização/atualização de parcelas em aberto existentes.
+   */
   public static generateContractFutureInstallments(
     contractOrId: Contract | string,
     numberOfMonths: number = 12,
-    startFromCompetence?: string
+    startFromCompetence?: string,
+    options?: {
+      overwriteOpen?: boolean;
+      updateExistingOpen?: boolean;
+    }
   ): {
     generatedCount: number;
+    updatedCount: number;
     alreadyExistingCount: number;
     totalAmountGenerated: number;
     competences: string[];
     titles: FinancialTitle[];
+    error?: string;
   } {
     const contracts = storage.getContracts();
     const contract = typeof contractOrId === 'string'
       ? contracts.find(c => c.id === contractOrId)
-      : contractOrId;
+      : (contracts.find(c => c.id === contractOrId.id) || contractOrId);
 
-    if (!contract || contract.status !== 'ATIVO') {
+    if (!contract) {
       return {
         generatedCount: 0,
+        updatedCount: 0,
         alreadyExistingCount: 0,
         totalAmountGenerated: 0,
         competences: [],
-        titles: []
+        titles: [],
+        error: 'Contrato não encontrado.'
+      };
+    }
+
+    const statusNorm = String(contract.status || '').toUpperCase();
+    if (statusNorm === 'CANCELADO' || statusNorm === 'INATIVO') {
+      return {
+        generatedCount: 0,
+        updatedCount: 0,
+        alreadyExistingCount: 0,
+        totalAmountGenerated: 0,
+        competences: [],
+        titles: [],
+        error: `O contrato ${contract.contractNumber} está ${contract.status}. Reative o contrato antes de gerar novas faturas.`
       };
     }
 
     const currentTitles = storage.getTitles();
+    const currentSales = storage.getSales();
     const mainAccountId = contract.items?.[0]?.accountId || 'acc-1.1.01';
 
     // Determinar competência inicial
@@ -1076,14 +1097,19 @@ export class FinancialEngine {
     const [startYear, startMonth] = startComp.split('-').map(Number);
     
     let generatedCount = 0;
+    let updatedCount = 0;
     let alreadyExistingCount = 0;
     let totalAmountGenerated = 0;
     const competencesGenerated: string[] = [];
     const newTitles: FinancialTitle[] = [];
     const newSales: Sale[] = [];
+    const updatedTitleMap = new Map<string, FinancialTitle>();
+    const updatedSaleMap = new Map<string, Sale>();
 
     const nowIso = new Date().toISOString();
     const todayYmd = nowIso.split('T')[0];
+    const isRecurringContract = contract.contractType !== 'AVULSO' && contract.isRecurring !== false;
+    const shouldUpdateOpen = options?.updateExistingOpen || options?.overwriteOpen;
 
     for (let i = 0; i < numberOfMonths; i++) {
       // Calcular ano e mês da competência
@@ -1093,13 +1119,14 @@ export class FinancialEngine {
       const cMonthFormatted = String(cMonth).padStart(2, '0');
       const competence = `${cYear}-${cMonthFormatted}`;
 
-      // Se o contrato tem data de término e a competência ultrapassa o término, interromper
-      if (contract.endDate && competence > contract.endDate.substring(0, 7)) {
+      // Apenas contratos avulsos (não recorrentes) respeitam corte estrito de término
+      if (!isRecurringContract && contract.endDate && competence > contract.endDate.substring(0, 7)) {
         break;
       }
 
-      // Se o contrato possui data de cancelamento/inativação a partir de tal data, interromper
-      if (contract.cancellationDate && competence >= contract.cancellationDate.substring(0, 7)) {
+      // Se o contrato estiver explicitamente cancelado/inativo, respeitar corte
+      const isExplicitlyCancelled = statusNorm === 'CANCELADO' || statusNorm === 'INATIVO';
+      if (isExplicitlyCancelled && contract.cancellationDate && competence >= contract.cancellationDate.substring(0, 7)) {
         break;
       }
 
@@ -1117,7 +1144,7 @@ export class FinancialEngine {
       }
 
       const lastDayOfMonth = new Date(dueYear, dueMonth, 0).getDate();
-      const actualDueDay = Math.min(contract.dueDay, lastDayOfMonth);
+      const actualDueDay = Math.min(contract.dueDay || 10, lastDayOfMonth);
       const dueDayFormatted = String(actualDueDay).padStart(2, '0');
       const dueMonthFormatted = String(dueMonth).padStart(2, '0');
       const dueDate = `${dueYear}-${dueMonthFormatted}-${dueDayFormatted}`;
@@ -1134,7 +1161,43 @@ export class FinancialEngine {
       );
 
       if (existing) {
-        alreadyExistingCount++;
+        if (shouldUpdateOpen && existing.settlementState !== 'LIQUIDADO' && existing.documentState !== 'CANCELADO') {
+          // Atualiza fatura em aberto com os parâmetros e valores atuais do contrato
+          const oldAmount = existing.originalAmount;
+          const updatedTitle: FinancialTitle = {
+            ...existing,
+            originalAmount: contract.monthlyTotal,
+            balancePrincipal: Math.max(0, contract.monthlyTotal - (existing.settledPrincipal || 0)),
+            dueDate,
+            expectedCashDate: dueDate,
+            updatedAt: nowIso,
+            notes: `${existing.notes || ''} [Sincronizado com contrato em ${todayYmd}: de ${formatBRL(oldAmount)} para ${formatBRL(contract.monthlyTotal)}]`
+          };
+          updatedTitleMap.set(updatedTitle.id, updatedTitle);
+          updatedCount++;
+          totalAmountGenerated += contract.monthlyTotal;
+
+          // Atualizar também venda correspondente se existir
+          const linkedSale = currentSales.find(s => 
+            s.id === existing.saleId || 
+            (s.titleIds && s.titleIds.includes(existing.id)) ||
+            (s.contractId === contract.id && s.competence === competence)
+          );
+          if (linkedSale) {
+            updatedSaleMap.set(linkedSale.id, {
+              ...linkedSale,
+              grossTotal: contract.monthlyTotal,
+              netTotal: contract.monthlyTotal,
+              items: linkedSale.items?.map(it => ({
+                ...it,
+                unitPrice: contract.monthlyTotal,
+                total: contract.monthlyTotal
+              })) || []
+            });
+          }
+        } else {
+          alreadyExistingCount++;
+        }
       } else {
         const saleId = `sale-${contract.id}-${competence}`;
         const saleNumber = `VEN-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
@@ -1245,7 +1308,7 @@ export class FinancialEngine {
         );
 
         if (!existingBalanceFee) {
-          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay;
+          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay || 10;
           const actualFeeDueDay = Math.min(feeDueDay, lastDayOfMonth);
           const feeDueDayFormatted = String(actualFeeDueDay).padStart(2, '0');
           const feeDueDate = `${dueYear}-${dueMonthFormatted}-${feeDueDayFormatted}`;
@@ -1282,22 +1345,60 @@ export class FinancialEngine {
           newTitles.push(newBalanceFeeTitle);
           generatedCount++;
           totalAmountGenerated += installmentAmount;
+        } else if (shouldUpdateOpen && existingBalanceFee.settlementState !== 'LIQUIDADO') {
+          // Atualizar taxa de balanço em aberto existente se solicitado
+          const updatedTB: FinancialTitle = {
+            ...existingBalanceFee,
+            originalAmount: installmentAmount,
+            balancePrincipal: Math.max(0, installmentAmount - (existingBalanceFee.settledPrincipal || 0)),
+            updatedAt: nowIso
+          };
+          updatedTitleMap.set(updatedTB.id, updatedTB);
+          updatedCount++;
+          totalAmountGenerated += installmentAmount;
         }
       }
     }
 
-    if (newTitles.length > 0) {
-      storage.saveTitles([...newTitles, ...currentTitles]);
-      if (newSales.length > 0) {
-        const existingSales = storage.getSales();
-        storage.saveSales([...newSales, ...existingSales]);
+    // Persistir alterações de títulos
+    if (newTitles.length > 0 || updatedTitleMap.size > 0) {
+      let finalTitles = [...currentTitles];
+      if (updatedTitleMap.size > 0) {
+        finalTitles = finalTitles.map(t => updatedTitleMap.get(t.id) || t);
+      }
+      if (newTitles.length > 0) {
+        finalTitles = [...newTitles, ...finalTitles];
+      }
+      storage.saveTitles(finalTitles);
+
+      // Persistir alterações de vendas
+      if (newSales.length > 0 || updatedSaleMap.size > 0) {
+        let finalSales = [...currentSales];
+        if (updatedSaleMap.size > 0) {
+          finalSales = finalSales.map(s => updatedSaleMap.get(s.id) || s);
+        }
+        if (newSales.length > 0) {
+          finalSales = [...newSales, ...finalSales];
+        }
+        storage.saveSales(finalSales);
       }
 
-      // Atualizar lastGeneratedCompetence no contrato
-      const lastComp = competencesGenerated[competencesGenerated.length - 1];
-      const updatedContracts = contracts.map(c => 
-        c.id === contract.id ? { ...c, lastGeneratedCompetence: lastComp } : c
-      );
+      // Atualizar lastGeneratedCompetence, garantir status ATIVO e limpar qualquer resquício de cancelamento
+      const lastComp = competencesGenerated[competencesGenerated.length - 1] || startComp;
+      const updatedContracts = contracts.map(c => {
+        if (c.id === contract.id) {
+          return {
+            ...c,
+            status: 'ATIVO' as const,
+            cancellationDate: undefined,
+            cancellationReason: undefined,
+            lastGeneratedCompetence: lastComp,
+            // Estender término caso esteja anterior à última competência faturada
+            endDate: (c.endDate && c.endDate.substring(0, 7) < lastComp) ? `${lastComp}-28` : c.endDate
+          };
+        }
+        return c;
+      });
       storage.saveContracts(updatedContracts);
 
       const currentUser = storage.getCurrentUser();
@@ -1307,12 +1408,13 @@ export class FinancialEngine {
         action: 'GERACAO_FATURAMENTO_FUTURO',
         module: 'Contratos Recorrentes',
         recordId: contract.id,
-        details: `Faturamento automático programado para o contrato ${contract.contractNumber}: ${generatedCount} títulos gerados cobrindo ${competencesGenerated.length} competências (${competencesGenerated[0]} até ${lastComp}) totalizando ${formatBRL(totalAmountGenerated)}.`
+        details: `Faturamento automático do contrato ${contract.contractNumber}: ${generatedCount} novos títulos criados, ${updatedCount} títulos em aberto atualizados, cobrindo ${competencesGenerated.length} competências (${competencesGenerated[0] || startComp} até ${lastComp}) totalizando ${formatBRL(totalAmountGenerated)}.`
       });
     }
 
     return {
       generatedCount,
+      updatedCount,
       alreadyExistingCount,
       totalAmountGenerated,
       competences: competencesGenerated,

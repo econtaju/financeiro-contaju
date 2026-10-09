@@ -42,7 +42,7 @@ import {
   AnnualBalanceFeeConfig
 } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, formatCompetence } from '../../services/financialEngine';
 import { SearchableSelect } from '../Common/SearchableSelect';
 import { ImportContractsModal } from '../Modals/ImportContractsModal';
 import { ContractScheduleModal } from '../Modals/ContractScheduleModal';
@@ -95,8 +95,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   const [selectedContractForSchedule, setSelectedContractForSchedule] = useState<Contract | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
-  // Aba ativa do modal de cadastro: Dados do Contrato vs Log de Auditoria
-  const [contractModalTab, setContractModalTab] = useState<'FORM' | 'AUDIT_LOG'>('FORM');
+  // Aba ativa do modal de cadastro: Dados do Contrato vs Cronograma & Faturas vs Log de Auditoria
+  const [contractModalTab, setContractModalTab] = useState<'FORM' | 'SCHEDULE' | 'AUDIT_LOG'>('FORM');
+  const [refreshScheduleTrigger, setRefreshScheduleTrigger] = useState(0);
+  const [isGeneratingInsideContract, setIsGeneratingInsideContract] = useState(false);
+  const [insideContractFeedback, setInsideContractFeedback] = useState<string>('');
 
   // Controle do mês inicial de faturamento das parcelas do contrato
   const [generationStartMode, setGenerationStartMode] = useState<'CURRENT_MONTH' | 'ENTRY_MONTH' | 'CUSTOM'>('CURRENT_MONTH');
@@ -301,7 +304,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
       ...c,
       contractType: c.contractType || (c.isRecurring === false ? 'AVULSO' : 'RECORRENTE'),
       isRecurring: c.isRecurring !== false && c.contractType !== 'AVULSO',
-      autoGenerateFutureMonths: false,
+      autoGenerateFutureMonths: c.autoGenerateFutureMonths !== false,
       futureMonthsCount: c.futureMonthsCount || 12,
       entryDate: c.entryDate || c.startDate || new Date().toISOString().split('T')[0],
       acquisitionChannel: c.acquisitionChannel || 'OUTRO',
@@ -325,6 +328,133 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
       notes: ''
     });
     setIsModalOpen(true);
+  };
+
+  const editingContractTitles = useMemo(() => {
+    const targetId = editingContract?.id || formData.id;
+    const targetNumber = editingContract?.contractNumber || formData.contractNumber;
+    if (!targetId && !targetNumber) return [];
+    
+    const titles = storage.getTitles();
+    return titles
+      .filter(t => 
+        t.type === 'RECEBER' && 
+        (t.originType === 'CONTRATO' || t.originType === 'VENDA') && 
+        (t.originId === targetId || t.contractId === targetId || t.contractNumber === targetNumber || t.originId === targetNumber) && 
+        t.documentState !== 'CANCELADO'
+      )
+      .sort((a, b) => (a.competence || a.dueDate).localeCompare(b.competence || b.dueDate));
+  }, [editingContract, formData.id, formData.contractNumber, isModalOpen, refreshScheduleTrigger]);
+
+  const handleGenerateInsideContract = (options?: { updateExistingOpen?: boolean }) => {
+    setIsGeneratingInsideContract(true);
+    setInsideContractFeedback('');
+
+    try {
+      if (!formData.contractNumber?.trim()) {
+        alert('Por favor, informe o Número do Contrato primeiro.');
+        setIsGeneratingInsideContract(false);
+        return;
+      }
+      if (!formData.customerId?.trim()) {
+        alert('Por favor, selecione o Cliente Contratante primeiro.');
+        setIsGeneratingInsideContract(false);
+        return;
+      }
+      if (!formData.monthlyTotal || Number(formData.monthlyTotal) <= 0) {
+        alert('Por favor, informe o Valor Mensal dos Honorários.');
+        setIsGeneratingInsideContract(false);
+        return;
+      }
+
+      const all = storage.getContracts();
+      const monthsCount = Number(formData.futureMonthsCount) || 12;
+      const todayYmd = new Date().toISOString().split('T')[0];
+      const currentMonthComp = todayYmd.substring(0, 7);
+      const entryMonthComp = (formData.entryDate || formData.startDate || todayYmd).substring(0, 7);
+      const effectiveStartComp = generationStartMode === 'ENTRY_MONTH'
+        ? entryMonthComp
+        : generationStartMode === 'CUSTOM' && customStartCompetence
+        ? customStartCompetence
+        : currentMonthComp;
+
+      let contractToGenerate: Contract;
+
+      if (editingContract) {
+        const updated = all.map(c => c.id === editingContract.id ? {
+          ...c,
+          ...formData,
+          status: 'ATIVO' as const,
+          cancellationDate: undefined,
+          cancellationReason: undefined
+        } as Contract : c);
+        storage.saveContracts(updated);
+        contractToGenerate = updated.find(c => c.id === editingContract.id)!;
+      } else {
+        const newId = `ctr-${Date.now()}`;
+        const newContract: Contract = {
+          id: newId,
+          companyId: 'comp-1',
+          contractNumber: formData.contractNumber!,
+          customerId: formData.customerId!,
+          description: formData.description || 'Honorários Contábeis',
+          startDate: formData.startDate || todayYmd,
+          entryDate: formData.entryDate || formData.startDate || todayYmd,
+          contractType: 'RECORRENTE',
+          isRecurring: true,
+          periodicity: 'MENSAL',
+          dueDay: Number(formData.dueDay) || 10,
+          dueRule: (formData.dueRule as any) || 'NEXT_MONTH',
+          billingMethod: (formData.billingMethod as any) || 'BOLETO',
+          monthlyTotal: Number(formData.monthlyTotal) || 0,
+          items: formData.items || [
+            {
+              id: `item-${Date.now()}`,
+              serviceId: services[0]?.id || 'srv-1',
+              description: formData.description || 'Honorários Contábeis',
+              quantity: 1,
+              unitPrice: Number(formData.monthlyTotal) || 0,
+              accountId: services[0]?.defaultAccountId || 'acc-rec-01',
+              total: Number(formData.monthlyTotal) || 0
+            }
+          ],
+          status: 'ATIVO',
+          createdAt: new Date().toISOString()
+        };
+        storage.saveContracts([...all, newContract]);
+        contractToGenerate = newContract;
+        setEditingContract(newContract);
+      }
+
+      const res = FinancialEngine.generateContractFutureInstallments(
+        contractToGenerate,
+        monthsCount,
+        effectiveStartComp,
+        options
+      );
+
+      setRefreshScheduleTrigger(prev => prev + 1);
+
+      if (res.error) {
+        setInsideContractFeedback(`⚠️ ${res.error}`);
+      } else if (res.generatedCount > 0) {
+        setInsideContractFeedback(`✓ Sucesso! ${res.generatedCount} novas faturas geradas cobrindo ${res.competences.length} meses (${formatBRL(res.totalAmountGenerated)}).`);
+        setSuccessToast(`✓ ${res.generatedCount} faturas geradas com sucesso para o Contrato ${contractToGenerate.contractNumber}!`);
+      } else if ((res.updatedCount || 0) > 0) {
+        setInsideContractFeedback(`✓ Sucesso! ${res.updatedCount} faturas em aberto sincronizadas para ${formatBRL(contractToGenerate.monthlyTotal)}.`);
+        setSuccessToast(`✓ ${res.updatedCount} faturas sincronizadas para o Contrato ${contractToGenerate.contractNumber}!`);
+      } else if (res.alreadyExistingCount > 0) {
+        setInsideContractFeedback(`ℹ️ Todas as ${res.alreadyExistingCount} competências já possuem faturas geradas no Contas a Receber. Use 'Sincronizar em Aberto' se desejar atualizar valores.`);
+      }
+
+      setTimeout(() => setInsideContractFeedback(''), 8000);
+      setTimeout(() => setSuccessToast(''), 5000);
+    } catch (err: any) {
+      console.error('Erro na geração direta:', err);
+      setInsideContractFeedback(`⚠️ Falha ao gerar: ${err?.message || 'Erro inesperado'}`);
+    } finally {
+      setIsGeneratingInsideContract(false);
+    }
   };
 
   const handleOpenAuditLog = (c: Contract) => {
@@ -470,9 +600,13 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           updatedStatusHistory = [historyEntry, ...updatedStatusHistory];
         }
 
+        const isSettingActive = formData.status === 'ATIVO' || !formData.status;
         const updated = all.map(c => c.id === editingContract.id ? { 
           ...c, 
           ...formData,
+          status: (formData.status || c.status || 'ATIVO') as any,
+          cancellationDate: isSettingActive ? undefined : (formData.cancellationDate || c.cancellationDate),
+          cancellationReason: isSettingActive ? undefined : (formData.cancellationReason || c.cancellationReason),
           contractType: isContractRecurring ? 'RECORRENTE' : 'AVULSO',
           isRecurring: isContractRecurring,
           futureMonthsCount: monthsCount,
@@ -483,11 +617,15 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
         storage.saveContracts(updated);
 
         let generationMsg = '';
-        if (shouldAutoGenerate && formData.status === 'ATIVO') {
+        if (shouldAutoGenerate && isSettingActive) {
           const savedContract = updated.find(c => c.id === editingContract.id)!;
           const res = FinancialEngine.generateContractFutureInstallments(savedContract, monthsCount, effectiveStartComp);
           if (res.generatedCount > 0) {
             generationMsg = ` • ${res.generatedCount} títulos gerados para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
+          } else if ((res.updatedCount || 0) > 0) {
+            generationMsg = ` • ${res.updatedCount} títulos em aberto sincronizados`;
+          } else if (res.alreadyExistingCount > 0) {
+            generationMsg = ` • (${res.alreadyExistingCount} títulos preservados no cronograma)`;
           }
         }
 
@@ -564,6 +702,8 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           const res = FinancialEngine.generateContractFutureInstallments(newContract, monthsCount, effectiveStartComp);
           if (res.generatedCount > 0) {
             generationMsg = ` • ${res.generatedCount} títulos a receber gerados automaticamente para os próximos meses (${formatBRL(res.totalAmountGenerated)})`;
+          } else if (res.alreadyExistingCount > 0) {
+            generationMsg = ` • (${res.alreadyExistingCount} títulos preservados no cronograma)`;
           }
         }
 
@@ -1198,12 +1338,12 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
               </button>
             </div>
 
-            {/* Abas do Cadastro de Contrato: 1. Dados do Contrato | 2. Log de Auditoria & Mudanças de Status */}
-            <div className="px-6 pt-2 pb-0 bg-slate-50 dark:bg-[#1B212D] border-b border-slate-200 dark:border-[#273040] flex items-center gap-2 shrink-0">
+            {/* Abas do Cadastro de Contrato: 1. Dados do Contrato | 2. Cronograma & Faturas Geradas | 3. Log de Auditoria */}
+            <div className="px-6 pt-2 pb-0 bg-slate-50 dark:bg-[#1B212D] border-b border-slate-200 dark:border-[#273040] flex items-center gap-2 shrink-0 overflow-x-auto scrollbar-none">
               <button
                 type="button"
                 onClick={() => setContractModalTab('FORM')}
-                className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                   contractModalTab === 'FORM'
                     ? 'border-amber-500 text-amber-600 dark:text-amber-400'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -1215,15 +1355,35 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
 
               <button
                 type="button"
+                onClick={() => setContractModalTab('SCHEDULE')}
+                className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                  contractModalTab === 'SCHEDULE'
+                    ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <CalendarClock className="w-3.5 h-3.5 text-amber-500" />
+                <span>Cronograma & Faturas Geradas</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  editingContractTitles.length > 0
+                    ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                }`}>
+                  {editingContractTitles.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setContractModalTab('AUDIT_LOG')}
-                className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                   contractModalTab === 'AUDIT_LOG'
                     ? 'border-amber-500 text-amber-600 dark:text-amber-400'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <History className="w-3.5 h-3.5" />
-                <span>Log de Auditoria & Mudanças de Status</span>
+                <span>Log de Auditoria & Status</span>
                 {(editingContract?.statusHistory?.length || 0) > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
                     {editingContract?.statusHistory?.length}
@@ -1470,6 +1630,214 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                       )}
                     </div>
                   )}
+                </div>
+              ) : contractModalTab === 'SCHEDULE' ? (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs">
+                  {/* Cards com Estatísticas do Contrato */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040]">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Total de Meses</span>
+                      <div className="text-lg font-bold text-slate-900 dark:text-white mt-1 font-mono">
+                        {editingContractTitles.length} parcelas
+                      </div>
+                      <span className="text-[10px] text-slate-500">Títulos registrados no sistema</span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040]">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Em Aberto / A Vencer</span>
+                      <div className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-1 font-mono">
+                        {editingContractTitles.filter(t => t.settlementState !== 'LIQUIDADO').length} parcelas
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {formatBRL(editingContractTitles.filter(t => t.settlementState !== 'LIQUIDADO').reduce((acc, t) => acc + (t.balancePrincipal || 0), 0))}
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040]">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Quitados / Recebidos</span>
+                      <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+                        {editingContractTitles.filter(t => t.settlementState === 'LIQUIDADO').length} parcelas
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {formatBRL(editingContractTitles.filter(t => t.settlementState === 'LIQUIDADO').reduce((acc, t) => acc + (t.settledPrincipal || 0), 0))}
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040]">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Volume Total Faturado</span>
+                      <div className="text-lg font-bold text-amber-500 mt-1 font-mono">
+                        {formatBRL(editingContractTitles.reduce((acc, t) => acc + (t.originalAmount || 0), 0))}
+                      </div>
+                      <span className="text-[10px] text-slate-500">Soma de todas as parcelas</span>
+                    </div>
+                  </div>
+
+                  {/* Barra de Controles de Geração */}
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wide">
+                          <Sparkles className="w-4 h-4 text-amber-500" />
+                          <span>Gerar Novas Faturas & Meses Futuros</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                          Projeta parcelas vinculadas deste contrato no Contas a Receber e Vendas.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1 bg-white dark:bg-[#131720] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-[#273040]">
+                          <span className="text-[10px] font-bold text-slate-500">Início:</span>
+                          <select
+                            value={generationStartMode}
+                            onChange={e => setGenerationStartMode(e.target.value as any)}
+                            className="bg-transparent border-0 py-0.5 px-1 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer"
+                          >
+                            <option value="CURRENT_MONTH">Mês Atual ({new Date().toISOString().substring(0, 7)})</option>
+                            <option value="ENTRY_MONTH">Data de Entrada ({formData.startDate?.substring(0, 7) || new Date().toISOString().substring(0, 7)})</option>
+                            <option value="CUSTOM">Personalizado...</option>
+                          </select>
+                        </div>
+
+                        {generationStartMode === 'CUSTOM' && (
+                          <input
+                            type="month"
+                            value={customStartCompetence}
+                            onChange={e => setCustomStartCompetence(e.target.value)}
+                            className="rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-2.5 py-1 text-xs font-bold text-slate-900 dark:text-slate-100"
+                          />
+                        )}
+
+                        <select
+                          value={formData.futureMonthsCount || 12}
+                          onChange={e => setFormData({ ...formData, futureMonthsCount: Number(e.target.value) })}
+                          className="rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-2.5 py-1 text-xs font-bold text-slate-900 dark:text-slate-100"
+                        >
+                          <option value={6}>6 meses</option>
+                          <option value={12}>12 meses (1 ano)</option>
+                          <option value={24}>24 meses (2 anos)</option>
+                          <option value={36}>36 meses (3 anos)</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateInsideContract()}
+                          disabled={isGeneratingInsideContract}
+                          className="px-3.5 py-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 font-bold rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>{isGeneratingInsideContract ? 'Gerando...' : 'Gerar Meses'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateInsideContract({ updateExistingOpen: true })}
+                          disabled={isGeneratingInsideContract}
+                          className="px-3 py-1.5 bg-white dark:bg-[#131720] hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          title="Sincroniza valores das parcelas em aberto"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Sincronizar em Aberto</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {insideContractFeedback && (
+                      <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs font-semibold text-amber-900 dark:text-amber-200 flex items-center justify-between animate-in fade-in">
+                        <span>{insideContractFeedback}</span>
+                        <button
+                          type="button"
+                          onClick={() => setInsideContractFeedback('')}
+                          className="text-[11px] text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabela de Parcelas do Contrato */}
+                  <div className="border border-slate-200 dark:border-[#273040] rounded-xl overflow-hidden bg-white dark:bg-[#131720]">
+                    <div className="p-3 bg-slate-50 dark:bg-[#1B212D] border-b border-slate-200 dark:border-[#273040] flex items-center justify-between">
+                      <span className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wide">
+                        Faturas Vinculadas ({editingContractTitles.length})
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Mensalidade: <strong className="text-slate-900 dark:text-white font-mono">{formatBRL(formData.monthlyTotal || 0)}</strong> • Venc. Todo dia {formData.dueDay || 10} ({formData.dueRule === 'NEXT_MONTH' ? 'mês seguinte' : 'mesmo mês'})
+                      </span>
+                    </div>
+
+                    {editingContractTitles.length === 0 ? (
+                      <div className="p-8 text-center space-y-3">
+                        <Calendar className="w-10 h-10 text-slate-400 mx-auto opacity-40" />
+                        <p className="text-xs text-slate-500">
+                          Nenhuma fatura foi gerada para este contrato ainda.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateInsideContract()}
+                          disabled={isGeneratingInsideContract}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-md inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          <span>Gerar Faturas Agora</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-[360px]">
+                        <table className="w-full text-left text-xs min-w-[700px]">
+                          <thead className="bg-slate-50 dark:bg-[#1B212D] border-b border-slate-200 dark:border-[#273040] text-slate-500 font-semibold text-[11px] sticky top-0 z-10">
+                            <tr>
+                              <th className="py-2.5 px-3">Competência</th>
+                              <th className="py-2.5 px-3">Nº Fatura</th>
+                              <th className="py-2.5 px-3">Descrição</th>
+                              <th className="py-2.5 px-3 text-center">Vencimento</th>
+                              <th className="py-2.5 px-3 text-right">Valor</th>
+                              <th className="py-2.5 px-3 text-center">Situação</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-[#273040]">
+                            {editingContractTitles.map(t => {
+                              const isSettled = t.settlementState === 'LIQUIDADO';
+                              const isOverdue = !isSettled && t.dueDate < new Date().toISOString().split('T')[0];
+                              return (
+                                <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                  <td className="py-2.5 px-3 font-mono font-bold text-slate-900 dark:text-white">
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                      {formatCompetence(t.competence)}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                                    {t.titleNumber}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-slate-800 dark:text-slate-200">
+                                    {t.description}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono text-slate-700 dark:text-slate-300">
+                                    {formatDateBR(t.dueDate)}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                    {formatBRL(t.originalAmount)}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      isSettled
+                                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                        : isOverdue
+                                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                                        : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                    }`}>
+                                      {isSettled ? 'Quitado' : isOverdue ? 'Vencido' : 'Em Aberto'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs">
@@ -1926,9 +2294,6 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                               {formatBRL(previewSchedule.totalAmount)}
                             </span>
                           </div>
-                          <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">
-                            Serão criados <strong>{previewSchedule.count} títulos a receber</strong> de <strong>{formatBRL(formData.monthlyTotal || 0)}</strong> no Contas a Receber, cobrindo o período de <strong>{previewSchedule.startComp}</strong> até <strong>{previewSchedule.endComp}</strong>, com vencimento todo <strong>dia {formData.dueDay || 10}</strong> ({formData.dueRule === 'NEXT_MONTH' ? 'mês seguinte' : 'mesmo mês'}).
-                          </p>
                           <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-amber-500/20">
                             <span>✓ Títulos integrados ao Fluxo de Caixa</span>
                             <span>•</span>
@@ -1936,6 +2301,53 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                             <span>•</span>
                             <span>✓ Gerenciável a qualquer momento</span>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Botões de Ação Imediata de Geração e Link para Cronograma */}
+                      <div className="pt-2.5 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateInsideContract()}
+                            disabled={isGeneratingInsideContract}
+                            className="px-3.5 py-2 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 font-bold rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Gera imediatamente as faturas programadas para este contrato sem precisar fechar o modal"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 fill-current" />
+                            <span>{isGeneratingInsideContract ? 'Gerando Faturas...' : '⚡ Gerar Faturas Deste Contrato Agora'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateInsideContract({ updateExistingOpen: true })}
+                            disabled={isGeneratingInsideContract}
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Sincroniza os valores e vencimentos das parcelas em aberto existentes"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Sincronizar em Aberto</span>
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setContractModalTab('SCHEDULE')}
+                          className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <CalendarClock className="w-3.5 h-3.5" />
+                          <span>Ver Faturas Geradas ({editingContractTitles.length}) ➔</span>
+                        </button>
+                      </div>
+
+                      {insideContractFeedback && (
+                        <div className="p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-xs font-semibold text-amber-900 dark:text-amber-200 animate-in fade-in flex items-center justify-between">
+                          <span>{insideContractFeedback}</span>
+                          <button
+                            type="button"
+                            onClick={() => setInsideContractFeedback('')}
+                            className="text-[10px] text-amber-700 dark:text-amber-400 hover:underline ml-2 cursor-pointer"
+                          >
+                            OK
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2509,16 +2921,56 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                       </button>
                     </div>
                   </>
+                ) : contractModalTab === 'SCHEDULE' ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setContractModalTab('FORM')}
+                        className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Voltar para Dados do Contrato
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateInsideContract()}
+                        disabled={isGeneratingInsideContract}
+                        className="px-4 py-2 text-xs font-bold text-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 disabled:opacity-50 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 fill-current" />
+                        <span>{isGeneratingInsideContract ? 'Gerando...' : 'Gerar Faturas Agora'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsModalOpen(false)}
+                        className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => setContractModalTab('AUDIT_LOG')}
-                      className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <History className="w-3.5 h-3.5" />
-                      <span>Ver Log de Auditoria & Status ({editingContract?.statusHistory?.length || 0})</span>
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setContractModalTab('SCHEDULE')}
+                        className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <CalendarClock className="w-3.5 h-3.5" />
+                        <span>Ver Cronograma & Faturas ({editingContractTitles.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContractModalTab('AUDIT_LOG')}
+                        className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer hidden sm:flex"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        <span>Auditoria ({editingContract?.statusHistory?.length || 0})</span>
+                      </button>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"

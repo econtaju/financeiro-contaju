@@ -1335,6 +1335,10 @@ class StorageService {
         return {
           ...c,
           status: 'ATIVO' as const,
+          cancellationDate: undefined,
+          cancellationReason: undefined,
+          inactivatedAt: undefined,
+          inactivatedBy: undefined,
           cancellationNotes: c.cancellationDate ? `Reativado em ${new Date().toISOString().split('T')[0]} por ${currentUser.name}. (Anteriormente cancelado em ${c.cancellationDate}: ${c.cancellationReason || ''})` : undefined,
           statusHistory: [historyEntry, ...(c.statusHistory || [])]
         };
