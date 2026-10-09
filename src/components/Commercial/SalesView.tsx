@@ -56,10 +56,32 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
   // Estados de Filtragem Temporal e Período Avançado
   const [filterDateType, setFilterDateType] = useState<'COMPETENCIA' | 'VENCIMENTO' | 'EMISSAO'>('COMPETENCIA');
-  const [periodPreset, setPeriodPreset] = useState<'ALL' | 'CURRENT_MONTH' | 'NEXT_MONTH' | 'PREV_MONTH' | 'CURRENT_YEAR' | 'CUSTOM_MONTH' | 'CUSTOM_RANGE'>('ALL');
+  const [periodPreset, setPeriodPreset] = useState<string>('ALL');
   const [customSelectedMonth, setCustomSelectedMonth] = useState<string>(currentMonth);
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  const activePeriodLabel = useMemo(() => {
+    if (periodPreset === 'ALL') return 'Todo o Histórico';
+    if (periodPreset === 'CURRENT_MONTH') return `Mês Atual (${formatCompetence(currentMonth)})`;
+    if (periodPreset === 'NEXT_MONTH') return `Próximo Mês (${formatCompetence(nextMonth)})`;
+    if (periodPreset === 'PREV_MONTH') return `Mês Anterior (${formatCompetence(prevMonth)})`;
+    if (periodPreset === 'CURRENT_YEAR') return `Ano Completo (${currentYear})`;
+    if (periodPreset === 'CUSTOM_RANGE') {
+      const s = customStartDate ? formatDateBR(customStartDate) : '...';
+      const e = customEndDate ? formatDateBR(customEndDate) : '...';
+      return `${s} até ${e}`;
+    }
+    if (/^\d{4}-\d{2}$/.test(periodPreset)) return formatCompetence(periodPreset);
+    if (periodPreset === 'CUSTOM_MONTH') return formatCompetence(customSelectedMonth);
+    return periodPreset;
+  }, [periodPreset, currentMonth, nextMonth, prevMonth, currentYear, customStartDate, customEndDate, customSelectedMonth]);
+
+  const activeDateTypeLabel = useMemo(() => {
+    if (filterDateType === 'COMPETENCIA') return 'Competência Econômica (DRE)';
+    if (filterDateType === 'VENCIMENTO') return 'Vencimento Financeiro (Caixa)';
+    return 'Data de Emissão';
+  }, [filterDateType]);
 
   useEffect(() => {
     return storage.subscribe(() => setRefreshTrigger(k => k + 1));
@@ -367,67 +389,63 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     }
   };
 
-  // Filtragem e Métricas
-  const filteredSales = useMemo(() => {
+  // 1. Filtragem por Período e Busca (aplicável a todas as abas e métricas)
+  const salesMatchingPeriod = useMemo(() => {
     return sales.filter(s => {
-      if (salesTab === 'CONTRATO' && s.originType !== 'CONTRATO') return false;
-      if (salesTab === 'AVULSO' && s.originType === 'CONTRATO') return false;
-
       // Filtragem por Período
       if (periodPreset !== 'ALL') {
-        const sComp = s.competence || (s.date ? s.date.substring(0, 7) : '');
+        const sComp = (s.competence || (s.date ? s.date.substring(0, 7) : '')).substring(0, 7);
         const sDate = s.date || '';
 
         // Títulos desta venda para verificar datas de vencimento financeiro
         const titlesForSale = allTitles.filter(t =>
           t.saleId === s.id ||
           (s.titleIds && s.titleIds.includes(t.id)) ||
-          (s.contractId && (t.originId === s.contractId || t.contractId === s.contractId) && t.competence === s.competence)
+          (s.contractId && (t.originId === s.contractId || t.contractId === s.contractId) && (t.competence?.substring(0, 7) === sComp))
         );
         const dueDates = titlesForSale.map(t => t.dueDate || '').filter(Boolean);
+        const targetDueDates = dueDates.length > 0 ? dueDates : (sDate ? [sDate] : []);
+
+        let targetMonth = '';
+        if (periodPreset === 'CURRENT_MONTH') targetMonth = currentMonth;
+        else if (periodPreset === 'NEXT_MONTH') targetMonth = nextMonth;
+        else if (periodPreset === 'PREV_MONTH') targetMonth = prevMonth;
+        else if (periodPreset === 'CUSTOM_MONTH') targetMonth = customSelectedMonth;
+        else if (/^\d{4}-\d{2}$/.test(periodPreset)) targetMonth = periodPreset;
 
         if (filterDateType === 'COMPETENCIA') {
-          if (periodPreset === 'CURRENT_MONTH' && sComp !== currentMonth) return false;
-          if (periodPreset === 'NEXT_MONTH' && sComp !== nextMonth) return false;
-          if (periodPreset === 'PREV_MONTH' && sComp !== prevMonth) return false;
-          if (periodPreset === 'CURRENT_YEAR' && !sComp.startsWith(String(currentYear))) return false;
-          if (periodPreset === 'CUSTOM_MONTH' && sComp !== customSelectedMonth) return false;
-          if (periodPreset === 'CUSTOM_RANGE') {
+          if (periodPreset === 'CURRENT_YEAR') {
+            if (!sComp.startsWith(String(currentYear))) return false;
+          } else if (periodPreset === 'CUSTOM_RANGE') {
             const compStart = customStartDate ? customStartDate.substring(0, 7) : '';
             const compEnd = customEndDate ? customEndDate.substring(0, 7) : '';
             if (compStart && sComp < compStart) return false;
             if (compEnd && sComp > compEnd) return false;
+          } else if (targetMonth) {
+            if (sComp !== targetMonth) return false;
           }
         } else if (filterDateType === 'EMISSAO') {
-          if (periodPreset === 'CURRENT_MONTH' && !sDate.startsWith(currentMonth)) return false;
-          if (periodPreset === 'NEXT_MONTH' && !sDate.startsWith(nextMonth)) return false;
-          if (periodPreset === 'PREV_MONTH' && !sDate.startsWith(prevMonth)) return false;
-          if (periodPreset === 'CURRENT_YEAR' && !sDate.startsWith(String(currentYear))) return false;
-          if (periodPreset === 'CUSTOM_MONTH' && !sDate.startsWith(customSelectedMonth)) return false;
-          if (periodPreset === 'CUSTOM_RANGE') {
+          if (periodPreset === 'CURRENT_YEAR') {
+            if (!sDate.startsWith(String(currentYear))) return false;
+          } else if (periodPreset === 'CUSTOM_RANGE') {
             if (customStartDate && sDate < customStartDate) return false;
             if (customEndDate && sDate > customEndDate) return false;
+          } else if (targetMonth) {
+            if (!sDate.startsWith(targetMonth)) return false;
           }
         } else if (filterDateType === 'VENCIMENTO') {
-          // No filtro por vencimento, a venda passa se pelo menos uma das suas parcelas vencer no período
-          const targetDates = dueDates.length > 0 ? dueDates : [sDate];
-          let matchesDue = false;
-          for (const d of targetDates) {
-            if (periodPreset === 'CURRENT_MONTH' && d.startsWith(currentMonth)) { matchesDue = true; break; }
-            if (periodPreset === 'NEXT_MONTH' && d.startsWith(nextMonth)) { matchesDue = true; break; }
-            if (periodPreset === 'PREV_MONTH' && d.startsWith(prevMonth)) { matchesDue = true; break; }
-            if (periodPreset === 'CURRENT_YEAR' && d.startsWith(String(currentYear))) { matchesDue = true; break; }
-            if (periodPreset === 'CUSTOM_MONTH' && d.startsWith(customSelectedMonth)) { matchesDue = true; break; }
-            if (periodPreset === 'CUSTOM_RANGE') {
-              const afterStart = !customStartDate || d >= customStartDate;
-              const beforeEnd = !customEndDate || d <= customEndDate;
-              if (afterStart && beforeEnd) { matchesDue = true; break; }
-            }
+          if (periodPreset === 'CURRENT_YEAR') {
+            if (!targetDueDates.some(d => d.startsWith(String(currentYear)))) return false;
+          } else if (periodPreset === 'CUSTOM_RANGE') {
+            const matches = targetDueDates.some(d => (!customStartDate || d >= customStartDate) && (!customEndDate || d <= customEndDate));
+            if (!matches) return false;
+          } else if (targetMonth) {
+            if (!targetDueDates.some(d => d.startsWith(targetMonth))) return false;
           }
-          if (!matchesDue) return false;
         }
       }
 
+      // Busca por texto
       const client = counterparties.find(c => c.id === s.customerId);
       return matchesSearch([
         s.saleNumber,
@@ -437,14 +455,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         client?.tradeName,
         s.items?.[0]?.description
       ], searchTerm);
-    }).sort((a, b) => {
-      const compCompare = (b.competence || '').localeCompare(a.competence || '');
-      if (compCompare !== 0) return compCompare;
-      return (b.date || '').localeCompare(a.date || '');
     });
   }, [
     sales, 
-    salesTab, 
     filterDateType, 
     periodPreset, 
     customSelectedMonth, 
@@ -458,6 +471,43 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     counterparties, 
     allTitles
   ]);
+
+  // 2. Vendas exibidas na tabela conforme a aba ativa
+  const filteredSales = useMemo(() => {
+    return salesMatchingPeriod.filter(s => {
+      if (salesTab === 'CONTRATO' && s.originType !== 'CONTRATO') return false;
+      if (salesTab === 'AVULSO' && s.originType === 'CONTRATO') return false;
+      return true;
+    }).sort((a, b) => {
+      const compCompare = (b.competence || '').localeCompare(a.competence || '');
+      if (compCompare !== 0) return compCompare;
+      return (b.date || '').localeCompare(a.date || '');
+    });
+  }, [salesMatchingPeriod, salesTab]);
+
+  // 3. Métricas agregadas correspondentes ao período filtrado
+  const metrics = useMemo(() => {
+    const totalSalesAmount = salesMatchingPeriod.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
+    const contractSales = salesMatchingPeriod.filter(s => s.originType === 'CONTRATO');
+    const standaloneSales = salesMatchingPeriod.filter(s => s.originType !== 'CONTRATO');
+
+    const contractSalesAmount = contractSales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
+    const standaloneSalesAmount = standaloneSales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
+
+    return {
+      totalCount: salesMatchingPeriod.length,
+      totalSalesAmount,
+      contractSalesCount: contractSales.length,
+      contractSalesAmount,
+      standaloneSalesCount: standaloneSales.length,
+      standaloneSalesAmount
+    };
+  }, [salesMatchingPeriod]);
+
+  // Total das vendas exibidas no momento na tabela
+  const filteredSalesTotal = useMemo(() => {
+    return filteredSales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
+  }, [filteredSales]);
 
   // Lista de competências disponíveis enriquecida
   const availableCompetences = useMemo(() => {
@@ -527,24 +577,6 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     setIsBatchDeleteModalOpen(false);
   };
 
-  // Métricas agregadas
-  const metrics = useMemo(() => {
-    const totalSalesAmount = sales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
-    const contractSales = sales.filter(s => s.originType === 'CONTRATO');
-    const standaloneSales = sales.filter(s => s.originType !== 'CONTRATO');
-
-    const contractSalesAmount = contractSales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
-    const standaloneSalesAmount = standaloneSales.reduce((acc, s) => acc + (s.netTotal || s.grossTotal || 0), 0);
-
-    return {
-      totalCount: sales.length,
-      totalSalesAmount,
-      contractSalesCount: contractSales.length,
-      contractSalesAmount,
-      standaloneSalesCount: standaloneSales.length,
-      standaloneSalesAmount
-    };
-  }, [sales]);
 
   // Títulos vinculados à venda selecionada para detalhes
   const saleLinkedTitles = useMemo(() => {
@@ -609,7 +641,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)]">Total Faturado em Vendas</span>
+            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)]">Total Faturado no Período</span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300">
               {metrics.totalCount} vendas
             </span>
@@ -617,7 +649,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           <div className="text-xl font-bold text-[var(--text-primary)] mt-1.5 font-mono">
             {formatBRL(metrics.totalSalesAmount)}
           </div>
-          <p className="text-[10px] text-[var(--text-secondary)] mt-1">Reconhecimento econômico no DRE</p>
+          <p className="text-[10px] text-[var(--text-secondary)] mt-1 truncate" title={`${activePeriodLabel} • ${activeDateTypeLabel}`}>
+            {activePeriodLabel} • {activeDateTypeLabel}
+          </p>
         </div>
 
         <div className="p-4 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
@@ -630,7 +664,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           <div className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1.5 font-mono">
             {formatBRL(metrics.contractSalesAmount)}
           </div>
-          <p className="text-[10px] text-[var(--text-secondary)] mt-1">Vendas vinculadas a contratos ativos</p>
+          <p className="text-[10px] text-[var(--text-secondary)] mt-1">Faturamento recorrente do período</p>
         </div>
 
         <div className="p-4 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
@@ -643,7 +677,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           <div className="text-xl font-bold text-[var(--text-primary)] mt-1.5 font-mono">
             {formatBRL(metrics.standaloneSalesAmount)}
           </div>
-          <p className="text-[10px] text-[var(--text-secondary)] mt-1">Consultorias e serviços esporádicos</p>
+          <p className="text-[10px] text-[var(--text-secondary)] mt-1">Consultorias e serviços do período</p>
         </div>
       </div>
 
@@ -674,7 +708,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
-              Todas as Vendas ({sales.length})
+              Todas as Vendas ({salesMatchingPeriod.length})
             </button>
             <button
               onClick={() => setSalesTab('CONTRATO')}
@@ -760,42 +794,81 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
               </button>
             </div>
 
-            {/* Presets de Período */}
+            {/* Atalhos Rápidos de Período */}
+            <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-[11px]">
+              <button
+                type="button"
+                onClick={() => setPeriodPreset('ALL')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  periodPreset === 'ALL'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setPeriodPreset('CURRENT_MONTH')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  periodPreset === 'CURRENT_MONTH' || periodPreset === currentMonth
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title={`Mês Atual: ${formatCompetence(currentMonth)}`}
+              >
+                Mês Atual
+              </button>
+              <button
+                type="button"
+                onClick={() => setPeriodPreset('NEXT_MONTH')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  periodPreset === 'NEXT_MONTH' || periodPreset === nextMonth
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title={`Próximo Mês: ${formatCompetence(nextMonth)}`}
+              >
+                Próximo Mês
+              </button>
+            </div>
+
+            {/* Dropdown Geral de Seleção de Mês e Intervalos */}
             <select
               value={periodPreset}
-              onChange={e => setPeriodPreset(e.target.value as any)}
+              onChange={e => setPeriodPreset(e.target.value)}
               className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
             >
-              <option value="ALL">Todos os Períodos</option>
-              <option value="CURRENT_MONTH">Mês Atual ({formatCompetence(currentMonth)})</option>
-              <option value="NEXT_MONTH">Próximo Mês ({formatCompetence(nextMonth)})</option>
-              <option value="PREV_MONTH">Mês Anterior ({formatCompetence(prevMonth)})</option>
-              <option value="CURRENT_YEAR">Ano Completo ({currentYear})</option>
-              <option value="CUSTOM_MONTH">Mês Específico...</option>
-              <option value="CUSTOM_RANGE">Personalizado (De / Até)...</option>
-            </select>
+              <option value="ALL">Todo o Histórico (Sem filtro)</option>
+              
+              <optgroup label="Atalhos Rápidos">
+                <option value="CURRENT_MONTH">Mês Atual ({formatCompetence(currentMonth)})</option>
+                <option value="NEXT_MONTH">Próximo Mês ({formatCompetence(nextMonth)})</option>
+                <option value="PREV_MONTH">Mês Anterior ({formatCompetence(prevMonth)})</option>
+                <option value="CURRENT_YEAR">Ano Completo ({currentYear})</option>
+              </optgroup>
 
-            {/* Seletor quando for Mês Específico */}
-            {periodPreset === 'CUSTOM_MONTH' && (
-              <select
-                value={customSelectedMonth}
-                onChange={e => setCustomSelectedMonth(e.target.value)}
-                className="rounded-xl border border-amber-500/40 bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 focus:ring-2 focus:ring-amber-500"
-              >
+              <optgroup label="Meses Específicos">
                 {availableCompetences.map(c => (
-                  <option key={c} value={c}>{formatCompetence(c)}</option>
+                  <option key={c} value={c}>
+                    {formatCompetence(c)} ({c.split('-').reverse().join('/')})
+                  </option>
                 ))}
-              </select>
-            )}
+              </optgroup>
+
+              <optgroup label="Intervalo Personalizado">
+                <option value="CUSTOM_RANGE">Personalizado (De / Até)...</option>
+              </optgroup>
+            </select>
 
             {/* Inputs quando for Intervalo Personalizado */}
             {periodPreset === 'CUSTOM_RANGE' && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 bg-[var(--surface-elevated)] p-1 rounded-xl border border-amber-500/30">
                 <input
                   type="date"
                   value={customStartDate}
                   onChange={e => setCustomStartDate(e.target.value)}
-                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
+                  className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
                   placeholder="Data Início"
                 />
                 <span className="text-xs text-[var(--text-secondary)]">até</span>
@@ -803,14 +876,14 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                   type="date"
                   value={customEndDate}
                   onChange={e => setCustomEndDate(e.target.value)}
-                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
+                  className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
                   placeholder="Data Fim"
                 />
               </div>
             )}
           </div>
 
-          {/* Reset / Indicador */}
+          {/* Reset / Indicador de Filtro Ativo */}
           <div className="flex items-center gap-2">
             {(periodPreset !== 'ALL' || searchTerm) && (
               <button
@@ -828,7 +901,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
               </button>
             )}
 
-            <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--surface-elevated)] px-2 py-1 rounded-md border border-[var(--border-subtle)]">
+            <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--surface-elevated)] px-2.5 py-1 rounded-md border border-[var(--border-subtle)] font-medium">
               {filteredSales.length} de {sales.length} vendas
             </span>
           </div>
@@ -890,12 +963,19 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
       {/* Sales Table */}
       <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
-        <div className="p-4 border-b border-[var(--border-subtle)] flex justify-between items-center bg-[var(--surface-elevated)]/50">
-          <h2 className="font-bold text-[var(--text-primary)] text-xs uppercase tracking-wider">
-            Listagem de Vendas Registradas ({filteredSales.length})
-          </h2>
+        <div className="p-4 border-b border-[var(--border-subtle)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[var(--surface-elevated)]/50">
+          <div className="flex items-center gap-2">
+            <h2 className="font-bold text-[var(--text-primary)] text-xs uppercase tracking-wider">
+              Listagem de Vendas Registradas ({filteredSales.length})
+            </h2>
+            {periodPreset !== 'ALL' && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                {activePeriodLabel}
+              </span>
+            )}
+          </div>
           <span className="text-[11px] text-[var(--text-secondary)]">
-            Total filtrado: <strong className="font-mono text-[var(--text-primary)]">{formatBRL(filteredSales.reduce((acc, s) => acc + (s.netTotal || 0), 0))}</strong>
+            Total filtrado na listagem: <strong className="font-mono text-[var(--text-primary)]">{formatBRL(filteredSalesTotal)}</strong>
           </span>
         </div>
 

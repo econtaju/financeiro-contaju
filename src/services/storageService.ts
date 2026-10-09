@@ -138,6 +138,7 @@ class StorageService {
   private debouncedSyncTimeout: any = null;
 
   constructor() {
+    this.freeUpLocalStorageSpace();
     this.initIfEmpty();
   }
 
@@ -338,7 +339,66 @@ class StorageService {
 
   private inMemoryFallback: Record<string, string> = {};
 
-  // Generic getter/setter
+  // Libera espaço no localStorage aparando logs antigos e caches
+  private freeUpLocalStorageSpace() {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    try {
+      // 1. Reduzir logs de auditoria para os 30 mais recentes
+      const rawLogs = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+      if (rawLogs) {
+        try {
+          const logs = JSON.parse(rawLogs);
+          if (Array.isArray(logs) && logs.length > 30) {
+            localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs.slice(0, 30)));
+          }
+        } catch {}
+      }
+
+      // 2. Limpar extratos bancários extensos não conciliados
+      const rawStatements = localStorage.getItem(STORAGE_KEYS.STATEMENT_ENTRIES);
+      if (rawStatements) {
+        try {
+          const stmts = JSON.parse(rawStatements);
+          if (Array.isArray(stmts) && stmts.length > 50) {
+            localStorage.setItem(STORAGE_KEYS.STATEMENT_ENTRIES, JSON.stringify(stmts.slice(-50)));
+          }
+        } catch {}
+      }
+
+      // 3. Remover chaves órfãs ou temporárias
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('contaju_tmp_') || k.startsWith('contaju_backup_') || k.startsWith('vite_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) {
+      console.warn('[StorageService] Erro ao liberar espaço no localStorage:', e);
+    }
+  }
+
+  // Backup assíncrono transparente no IndexedDB (capacidade em gigabytes)
+  private saveToIndexedDB(key: string, value: any) {
+    if (typeof window === 'undefined' || typeof indexedDB === 'undefined') return;
+    try {
+      const request = indexedDB.open('contaju_db', 1);
+      request.onupgradeneeded = (e: any) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('store')) {
+          db.createObjectStore('store');
+        }
+      };
+      request.onsuccess = (e: any) => {
+        const db = e.target.result;
+        const tx = db.transaction('store', 'readwrite');
+        tx.objectStore('store').put(value, key);
+      };
+    } catch {}
+  }
+
+  // Generic getter/setter com proteção total contra QuotaExceededError
   private get<T>(key: string, fallback: T): T {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
       const memData = this.inMemoryFallback[key];
@@ -346,19 +406,41 @@ class StorageService {
     }
     try {
       const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : fallback;
+      if (data) {
+        return JSON.parse(data);
+      }
+      if (this.inMemoryFallback[key]) {
+        return JSON.parse(this.inMemoryFallback[key]);
+      }
+      return fallback;
     } catch {
       return fallback;
     }
   }
 
   private set<T>(key: string, value: T) {
+    const jsonStr = JSON.stringify(value);
+    this.inMemoryFallback[key] = jsonStr;
+
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-      this.inMemoryFallback[key] = JSON.stringify(value);
       this.notify();
       return;
     }
-    localStorage.setItem(key, JSON.stringify(value));
+
+    try {
+      localStorage.setItem(key, jsonStr);
+    } catch (err: any) {
+      console.warn(`[StorageService] Alerta de cota atingida ao salvar "${key}". Liberando espaço...`, err);
+      this.freeUpLocalStorageSpace();
+
+      try {
+        localStorage.setItem(key, jsonStr);
+      } catch (secondErr: any) {
+        console.warn(`[StorageService] Não foi possível salvar no localStorage. Mantendo em memória e IndexedDB.`, secondErr);
+      }
+    }
+
+    this.saveToIndexedDB(key, value);
     this.notify();
   }
 
@@ -1604,7 +1686,7 @@ class StorageService {
       id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: new Date().toISOString()
     };
-    this.set(STORAGE_KEYS.AUDIT_LOGS, [newEntry, ...logs]);
+    this.set(STORAGE_KEYS.AUDIT_LOGS, [newEntry, ...logs].slice(0, 50));
   }
 
   // Modules
