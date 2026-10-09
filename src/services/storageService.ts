@@ -83,6 +83,9 @@ const STORAGE_KEYS = {
   CARD_INVOICE_PAYMENTS: 'contaju_card_invoice_payments',
   CASH_COUNTS: 'contaju_cash_counts',
   GLOBAL_PERIOD_FILTER: 'contaju_global_period_filter',
+  PAYABLES_PERIOD_FILTER: 'contaju_payables_period_filter',
+  RECEIVABLES_PERIOD_FILTER: 'contaju_receivables_period_filter',
+  DASHBOARD_PERIOD_FILTER: 'contaju_dashboard_period_filter',
   DASHBOARD_CONFIG: 'contaju_dashboard_config',
   CASH_SIMULATION_SCENARIOS: 'contaju_cash_simulation_scenarios',
   RECONCILIATION_RULES: 'contaju_reconciliation_rules',
@@ -97,6 +100,12 @@ const STORAGE_KEYS = {
 
 const DEFAULT_GLOBAL_PERIOD_FILTER = {
   active: false,
+  year: new Date().getFullYear(),
+  month: new Date().getMonth() + 1
+};
+
+const DEFAULT_MODULE_PERIOD_FILTER = {
+  active: true,
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1
 };
@@ -1616,13 +1625,40 @@ class StorageService {
     this.set(STORAGE_KEYS.BUDGET_VERSIONS, updated);
   }
 
-  // Global Period Filter
+  // Global Period Filter (Legacy compatibility)
   public getGlobalPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, DEFAULT_GLOBAL_PERIOD_FILTER);
   }
 
   public saveGlobalPeriodFilter(filter: GlobalPeriodFilter) {
     this.set(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, filter);
+  }
+
+  // Payables Period Filter (Mês/Ano dos Vencimentos - Isolado)
+  public getPayablesPeriodFilter(): GlobalPeriodFilter {
+    return this.get(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
+  }
+
+  public savePayablesPeriodFilter(filter: GlobalPeriodFilter) {
+    this.set(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, filter);
+  }
+
+  // Receivables Period Filter (Mês/Ano dos Vencimentos - Isolado)
+  public getReceivablesPeriodFilter(): GlobalPeriodFilter {
+    return this.get(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
+  }
+
+  public saveReceivablesPeriodFilter(filter: GlobalPeriodFilter) {
+    this.set(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, filter);
+  }
+
+  // Dashboard Period Filter (Período do Dashboard - Isolado)
+  public getDashboardPeriodFilter(): GlobalPeriodFilter {
+    return this.get(STORAGE_KEYS.DASHBOARD_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
+  }
+
+  public saveDashboardPeriodFilter(filter: GlobalPeriodFilter) {
+    this.set(STORAGE_KEYS.DASHBOARD_PERIOD_FILTER, filter);
   }
 
   // Dashboard Config

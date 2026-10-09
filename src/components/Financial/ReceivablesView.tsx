@@ -51,9 +51,9 @@ import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { ReceiptModal } from '../Modals/ReceiptModal';
-import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { SwipeableCard } from '../Common/SwipeableCard';
-import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
+import { useModulePeriod } from '../../hooks/useModulePeriod';
 import { toast } from '../../hooks/useToast';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
 
@@ -64,7 +64,7 @@ interface ReceivablesViewProps {
 
 export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitleModal, initialSearch = '' }) => {
   const today = new Date().toISOString().split('T')[0];
-  const { period } = useGlobalPeriod();
+  const { period } = useModulePeriod('RECEIVABLES');
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<'TODOS' | 'ABERTO' | 'VENCIDO' | 'LIQUIDADO' | 'CANCELADO'>(
     initialSearch ? 'TODOS' : 'ABERTO'
@@ -211,7 +211,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     }
   }, [today]);
 
-  // Base titles matching Global Period
+  // Base titles matching Receivables Period (estritamente por Data de Vencimento)
   const periodTitles = useMemo(() => {
     try {
       return titles.filter(t => {
@@ -219,24 +219,22 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         if (period && period.active) {
           const pYear = period.year;
           const pMonth = period.month;
-          const compStr = String(t.competence || '');
           const dueStr = String(t.dueDate || '');
-          const cashStr = String(t.expectedCashDate || '');
 
           if (pMonth === 0) {
+            // Todos os meses do ano
             const yStr = String(pYear);
-            const matchYear = compStr.startsWith(yStr) || dueStr.startsWith(yStr) || cashStr.startsWith(yStr);
-            if (!matchYear) return false;
+            if (!dueStr.startsWith(yStr)) return false;
           } else {
+            // Mês específico
             const ymStr = `${pYear}-${String(pMonth).padStart(2, '0')}`;
-            const matchPeriod = compStr === ymStr || dueStr.startsWith(ymStr) || cashStr.startsWith(ymStr);
-            if (!matchPeriod) return false;
+            if (!dueStr.startsWith(ymStr)) return false;
           }
         }
         return true;
       });
     } catch (err) {
-      console.error('Erro ao filtrar títulos por período:', err);
+      console.error('Erro ao filtrar títulos a receber por período de vencimento:', err);
       return [];
     }
   }, [titles, period]);
@@ -1484,9 +1482,11 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         )}
       </div>
 
-      {/* Summary Banner of current list & Global Period Banner */}
-      <GlobalPeriodBanner
-        moduleName="Contas a Receber"
+      {/* Receivables Period Navigator (Vencimento) */}
+      <ModulePeriodNavigator
+        moduleType="RECEIVABLES"
+        titlePrefix="Vencimentos a Receber em"
+        filterSubtitle="Filtro estrito por Vencimento"
         matchedCount={filteredTitles.length}
         totalCount={titles.length}
       />

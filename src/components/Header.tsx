@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Building2, 
   Wallet, 
@@ -25,7 +25,7 @@ import { User, UserRole } from '../types';
 import { NavigationScreen } from './Sidebar';
 import { storage } from '../services/storageService';
 import { FinancialEngine, formatBRL } from '../services/financialEngine';
-import { useGlobalPeriod } from '../hooks/useGlobalPeriod';
+import { useModulePeriod } from '../hooks/useModulePeriod';
 import { GlobalPeriodSelectorModal } from './Common/GlobalPeriodSelectorModal';
 import { GlobalSearchModal } from './Common/GlobalSearchModal';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
@@ -34,6 +34,7 @@ import { OfflineSyncIndicator } from './Common/OfflineSyncIndicator';
 
 interface HeaderProps {
   currentUser: User;
+  currentScreen?: NavigationScreen;
   onOpenNewTitleModal: (defaultType: 'RECEBER' | 'PAGAR') => void;
   onOpenTransferModal: () => void;
   onOpenBillingModal: () => void;
@@ -48,6 +49,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
+  currentScreen,
   onOpenNewTitleModal,
   onOpenTransferModal,
   onOpenBillingModal,
@@ -63,7 +65,43 @@ export const Header: React.FC<HeaderProps> = ({
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(storage.getTheme());
-  const { period } = useGlobalPeriod();
+  
+  const payablesPeriod = useModulePeriod('PAYABLES');
+  const receivablesPeriod = useModulePeriod('RECEIVABLES');
+  const dashboardPeriod = useModulePeriod('DASHBOARD');
+
+  // Identifica a configuração de período contextual para a aba aberta
+  const currentPeriodConfig = useMemo(() => {
+    if (currentScreen === 'CONTAS_PAGAR') {
+      return {
+        label: 'Vencimentos a Pagar',
+        shortLabel: 'Pagar',
+        period: payablesPeriod.period,
+        updatePeriod: payablesPeriod.updatePeriod,
+        title: 'Filtro de Vencimentos - Contas a Pagar',
+        subtitle: 'Filtro específico por data de vencimento das contas a pagar'
+      };
+    }
+    if (currentScreen === 'CONTAS_RECEBER') {
+      return {
+        label: 'Vencimentos a Receber',
+        shortLabel: 'Receber',
+        period: receivablesPeriod.period,
+        updatePeriod: receivablesPeriod.updatePeriod,
+        title: 'Filtro de Vencimentos - Contas a Receber',
+        subtitle: 'Filtro específico por data de vencimento das contas a receber'
+      };
+    }
+    return {
+      label: 'Painel Executivo',
+      shortLabel: 'Painel',
+      period: dashboardPeriod.period,
+      updatePeriod: dashboardPeriod.updatePeriod,
+      title: 'Período do Painel Executivo',
+      subtitle: 'Período de apuração dos gráficos e DRE'
+    };
+  }, [currentScreen, payablesPeriod.period, payablesPeriod.updatePeriod, receivablesPeriod.period, receivablesPeriod.updatePeriod, dashboardPeriod.period, dashboardPeriod.updatePeriod]);
+
   const company = storage.getCompany();
   const users = storage.getUsers();
   const consolidatedCash = FinancialEngine.getConsolidatedCashBalance();
@@ -223,20 +261,20 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => setIsPeriodModalOpen(true)}
               className={`h-9 flex items-center gap-2 px-3 rounded-lg border transition-all text-xs whitespace-nowrap shrink-0 cursor-pointer ${
-                period.active 
+                currentPeriodConfig.period.active 
                   ? 'bg-amber-500/10 border-amber-400/40 text-amber-400 shadow-xs' 
                   : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-500/40'
               }`}
-              title="Filtrar por Mês e Ano Central (sincroniza todo o sistema)"
+              title={`Filtrar ${currentPeriodConfig.label}`}
             >
-              <Calendar className={`w-4 h-4 shrink-0 ${period.active ? 'text-amber-400 animate-pulse' : 'text-[var(--text-secondary)]'}`} />
+              <Calendar className={`w-4 h-4 shrink-0 ${currentPeriodConfig.period.active ? 'text-amber-400 animate-pulse' : 'text-[var(--text-secondary)]'}`} />
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold">
-                  {period.active ? 'Filtro:' : 'Período:'}
+                  {currentPeriodConfig.shortLabel}:
                 </span>
                 <span className="font-bold text-[var(--text-primary)]">
-                  {period.active 
-                    ? (period.month === 0 ? `Ano ${period.year}` : `${String(period.month).padStart(2, '0')}/${period.year}`)
+                  {currentPeriodConfig.period.active 
+                    ? (currentPeriodConfig.period.month === 0 ? `Ano ${currentPeriodConfig.period.year}` : `${String(currentPeriodConfig.period.month).padStart(2, '0')}/${currentPeriodConfig.period.year}`)
                     : 'Geral'}
                 </span>
               </div>
@@ -248,12 +286,12 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => setIsPeriodModalOpen(true)}
               className="h-8 flex items-center gap-1.5 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] cursor-pointer"
-              title="Filtrar Período"
+              title={`Filtrar ${currentPeriodConfig.label}`}
             >
               <Calendar className="w-3.5 h-3.5 text-amber-400" />
               <span className="font-bold text-[11px]">
-                {period.active 
-                  ? (period.month === 0 ? `${period.year}` : `${String(period.month).padStart(2, '0')}/${period.year}`)
+                {currentPeriodConfig.period.active 
+                  ? (currentPeriodConfig.period.month === 0 ? `${currentPeriodConfig.period.year}` : `${String(currentPeriodConfig.period.month).padStart(2, '0')}/${currentPeriodConfig.period.year}`)
                   : 'Geral'}
               </span>
             </button>
@@ -442,11 +480,15 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Modais Globais do Header */}
+      {/* Modal Contextual de Período do Módulo Ativo */}
       {isPeriodModalOpen && (
         <GlobalPeriodSelectorModal
           isOpen={isPeriodModalOpen}
           onClose={() => setIsPeriodModalOpen(false)}
+          customPeriod={currentPeriodConfig.period}
+          onSaveCustomPeriod={currentPeriodConfig.updatePeriod}
+          titleOverride={currentPeriodConfig.title}
+          subtitleOverride={currentPeriodConfig.subtitle}
         />
       )}
 

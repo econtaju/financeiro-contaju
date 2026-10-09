@@ -18,7 +18,9 @@ import {
   DollarSign,
   Wallet,
   CheckSquare,
-  Sliders
+  Sliders,
+  Edit2,
+  Plus
 } from 'lucide-react';
 import { TitleType, FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -165,9 +167,14 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
     }
   };
 
+  // Atalho Rápido de Edição/Criação de Contraparte
+  const [counterpartyRefreshTrigger, setCounterpartyRefreshTrigger] = useState(0);
+  const [isManualCounterpartyModalOpen, setIsManualCounterpartyModalOpen] = useState(false);
+  const [manualCounterpartyId, setManualCounterpartyId] = useState<string | null>(null);
+
   // Carregar contrapartes com filtro inteligente
   // No contas a pagar, o usuário pode selecionar tanto fornecedores quanto clientes!
-  const allCounterparties = storage.getCounterparties();
+  const allCounterparties = useMemo(() => storage.getCounterparties(), [counterpartyRefreshTrigger, isOpen]);
   const counterparties = useMemo(() => {
     return allCounterparties.filter(c => {
       if (type === 'RECEBER') {
@@ -621,46 +628,77 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
               
               {/* Fornecedor / Cliente com opção de clientes no contas a pagar */}
               <div className="md:col-span-8">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{type === 'RECEBER' ? 'Cliente' : 'Fornecedor ou Cliente'} *</span>
-                  </label>
+                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{type === 'RECEBER' ? 'Cliente' : 'Fornecedor ou Cliente'} *</span>
+                    </label>
 
-                  {/* No Contas a Pagar, permitir alternar filtro entre Todos / Apenas Fornecedores / Apenas Clientes */}
-                  {type === 'PAGAR' && (
-                    <div className="flex items-center gap-1 text-[10px] bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    {/* No Contas a Pagar, permitir alternar filtro entre Todos / Apenas Fornecedores / Apenas Clientes */}
+                    {type === 'PAGAR' && (
+                      <div className="flex items-center gap-1 text-[10px] bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('TODOS')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'TODOS' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                          title="Exibir todos os fornecedores e clientes cadastrados"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('FORNECEDORES')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Fornecedores
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('CLIENTES')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'CLIENTES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                          title="Permite selecionar clientes cadastrados dos quais você comprou produtos ou serviços"
+                        >
+                          Clientes
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {counterpartyId && (
                       <button
                         type="button"
-                        onClick={() => setCounterpartyFilter('TODOS')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'TODOS' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                        title="Exibir todos os fornecedores e clientes cadastrados"
+                        onClick={() => {
+                          setManualCounterpartyId(counterpartyId);
+                          setIsManualCounterpartyModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors cursor-pointer"
+                        title="Editar cadastro completo desta contraparte"
                       >
-                        Todos
+                        <Edit2 className="w-3 h-3 text-amber-600" />
+                        <span>Editar Cadastro</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setCounterpartyFilter('FORNECEDORES')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        Fornecedores
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCounterpartyFilter('CLIENTES')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'CLIENTES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                        title="Permite selecionar clientes cadastrados dos quais você comprou produtos ou serviços"
-                      >
-                        Clientes
-                      </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualCounterpartyId('NEW');
+                        setIsManualCounterpartyModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+                      title={type === 'RECEBER' ? 'Cadastrar novo cliente' : 'Cadastrar novo fornecedor ou cliente'}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{type === 'RECEBER' ? 'Novo Cliente' : 'Novo Favorecido'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <SearchableSelect
@@ -1492,6 +1530,24 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
           }}
         />
       )}
+
+      {/* Modal Manual de Criação / Edição de Favorecido */}
+      <CompleteCounterpartyModal
+        isOpen={isManualCounterpartyModalOpen}
+        counterpartyId={manualCounterpartyId}
+        defaultType={type === 'RECEBER' ? 'CLIENTE' : 'FORNECEDOR'}
+        onClose={() => {
+          setIsManualCounterpartyModalOpen(false);
+          setManualCounterpartyId(null);
+        }}
+        onSaved={(savedParty) => {
+          setCounterpartyRefreshTrigger(prev => prev + 1);
+          if (manualCounterpartyId === 'NEW') {
+            setCounterpartyId(savedParty.id);
+          }
+          toast.success(`Cadastro de "${savedParty.name}" salvo com sucesso!`, 'Cadastro Atualizado');
+        }}
+      />
     </>
   );
 };

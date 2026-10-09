@@ -27,6 +27,7 @@ import { FinancialTitle, Sale, SaleItem } from '../../types';
 import { matchesSearch } from '../../utils/searchUtils';
 import { addMonthsSafe } from '../../utils/dateUtils';
 import { BatchEditSalesModal } from '../Modals/BatchEditSalesModal';
+import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
 
 interface SalesViewProps {
   onOpenBillingModal?: () => void;
@@ -38,6 +39,8 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   const currentMonth = today.substring(0, 7);
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [clientModalId, setClientModalId] = useState<string | null>(null);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
   useEffect(() => {
     return storage.subscribe(() => setRefreshTrigger(k => k + 1));
@@ -778,8 +781,26 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 font-semibold text-[var(--text-primary)]">
-                        {client?.name || 'Cliente'}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-[var(--text-primary)]">{client?.name || 'Cliente'}</span>
+                          {client && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClientModalId(client.id);
+                                setIsClientModalOpen(true);
+                              }}
+                              className="text-amber-500 hover:text-amber-600 dark:hover:text-amber-400 p-0.5 rounded hover:bg-amber-500/10 transition-colors cursor-pointer"
+                              title={`Editar cadastro de ${client.name}`}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        {client?.document && (
+                          <div className="text-[10px] text-[var(--text-secondary)] font-mono">{client.document}</div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-[var(--text-secondary)]">
                         <span className="truncate max-w-xs block" title={s.items?.[0]?.description || s.notes}>
@@ -1002,7 +1023,37 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
             <form onSubmit={handleGenerateSale} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-[var(--text-primary)] mb-1">Cliente *</label>
+                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                  <label className="block font-semibold text-[var(--text-primary)]">Cliente *</label>
+                  <div className="flex items-center gap-1.5">
+                    {customerId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClientModalId(customerId);
+                          setIsClientModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-lg transition-colors cursor-pointer"
+                        title="Editar cadastro completo deste cliente"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        <span>Editar Cadastro</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClientModalId('NEW');
+                        setIsClientModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg transition-colors cursor-pointer"
+                      title="Cadastrar um novo cliente agora sem sair da venda"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Novo Cliente</span>
+                    </button>
+                  </div>
+                </div>
                 <select
                   value={customerId}
                   onChange={e => setCustomerId(e.target.value)}
@@ -1595,6 +1646,23 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
         </div>
       )}
 
+      {/* Modal Rápido de Criação / Edição de Cliente */}
+      <CompleteCounterpartyModal
+        isOpen={isClientModalOpen}
+        counterpartyId={clientModalId}
+        defaultType="CLIENTE"
+        onClose={() => {
+          setIsClientModalOpen(false);
+          setClientModalId(null);
+        }}
+        onSaved={(savedClient) => {
+          if (clientModalId === 'NEW') {
+            setCustomerId(savedClient.id);
+          }
+          setSuccessMessage(`Dados de "${savedClient.name}" salvos com sucesso!`);
+          setTimeout(() => setSuccessMessage(''), 4000);
+        }}
+      />
     </div>
   );
 };

@@ -333,6 +333,7 @@ function AppContent() {
         {!isFocusMode && (
           <Header
             currentUser={currentUser}
+            currentScreen={currentScreen}
             onOpenNewTitleModal={handleOpenNewTitleModal}
             onOpenTransferModal={() => setIsTransferModalOpen(true)}
             onOpenBillingModal={() => setIsBillingModalOpen(true)}

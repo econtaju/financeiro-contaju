@@ -35,8 +35,8 @@ import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus } from '../
 import { ReportingEngine } from '../../services/reportingEngine';
 import { NavigationScreen } from '../Sidebar';
 import { useDashboardConfig } from '../../hooks/useDashboardConfig';
-import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
-import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { useModulePeriod } from '../../hooks/useModulePeriod';
+import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { PendingAlertsWidget } from './PendingAlertsWidget';
 import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
 import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
@@ -57,7 +57,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const currentMonthIdx = new Date().getMonth(); // 0-based
 
   const { config, toggleKpi, toggleWidget, updateConfig, resetToDefault } = useDashboardConfig();
-  const { period } = useGlobalPeriod();
+  const { period } = useModulePeriod('DASHBOARD');
 
   // Tab: 'DASHBOARD' | 'KPIS_CONFIG'
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'KPIS_CONFIG'>('DASHBOARD');
@@ -331,7 +331,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
               {period.active && (
                 <span className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold px-2 py-0.5 rounded-full">
-                  Filtro Global Ativo
+                  Filtro do Dashboard Ativo
                 </span>
               )}
             </div>
@@ -391,9 +391,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Global Period Banner in Dashboard */}
-      <GlobalPeriodBanner
-        moduleName="Painel Executivo"
+      {/* Dashboard Period Navigator */}
+      <ModulePeriodNavigator
+        moduleType="DASHBOARD"
+        titlePrefix="Período de Apuração"
+        filterSubtitle="Painel Executivo e DRE"
         matchedCount={titles.filter(t => t.competence?.startsWith(String(effectiveYear))).length}
         totalCount={titles.length}
       />

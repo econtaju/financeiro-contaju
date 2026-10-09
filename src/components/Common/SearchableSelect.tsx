@@ -100,7 +100,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           value={value}
           onChange={() => {}}
           required={required}
-          className="sr-only"
+          className="absolute inset-0 opacity-0 pointer-events-none w-full h-full -z-10"
         />
       )}
 

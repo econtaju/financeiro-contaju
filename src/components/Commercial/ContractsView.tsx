@@ -47,6 +47,7 @@ import { ImportContractsModal } from '../Modals/ImportContractsModal';
 import { ContractScheduleModal } from '../Modals/ContractScheduleModal';
 import { CancelContractModal } from '../Modals/CancelContractModal';
 import { DeleteContractModal } from '../Modals/DeleteContractModal';
+import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
 import { matchesSearch } from '../../utils/searchUtils';
 
 interface ContractsViewProps {
@@ -74,6 +75,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [successToast, setSuccessToast] = useState<string>('');
+
+  // Atalho Rápido para Edição/Criação de Clientes
+  const [clientsRefreshTrigger, setClientsRefreshTrigger] = useState(0);
+  const [clientModalCounterpartyId, setClientModalCounterpartyId] = useState<string | null>(null);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
   // Cancelamento & Inativação Modal State
   const [selectedContractForCancel, setSelectedContractForCancel] = useState<Contract | null>(null);
@@ -105,7 +111,9 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   });
 
   const contracts = storage.getContracts();
-  const counterparties = storage.getCounterparties().filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
+  const counterparties = useMemo(() => {
+    return storage.getCounterparties().filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
+  }, [clientsRefreshTrigger, isModalOpen]);
   const services = storage.getServices();
   const bankAccounts = storage.getBankAccounts();
   const allTitles = storage.getTitles();
@@ -396,9 +404,24 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingContract) return;
-    if (!formData.customerId || !formData.contractNumber) return;
+
+    if (!formData.contractNumber?.trim()) {
+      alert('Por favor, informe o Número do Contrato (ex: CTR-001).');
+      return;
+    }
+    if (!formData.customerId?.trim()) {
+      alert('Por favor, selecione o Cliente Contratante.');
+      return;
+    }
+    if (!formData.monthlyTotal || Number(formData.monthlyTotal) <= 0) {
+      alert('Por favor, informe o Valor Mensal dos Honorários (superior a R$ 0,00).');
+      return;
+    }
 
     setIsSubmittingContract(true);
+    const safetyTimer = setTimeout(() => {
+      setIsSubmittingContract(false);
+    }, 6000);
 
     try {
       const all = storage.getContracts();
@@ -550,7 +573,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
 
       setTimeout(() => setSuccessToast(''), 7000);
       setIsModalOpen(false);
+    } catch (err: any) {
+      console.error('Erro ao salvar contrato:', err);
+      alert(`Ocorreu um erro ao salvar o contrato: ${err?.message || 'Falha inesperada no processamento.'}`);
     } finally {
+      clearTimeout(safetyTimer);
       setIsSubmittingContract(false);
     }
   };
@@ -849,7 +876,22 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-800 dark:text-slate-200">{client?.name || 'Cliente'}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{client?.name || 'Cliente'}</span>
+                        {client && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClientModalCounterpartyId(client.id);
+                              setIsClientModalOpen(true);
+                            }}
+                            className="text-amber-500 hover:text-amber-600 dark:hover:text-amber-400 p-0.5 rounded hover:bg-amber-500/10 transition-colors cursor-pointer"
+                            title={`Editar cadastro de ${client.name}`}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-500 font-mono">{client?.document}</div>
                     </td>
                     <td className="py-3 px-4">
@@ -1443,11 +1485,40 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                     </div>
                     
                     <div>
-                      <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
-                        Cliente Contratante *
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                        <label className="block font-semibold text-slate-800 dark:text-slate-200">
+                          Cliente Contratante *
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          {formData.customerId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClientModalCounterpartyId(formData.customerId || null);
+                                setIsClientModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-lg transition-colors cursor-pointer"
+                              title="Editar cadastro completo deste cliente sem fechar o contrato"
+                            >
+                              <Edit2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              <span>Editar Cadastro</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClientModalCounterpartyId('NEW');
+                              setIsClientModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg transition-colors cursor-pointer"
+                            title="Cadastrar um novo cliente agora sem sair do contrato"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Novo Cliente</span>
+                          </button>
+                        </div>
+                      </div>
                       <SearchableSelect
-                        label=""
                         required
                         options={counterparties.map(c => ({
                           value: c.id,
@@ -2507,6 +2578,25 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
         onSuccess={(msg) => {
           setSuccessToast(msg);
           setTimeout(() => setSuccessToast(''), 6000);
+        }}
+      />
+
+      {/* Modal Rápido de Criação / Edição de Cliente */}
+      <CompleteCounterpartyModal
+        isOpen={isClientModalOpen}
+        counterpartyId={clientModalCounterpartyId}
+        defaultType="CLIENTE"
+        onClose={() => {
+          setIsClientModalOpen(false);
+          setClientModalCounterpartyId(null);
+        }}
+        onSaved={(savedClient) => {
+          setClientsRefreshTrigger(prev => prev + 1);
+          if (clientModalCounterpartyId === 'NEW') {
+            setFormData(prev => ({ ...prev, customerId: savedClient.id }));
+          }
+          setSuccessToast(`Dados de "${savedClient.name}" salvos com sucesso!`);
+          setTimeout(() => setSuccessToast(''), 4000);
         }}
       />
     </div>

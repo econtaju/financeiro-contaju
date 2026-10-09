@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet } from 'lucide-react';
+import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus } from 'lucide-react';
 import { FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
@@ -24,6 +24,9 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   const [description, setDescription] = useState('');
   const [counterpartyId, setCounterpartyId] = useState('');
   const [counterpartyFilter, setCounterpartyFilter] = useState<'TODOS' | 'FORNECEDORES' | 'CLIENTES'>('TODOS');
+  const [counterpartyRefreshTrigger, setCounterpartyRefreshTrigger] = useState(0);
+  const [isManualCounterpartyModalOpen, setIsManualCounterpartyModalOpen] = useState(false);
+  const [manualCounterpartyId, setManualCounterpartyId] = useState<string | null>(null);
   const [accountId, setAccountId] = useState('');
   const [competence, setCompetence] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -101,7 +104,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   const isReceber = title.type === 'RECEBER';
   const hasSettlements = title.settledPrincipal > 0;
 
-  const allCounterparties = storage.getCounterparties();
+  const allCounterparties = useMemo(() => storage.getCounterparties(), [counterpartyRefreshTrigger, isOpen]);
   const counterparties = allCounterparties.filter(c => {
     if (isReceber) return c.type === 'CLIENTE' || c.type === 'AMBOS';
     if (counterpartyFilter === 'FORNECEDORES') return c.type === 'FORNECEDOR' || c.type === 'AMBOS';
@@ -315,42 +318,73 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-medium text-slate-700">
-                    {isReceber ? 'Cliente *' : 'Fornecedor ou Cliente *'}
-                  </label>
-                  {!isReceber && (
-                    <div className="flex items-center gap-1 text-[10px] bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                  <div className="flex items-center gap-2">
+                    <label className="block font-medium text-slate-700 dark:text-slate-300">
+                      {isReceber ? 'Cliente *' : 'Fornecedor ou Cliente *'}
+                    </label>
+                    {!isReceber && (
+                      <div className="flex items-center gap-1 text-[10px] bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('TODOS')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'TODOS' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('FORNECEDORES')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'FORNECEDORES' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          Forn.
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCounterpartyFilter('CLIENTES')}
+                          className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                            counterpartyFilter === 'CLIENTES' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-2xs font-semibold' : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                          title="Permite selecionar clientes cadastrados dos quais você comprou"
+                        >
+                          Clientes
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {counterpartyId && (
                       <button
                         type="button"
-                        onClick={() => setCounterpartyFilter('TODOS')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'TODOS' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600'
-                        }`}
+                        onClick={() => {
+                          setManualCounterpartyId(counterpartyId);
+                          setIsManualCounterpartyModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-lg transition-colors cursor-pointer"
+                        title="Editar cadastro completo desta contraparte"
                       >
-                        Todos
+                        <Edit2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        <span>Editar Cadastro</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setCounterpartyFilter('FORNECEDORES')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'FORNECEDORES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600'
-                        }`}
-                      >
-                        Forn.
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCounterpartyFilter('CLIENTES')}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors ${
-                          counterpartyFilter === 'CLIENTES' ? 'bg-white text-amber-600 shadow-2xs font-semibold' : 'text-slate-600'
-                        }`}
-                        title="Permite selecionar clientes cadastrados dos quais você comprou"
-                      >
-                        Clientes
-                      </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualCounterpartyId('NEW');
+                        setIsManualCounterpartyModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg transition-colors cursor-pointer"
+                      title={isReceber ? 'Cadastrar novo cliente' : 'Cadastrar novo fornecedor ou cliente'}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{isReceber ? 'Novo Cliente' : 'Novo Favorecido'}</span>
+                    </button>
+                  </div>
                 </div>
                 <SearchableSelect
                   options={counterpartyOptions}
@@ -745,6 +779,23 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           onAccountCreated={handleAccountCreated}
         />
       )}
+
+      {/* Modal Manual de Criação / Edição de Favorecido */}
+      <CompleteCounterpartyModal
+        isOpen={isManualCounterpartyModalOpen}
+        counterpartyId={manualCounterpartyId}
+        defaultType={isReceber ? 'CLIENTE' : 'FORNECEDOR'}
+        onClose={() => {
+          setIsManualCounterpartyModalOpen(false);
+          setManualCounterpartyId(null);
+        }}
+        onSaved={(savedParty) => {
+          setCounterpartyRefreshTrigger(prev => prev + 1);
+          if (manualCounterpartyId === 'NEW') {
+            setCounterpartyId(savedParty.id);
+          }
+        }}
+      />
     </>
   );
 };

@@ -44,9 +44,9 @@ import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
-import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
+import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { SwipeableCard } from '../Common/SwipeableCard';
-import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
+import { useModulePeriod } from '../../hooks/useModulePeriod';
 import { toast } from '../../hooks/useToast';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
 
@@ -57,7 +57,7 @@ interface PayablesViewProps {
 
 export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal, initialSearch = '' }) => {
   const today = new Date().toISOString().split('T')[0];
-  const { period } = useGlobalPeriod();
+  const { period } = useModulePeriod('PAYABLES');
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<'TODOS' | 'ABERTO' | 'VENCIDO' | 'LIQUIDADO' | 'CANCELADO'>(
     initialSearch ? 'TODOS' : 'ABERTO'
@@ -202,7 +202,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
     }
   }, [today]);
 
-  // Base titles matching Global Period
+  // Base titles matching Payables Period (estritamente por Data de Vencimento)
   const periodTitles = useMemo(() => {
     try {
       return titles.filter(t => {
@@ -210,24 +210,22 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         if (period && period.active) {
           const pYear = period.year;
           const pMonth = period.month;
-          const compStr = String(t.competence || '');
           const dueStr = String(t.dueDate || '');
-          const cashStr = String(t.expectedCashDate || '');
 
           if (pMonth === 0) {
+            // Todos os meses do ano
             const yStr = String(pYear);
-            const matchYear = compStr.startsWith(yStr) || dueStr.startsWith(yStr) || cashStr.startsWith(yStr);
-            if (!matchYear) return false;
+            if (!dueStr.startsWith(yStr)) return false;
           } else {
+            // Mês específico
             const ymStr = `${pYear}-${String(pMonth).padStart(2, '0')}`;
-            const matchPeriod = compStr === ymStr || dueStr.startsWith(ymStr) || cashStr.startsWith(ymStr);
-            if (!matchPeriod) return false;
+            if (!dueStr.startsWith(ymStr)) return false;
           }
         }
         return true;
       });
     } catch (err) {
-      console.error('Erro ao filtrar títulos a pagar por período:', err);
+      console.error('Erro ao filtrar títulos a pagar por período de vencimento:', err);
       return [];
     }
   }, [titles, period]);
@@ -1373,9 +1371,11 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         )}
       </div>
 
-      {/* Global Period Banner */}
-      <GlobalPeriodBanner
-        moduleName="Contas a Pagar"
+      {/* Payables Period Navigator (Vencimento) */}
+      <ModulePeriodNavigator
+        moduleType="PAYABLES"
+        titlePrefix="Vencimentos a Pagar em"
+        filterSubtitle="Filtro estrito por Vencimento"
         matchedCount={filteredTitles.length}
         totalCount={titles.length}
       />
