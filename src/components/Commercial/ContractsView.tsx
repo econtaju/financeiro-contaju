@@ -29,7 +29,8 @@ import {
   SlidersHorizontal,
   Info,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Send
 } from 'lucide-react';
 import { 
   Contract, 
@@ -48,6 +49,7 @@ import { ContractScheduleModal } from '../Modals/ContractScheduleModal';
 import { CancelContractModal } from '../Modals/CancelContractModal';
 import { DeleteContractModal } from '../Modals/DeleteContractModal';
 import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
+import { ContractAdjustmentNotificationModal } from '../Modals/ContractAdjustmentNotificationModal';
 import { matchesSearch } from '../../utils/searchUtils';
 
 interface ContractsViewProps {
@@ -108,6 +110,15 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
     newAmount: 0,
     reason: 'REAJUSTE_ANUAL' as ContractAdjustmentReason,
     notes: ''
+  });
+
+  // Notificação de Reajuste ao Cliente Modal State
+  const [notifyAdjustmentModal, setNotifyAdjustmentModal] = useState<{
+    isOpen: boolean;
+    adjustment: ContractAdjustment | null;
+  }>({
+    isOpen: false,
+    adjustment: null
   });
 
   const contracts = storage.getContracts();
@@ -2223,6 +2234,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                               <th className="py-2 px-3 text-center">Variação</th>
                               <th className="py-2 px-3">Motivo</th>
                               <th className="py-2 px-3">Observações</th>
+                              <th className="py-2 px-3 text-right">Notificação</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-[#273040]">
@@ -2253,6 +2265,17 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                                 </td>
                                 <td className="py-2 px-3 text-slate-500 truncate max-w-xs" title={adj.notes || ''}>
                                   {adj.notes || '-'}
+                                </td>
+                                <td className="py-2 px-3 text-right whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNotifyAdjustmentModal({ isOpen: true, adjustment: adj })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px] transition-colors cursor-pointer border border-emerald-500/20"
+                                    title="Notificar cliente sobre este reajuste (WhatsApp / E-mail)"
+                                  >
+                                    <Send className="w-3 h-3" />
+                                    <span>Notificar</span>
+                                  </button>
                                 </td>
                               </tr>
                             ))}
@@ -2599,6 +2622,26 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           setTimeout(() => setSuccessToast(''), 4000);
         }}
       />
+
+      {/* Modal de Notificação Formal de Reajuste ao Cliente */}
+      {notifyAdjustmentModal.isOpen && notifyAdjustmentModal.adjustment && (
+        <ContractAdjustmentNotificationModal
+          isOpen={true}
+          contract={{
+            ...(editingContract || {}),
+            ...formData,
+            id: editingContract?.id || formData.id || 'ctr-temp',
+            contractNumber: formData.contractNumber || editingContract?.contractNumber || 'CTR',
+            description: formData.description || editingContract?.description || 'Contrato',
+            customerId: formData.customerId || editingContract?.customerId || '',
+            monthlyTotal: formData.monthlyTotal || editingContract?.monthlyTotal || 0,
+            dueDay: formData.dueDay || editingContract?.dueDay || 10,
+            status: formData.status || editingContract?.status || 'ATIVO'
+          } as Contract}
+          adjustment={notifyAdjustmentModal.adjustment}
+          onClose={() => setNotifyAdjustmentModal({ isOpen: false, adjustment: null })}
+        />
+      )}
     </div>
   );
 };

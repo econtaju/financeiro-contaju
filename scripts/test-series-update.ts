@@ -195,19 +195,29 @@ assert(detection.paidTitlesCount === 2, 'Contou exatamente 2 títulos quitados')
 assert(detection.subsequentOpenTitles.length === 2, 'Encontrou exatamente 2 títulos subsequentes em aberto (Abril e Maio)');
 assert(detection.subsequentOpenTitles.every(t => t.id === 't-ctr-4' || t.id === 't-ctr-5'), 'Títulos subsequentes são t-ctr-4 e t-ctr-5');
 
-// 1.2 Executar atualização em lote alterando valor de 500 para 650
+// 1.2 Executar atualização em lote alterando valor de 500 para 650, vencimento para dia 15 e categoria
 const resultUpdate = RecurringSeriesService.executeSeriesUpdate({
   targetTitleId: 't-ctr-3',
   newAmount: 650,
-  updates: { description: 'Honorários Mar/2026 (Reajustado)' },
+  updates: { 
+    description: 'Honorários Mar/2026 (Reajustado)',
+    dueDate: '2026-03-15',
+    accountId: 'rec-nova',
+    expectedBankAccountId: 'banco-01'
+  },
   applyToSubsequent: true,
   subsequentTitleIds: detection.subsequentOpenTitles.map(t => t.id),
   contractId: mockContract.id,
+  propagateDueDay: true,
+  propagateAccount: true,
+  propagateBankAccount: true,
   currentUser: { name: 'Admin', role: 'ADMIN' }
 });
 
 assert(resultUpdate.success === true, 'Atualização executada com sucesso');
 assert(resultUpdate.updatedCount === 3, 'Atualizou 3 títulos (Alvo Março + 2 Futuros Abril e Maio)');
+assert(resultUpdate.contract !== undefined, 'Retornou objeto de contrato atualizado');
+assert(resultUpdate.adjustment !== undefined, 'Retornou objeto de histórico de reajuste criado');
 
 const titlesAfter1 = storage.getTitles();
 const tJan = titlesAfter1.find(t => t.id === 't-ctr-1')!;
@@ -217,14 +227,27 @@ const tAbr = titlesAfter1.find(t => t.id === 't-ctr-4')!;
 const tMai = titlesAfter1.find(t => t.id === 't-ctr-5')!;
 
 assert(tJan.originalAmount === 500 && tJan.settledPrincipal === 500, 'Mês 1 (Jan/Quitado) permaneceu intacto com R$ 500');
+assert(tJan.dueDate === '2026-01-10', 'Mês 1 (Jan/Quitado) manteve vencimento original dia 10');
 assert(tFev.originalAmount === 500 && tFev.settledPrincipal === 500, 'Mês 2 (Fev/Quitado) permaneceu intacto com R$ 500');
+
 assert(tMar.originalAmount === 650 && tMar.balancePrincipal === 650, 'Mês 3 (Mar/Alvo) atualizado para R$ 650');
+assert(tMar.dueDate === '2026-03-15', 'Mês 3 (Mar/Alvo) atualizado para dia 15');
+assert(tMar.accountId === 'rec-nova', 'Mês 3 (Mar/Alvo) atualizado para categoria rec-nova');
+
 assert(tAbr.originalAmount === 650 && tAbr.balancePrincipal === 650, 'Mês 4 (Abr/Futuro) atualizado em lote para R$ 650');
+assert(tAbr.dueDate === '2026-04-15', 'Mês 4 (Abr/Futuro) atualizado em lote para dia 15');
+assert(tAbr.accountId === 'rec-nova', 'Mês 4 (Abr/Futuro) categoria sincronizada para rec-nova');
+
 assert(tMai.originalAmount === 650 && tMai.balancePrincipal === 650, 'Mês 5 (Mai/Futuro) atualizado em lote para R$ 650');
+assert(tMai.dueDate === '2026-05-15', 'Mês 5 (Mai/Futuro) atualizado em lote para dia 15');
+assert(tMai.accountId === 'rec-nova', 'Mês 5 (Mai/Futuro) categoria sincronizada para rec-nova');
 
 const contractsAfter1 = storage.getContracts();
 const cUpdated = contractsAfter1.find(c => c.id === contractId)!;
 assert(cUpdated.monthlyTotal === 650, 'Contrato mensal sincronizado para R$ 650');
+assert(cUpdated.dueDay === 15, 'Contrato sincronizado com novo dia de vencimento (dia 15)');
+assert(Boolean(cUpdated.adjustments && cUpdated.adjustments.length > 0), 'Histórico de reajustes contém o novo reajuste registrado');
+assert(cUpdated.adjustments![0].previousAmount === 500 && cUpdated.adjustments![0].newAmount === 650, 'Dados do reajuste (500 ➔ 650) gravados corretamente');
 
 
 // -------------------------------------------------------------

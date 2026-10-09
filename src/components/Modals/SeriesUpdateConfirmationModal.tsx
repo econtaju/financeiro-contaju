@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   Repeat, 
@@ -9,16 +9,24 @@ import {
   Calendar, 
   ShieldCheck, 
   ChevronDown, 
-  ChevronUp 
+  ChevronUp,
+  FolderTree,
+  Building2,
+  Sparkles
 } from 'lucide-react';
 import { FinancialTitle } from '../../types';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
-import { SeriesDetectionResult } from '../../services/recurringSeriesService';
+import { SeriesDetectionResult, SeriesFieldChanges } from '../../services/recurringSeriesService';
+import { storage } from '../../services/storageService';
 
 interface SeriesUpdateConfirmationModalProps {
   isOpen: boolean;
   targetTitle: FinancialTitle;
   newAmount: number;
+  newDueDate?: string;
+  newAccountId?: string;
+  newBankAccountId?: string;
+  fieldChanges?: SeriesFieldChanges;
   seriesInfo: SeriesDetectionResult;
   onConfirm: (applyToSubsequent: boolean) => void;
   onCancel: () => void;
@@ -28,11 +36,43 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
   isOpen,
   targetTitle,
   newAmount,
+  newDueDate,
+  newAccountId,
+  newBankAccountId,
+  fieldChanges,
   seriesInfo,
   onConfirm,
   onCancel
 }) => {
   const [showDetails, setShowDetails] = useState(false);
+
+  // Mapear nomes de plano de contas e bancos para exibição amigável
+  const { oldAccountName, newAccountName, oldBankName, newBankName } = useMemo(() => {
+    try {
+      const chartAccounts = storage.getChartAccounts();
+      const bankAccounts = storage.getBankAccounts();
+
+      const oldAcc = chartAccounts.find(a => a.id === targetTitle.accountId);
+      const newAcc = chartAccounts.find(a => a.id === newAccountId);
+
+      const oldBank = bankAccounts.find(b => b.id === targetTitle.expectedBankAccountId);
+      const newBank = bankAccounts.find(b => b.id === newBankAccountId);
+
+      return {
+        oldAccountName: oldAcc?.name || targetTitle.accountId || 'Não definida',
+        newAccountName: newAcc?.name || newAccountId || 'Não definida',
+        oldBankName: oldBank ? `${oldBank.name} (${oldBank.institution})` : 'Indiferente / Não definida',
+        newBankName: newBank ? `${newBank.name} (${newBank.institution})` : 'Indiferente / Não definida'
+      };
+    } catch {
+      return {
+        oldAccountName: 'Conta anterior',
+        newAccountName: 'Nova conta',
+        oldBankName: 'Banco anterior',
+        newBankName: 'Novo banco'
+      };
+    }
+  }, [targetTitle.accountId, newAccountId, targetTitle.expectedBankAccountId, newBankAccountId]);
 
   if (!isOpen) return null;
 
@@ -40,6 +80,11 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
   const diff = newAmount - previousAmount;
   const isIncrease = diff > 0;
   const subsequentCount = seriesInfo.subsequentOpenTitles.length;
+
+  const isAmountChanged = fieldChanges ? fieldChanges.amountChanged : Math.abs(newAmount - previousAmount) > 0.001;
+  const isDueDayChanged = fieldChanges ? fieldChanges.dueDayChanged : false;
+  const isAccountChanged = fieldChanges ? fieldChanges.accountChanged : Boolean(newAccountId && newAccountId !== targetTitle.accountId);
+  const isBankChanged = fieldChanges ? fieldChanges.bankAccountChanged : Boolean(newBankAccountId !== (targetTitle.expectedBankAccountId || ''));
 
   return (
     <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
@@ -78,47 +123,105 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
 
         {/* Corpo do Diálogo */}
         <div className="p-5 space-y-4 text-xs">
-          {/* Card de Comparação de Valores */}
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#161C28] border border-slate-200 dark:border-[#273040] space-y-2">
+          
+          {/* Card com as Modificações Detectadas */}
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#161C28] border border-slate-200 dark:border-[#273040] space-y-3">
             <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-[11px]">
               <span>Descrição do Título:</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[220px]">
+              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[240px]">
                 {targetTitle.description}
               </span>
             </div>
 
-            <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-slate-500">Valor Anterior</span>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  {formatBRL(previousAmount)}
-                </span>
-              </div>
+            {/* 1. Alteração de Valor */}
+            {isAmountChanged && (
+              <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Valor Anterior</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                      {formatBRL(previousAmount)}
+                    </span>
+                  </div>
 
-              <div className="px-2">
-                <ArrowRight className="w-4 h-4 text-amber-500" />
-              </div>
+                  <div className="px-2">
+                    <ArrowRight className="w-4 h-4 text-amber-500" />
+                  </div>
 
-              <div className="text-right">
-                <span className="block text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400">Novo Valor</span>
-                <span className="text-base font-extrabold text-amber-600 dark:text-amber-400">
-                  {formatBRL(newAmount)}
-                </span>
-              </div>
-            </div>
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400">Novo Valor</span>
+                    <span className="text-base font-extrabold text-amber-600 dark:text-amber-400">
+                      {formatBRL(newAmount)}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="pt-1 flex items-center justify-end">
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                isIncrease 
-                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
-                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-              }`}>
-                {isIncrease ? `+ ${formatBRL(diff)}` : `- ${formatBRL(Math.abs(diff))}`}
-              </span>
-            </div>
+                <div className="flex items-center justify-end">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    isIncrease 
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                      : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                  }`}>
+                    {isIncrease ? `+ ${formatBRL(diff)}` : `- ${formatBRL(Math.abs(diff))}`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Alteração de Dia de Vencimento */}
+            {isDueDayChanged && fieldChanges && (
+              <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center space-x-1.5 text-slate-600 dark:text-slate-300">
+                  <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-500">Vencimento Padrão</span>
+                    <span className="text-xs font-semibold">Dia {fieldChanges.oldDueDay}</span>
+                  </div>
+                </div>
+
+                <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
+
+                <div className="text-right">
+                  <span className="block text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400">Novo Dia</span>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Todo dia {fieldChanges.newDueDay}</span>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Alteração de Categoria Contábil */}
+            {isAccountChanged && (
+              <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                <div className="flex items-center space-x-1.5 text-slate-600 dark:text-slate-300 truncate max-w-[190px]">
+                  <FolderTree className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <span className="truncate" title={oldAccountName}>{oldAccountName}</span>
+                </div>
+
+                <ArrowRight className="w-3.5 h-3.5 text-amber-500 shrink-0 mx-1" />
+
+                <div className="text-right truncate max-w-[190px] font-bold text-indigo-600 dark:text-indigo-400">
+                  <span className="truncate" title={newAccountName}>{newAccountName}</span>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Alteração de Conta Bancária */}
+            {isBankChanged && (
+              <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                <div className="flex items-center space-x-1.5 text-slate-600 dark:text-slate-300 truncate max-w-[190px]">
+                  <Building2 className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                  <span className="truncate" title={oldBankName}>{oldBankName}</span>
+                </div>
+
+                <ArrowRight className="w-3.5 h-3.5 text-amber-500 shrink-0 mx-1" />
+
+                <div className="text-right truncate max-w-[190px] font-bold text-teal-600 dark:text-teal-400">
+                  <span className="truncate" title={newBankName}>{newBankName}</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Pergunta de Negócio */}
+          {/* Pergunta de Decisão */}
           <div className="space-y-1.5">
             <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
               Como você deseja aplicar esta alteração?
@@ -139,6 +242,16 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
             </div>
           </div>
 
+          {/* Aviso especial de Contrato com Histórico de Reajuste */}
+          {seriesInfo.seriesType === 'CONTRATO' && (
+            <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center space-x-2 text-[11px] text-amber-800 dark:text-amber-300">
+              <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>
+                <strong>Sincronização Contratual:</strong> O contrato ativo terá seu valor mensal atualizado e um registro oficial será gravado no seu <strong>Histórico de Reajustes</strong> (com opção de notificar o cliente via WhatsApp/E-mail).
+              </span>
+            </div>
+          )}
+
           {/* Lista detalhada expansível dos próximos meses */}
           {subsequentCount > 0 && (
             <div className="rounded-xl border border-slate-200 dark:border-[#273040] overflow-hidden">
@@ -158,16 +271,14 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
                       key={t.id} 
                       className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-[#161C28] border border-slate-200/60 dark:border-slate-800 text-[11px]"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-semibold truncate">{t.titleNumber}</span>
-                        <span className="text-slate-500 font-mono text-[10px]">
-                          (Venc: {formatDateBR(t.dueDate)})
-                        </span>
+                      <div className="min-w-0 pr-2">
+                        <span className="font-mono text-[10px] text-slate-500 block truncate">{t.titleNumber}</span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate block">{t.description}</span>
                       </div>
-                      <span className="text-amber-600 dark:text-amber-400 font-bold font-mono shrink-0">
-                        {formatBRL(newAmount)}
-                      </span>
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-slate-500 block">Venc: {formatDateBR(t.dueDate)}</span>
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{formatBRL(newAmount)}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -175,57 +286,25 @@ export const SeriesUpdateConfirmationModal: React.FC<SeriesUpdateConfirmationMod
             </div>
           )}
 
-          {/* Cards de Opção de Ação */}
-          <div className="grid grid-cols-1 gap-2.5 pt-1">
-            {/* Opção 1: Apenas este lançamento */}
-            <button
-              type="button"
-              onClick={() => onConfirm(false)}
-              className="p-3 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 bg-white dark:bg-[#161C28] hover:bg-slate-50 dark:hover:bg-[#1a2130] text-left transition-all cursor-pointer group flex items-start gap-3"
-            >
-              <div className="w-4 h-4 rounded-full border-2 border-slate-400 group-hover:border-slate-600 shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                  Alterar apenas este lançamento
-                </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Atualiza somente o título de {targetTitle.competence || formatDateBR(targetTitle.dueDate)}. Os meses seguintes permanecerão com o valor antigo.
-                </div>
-              </div>
-            </button>
-
-            {/* Opção 2: Este e todos os meses seguintes */}
-            <button
-              type="button"
-              onClick={() => onConfirm(true)}
-              className="p-3.5 rounded-xl border-2 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 text-left transition-all cursor-pointer shadow-xs flex items-start gap-3"
-            >
-              <div className="w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center shrink-0 mt-0.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-slate-950 stroke-[3]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-amber-700 dark:text-amber-300 text-xs flex items-center gap-1.5 flex-wrap">
-                  <span>Alterar este e todos os {subsequentCount} meses seguintes em aberto</span>
-                  <span className="text-[10px] bg-amber-500 text-slate-950 font-extrabold px-1.5 py-0.2 rounded">
-                    Recomendado
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
-                  Aplica o novo valor de <strong>{formatBRL(newAmount)}</strong> a este mês e atualiza em lote todos os lançamentos futuros em aberto.
-                </div>
-              </div>
-            </button>
-          </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3 bg-slate-50 dark:bg-[#161C28] border-t border-slate-200 dark:border-[#273040] flex items-center justify-end gap-2">
+        {/* Rodapé com as 2 opções de decisão */}
+        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#161C28] flex flex-col sm:flex-row gap-2.5 sm:justify-end">
           <button
             type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+            onClick={() => onConfirm(false)}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 dark:border-[#273040] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
           >
-            Cancelar
+            <span>Alterar Apenas Este Lançamento</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onConfirm(true)}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-md transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Este e Todos os {subsequentCount} Meses Seguintes</span>
           </button>
         </div>
       </div>

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus } from 'lucide-react';
-import { FinancialTitle, Counterparty, ChartAccount } from '../../types';
+import { FinancialTitle, Counterparty, ChartAccount, Contract, ContractAdjustment } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
 import { QuickCreateAccountModal } from './QuickCreateAccountModal';
-import { RecurringSeriesService, SeriesDetectionResult } from '../../services/recurringSeriesService';
+import { RecurringSeriesService, SeriesDetectionResult, SeriesFieldChanges } from '../../services/recurringSeriesService';
 import { SeriesUpdateConfirmationModal } from './SeriesUpdateConfirmationModal';
+import { ContractAdjustmentNotificationModal } from './ContractAdjustmentNotificationModal';
 import { toast } from '../../hooks/useToast';
 
 interface EditTitleModalProps {
@@ -63,6 +64,10 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   const [seriesModalState, setSeriesModalState] = useState<{
     isOpen: boolean;
     pendingAmount: number;
+    pendingDueDate?: string;
+    pendingAccountId?: string;
+    pendingBankAccountId?: string;
+    fieldChanges?: SeriesFieldChanges;
     seriesInfo: SeriesDetectionResult | null;
     pendingUpdates: Partial<FinancialTitle> | null;
   }>({
@@ -70,6 +75,17 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     pendingAmount: 0,
     seriesInfo: null,
     pendingUpdates: null
+  });
+
+  // Estados para notificação formal de reajuste de contrato ao cliente
+  const [notificationModalState, setNotificationModalState] = useState<{
+    isOpen: boolean;
+    contract: Contract | null;
+    adjustment: ContractAdjustment | null;
+  }>({
+    isOpen: false,
+    contract: null,
+    adjustment: null
   });
 
   useEffect(() => {
@@ -211,6 +227,16 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     setAccountId(newAccount.id);
   };
 
+  const handleCloseNotificationModal = () => {
+    setNotificationModalState({
+      isOpen: false,
+      contract: null,
+      adjustment: null
+    });
+    onSaved();
+    onClose();
+  };
+
   const executeFinalSave = (
     updatesToApply: Partial<FinancialTitle>,
     amountToSave: number,
@@ -221,6 +247,8 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
     const currentUser = storage.getCurrentUser();
     const newBalance = Math.max(0, amountToSave - (title.settledPrincipal || 0));
+    let createdContract: Contract | undefined = undefined;
+    let createdAdjustment: ContractAdjustment | undefined = undefined;
 
     if (applyToSubsequent && seriesInfo && seriesInfo.subsequentOpenTitles.length > 0) {
       const result = RecurringSeriesService.executeSeriesUpdate({
@@ -230,11 +258,17 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
         applyToSubsequent: true,
         subsequentTitleIds: seriesInfo.subsequentOpenTitles.map(t => t.id),
         contractId: title.contractId,
+        propagateDueDay: true,
+        propagateAccount: true,
+        propagateBankAccount: true,
         currentUser
       });
 
+      createdContract = result.contract;
+      createdAdjustment = result.adjustment;
+
       toast.success(
-        `Atualização em lote concluída com sucesso! ${result.updatedCount} lançamento(s) em aberto foram atualizados para ${formatBRL(amountToSave)}.`
+        `Atualização em lote concluída com sucesso! ${result.updatedCount} lançamento(s) em aberto foram atualizados.`
       );
     } else {
       storage.updateTitle(title.id, {
@@ -253,7 +287,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       });
 
       if (seriesInfo && seriesInfo.isSeries) {
-        toast.success('Título atualizado! A alteração de valor foi aplicada apenas a este lançamento.');
+        toast.success('Título atualizado! A alteração foi aplicada apenas a este lançamento.');
       }
     }
 
@@ -273,6 +307,16 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           ? `${settlementNotes.trim()} [${settlementPaymentMethod}]` 
           : `Baixa realizada na edição do título [${settlementPaymentMethod}]`
       });
+    }
+
+    // Se houve reajuste em contrato recorrente, abrir modal de notificação ao cliente
+    if (createdContract && createdAdjustment) {
+      setNotificationModalState({
+        isOpen: true,
+        contract: createdContract,
+        adjustment: createdAdjustment
+      });
+      return;
     }
 
     if (quickCreatedId && openCompleteAfterSave) {
@@ -376,16 +420,25 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       notes
     };
 
-    // Verificar se houve alteração no valor do título
-    const amountChanged = Math.abs(Number(originalAmount) - Number(title.originalAmount)) > 0.001;
+    // Verificar se houve alteração no valor, vencimento, categoria ou conta bancária
+    const fieldChanges = RecurringSeriesService.detectFieldChanges(title, {
+      originalAmount: Number(originalAmount),
+      dueDate,
+      accountId,
+      expectedBankAccountId: settlementBankAccountId || expectedBankAccountId
+    });
 
-    if (amountChanged) {
+    if (fieldChanges.hasAnyChange) {
       const seriesInfo = RecurringSeriesService.detectSeries(title);
       // Se pertence a uma série e há meses/parcelas seguintes em aberto
       if (seriesInfo.isSeries && seriesInfo.subsequentOpenTitles.length > 0) {
         setSeriesModalState({
           isOpen: true,
           pendingAmount: Number(originalAmount),
+          pendingDueDate: dueDate,
+          pendingAccountId: accountId,
+          pendingBankAccountId: settlementBankAccountId || expectedBankAccountId,
+          fieldChanges,
           seriesInfo,
           pendingUpdates: updatesPayload
         });
@@ -393,7 +446,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       }
     }
 
-    // Sem alteração de valor ou sem parcelas seguintes em aberto: salvar diretamente
+    // Sem alteração de série ou sem parcelas seguintes em aberto: salvar diretamente
     executeFinalSave(updatesPayload, Number(originalAmount), false, null);
   };
 
@@ -928,9 +981,23 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           isOpen={seriesModalState.isOpen}
           targetTitle={title}
           newAmount={seriesModalState.pendingAmount}
+          newDueDate={seriesModalState.pendingDueDate}
+          newAccountId={seriesModalState.pendingAccountId}
+          newBankAccountId={seriesModalState.pendingBankAccountId}
+          fieldChanges={seriesModalState.fieldChanges}
           seriesInfo={seriesModalState.seriesInfo}
           onConfirm={handleConfirmSeriesChoice}
           onCancel={handleCancelSeriesChoice}
+        />
+      )}
+
+      {/* Modal de Notificação Formal de Reajuste ao Cliente (WhatsApp / E-mail) */}
+      {notificationModalState.isOpen && notificationModalState.contract && notificationModalState.adjustment && (
+        <ContractAdjustmentNotificationModal
+          isOpen={notificationModalState.isOpen}
+          contract={notificationModalState.contract}
+          adjustment={notificationModalState.adjustment}
+          onClose={handleCloseNotificationModal}
         />
       )}
     </>
