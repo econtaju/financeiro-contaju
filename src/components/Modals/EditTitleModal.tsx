@@ -6,6 +6,9 @@ import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccoun
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
 import { QuickCreateAccountModal } from './QuickCreateAccountModal';
+import { RecurringSeriesService, SeriesDetectionResult } from '../../services/recurringSeriesService';
+import { SeriesUpdateConfirmationModal } from './SeriesUpdateConfirmationModal';
+import { toast } from '../../hooks/useToast';
 
 interface EditTitleModalProps {
   isOpen: boolean;
@@ -56,6 +59,19 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   const [settlementVoucherRef, setSettlementVoucherRef] = useState('');
   const [settlementNotes, setSettlementNotes] = useState('');
 
+  // Estados para interceptação de alteração de valor em séries/recorrências/parcelamentos
+  const [seriesModalState, setSeriesModalState] = useState<{
+    isOpen: boolean;
+    pendingAmount: number;
+    seriesInfo: SeriesDetectionResult | null;
+    pendingUpdates: Partial<FinancialTitle> | null;
+  }>({
+    isOpen: false,
+    pendingAmount: 0,
+    seriesInfo: null,
+    pendingUpdates: null
+  });
+
   useEffect(() => {
     if (title) {
       setDescription(title.description || '');
@@ -79,6 +95,13 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       setSettlementBankFee(0);
       setSettlementVoucherRef('');
       setSettlementNotes('');
+
+      setSeriesModalState({
+        isOpen: false,
+        pendingAmount: 0,
+        seriesInfo: null,
+        pendingUpdates: null
+      });
     }
   }, [title, isOpen]);
 
@@ -188,6 +211,98 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     setAccountId(newAccount.id);
   };
 
+  const executeFinalSave = (
+    updatesToApply: Partial<FinancialTitle>,
+    amountToSave: number,
+    applyToSubsequent: boolean,
+    seriesInfo?: SeriesDetectionResult | null
+  ) => {
+    if (!title) return;
+
+    const currentUser = storage.getCurrentUser();
+    const newBalance = Math.max(0, amountToSave - (title.settledPrincipal || 0));
+
+    if (applyToSubsequent && seriesInfo && seriesInfo.subsequentOpenTitles.length > 0) {
+      const result = RecurringSeriesService.executeSeriesUpdate({
+        targetTitleId: title.id,
+        newAmount: amountToSave,
+        updates: updatesToApply,
+        applyToSubsequent: true,
+        subsequentTitleIds: seriesInfo.subsequentOpenTitles.map(t => t.id),
+        contractId: title.contractId,
+        currentUser
+      });
+
+      toast.success(
+        `Atualização em lote concluída com sucesso! ${result.updatedCount} lançamento(s) em aberto foram atualizados para ${formatBRL(amountToSave)}.`
+      );
+    } else {
+      storage.updateTitle(title.id, {
+        ...updatesToApply,
+        originalAmount: Number(amountToSave),
+        balancePrincipal: newBalance
+      });
+
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'EDICAO_TITULO',
+        module: isReceber ? 'Contas a Receber' : 'Contas a Pagar',
+        recordId: title.id,
+        details: `Edição do título ${title.titleNumber} (${updatesToApply.description || title.description}). Valor: ${formatBRL(amountToSave)}, Vencimento: ${updatesToApply.dueDate || title.dueDate}.`
+      });
+
+      if (seriesInfo && seriesInfo.isSeries) {
+        toast.success('Título atualizado! A alteração de valor foi aplicada apenas a este lançamento.');
+      }
+    }
+
+    // Se marcou como liquidado agora, efetuar a baixa do saldo remanescente
+    if (isAlreadySettled && newBalance > 0) {
+      FinancialEngine.postSettlement({
+        titleId: title.id,
+        settlementDate,
+        bankAccountId: settlementBankAccountId,
+        principalSettled: newBalance,
+        discount: settlementDiscount,
+        interest: settlementInterest,
+        fine: 0,
+        bankFee: isReceber ? settlementBankFee : 0,
+        voucherRef: settlementVoucherRef.trim() || undefined,
+        notes: settlementNotes.trim() 
+          ? `${settlementNotes.trim()} [${settlementPaymentMethod}]` 
+          : `Baixa realizada na edição do título [${settlementPaymentMethod}]`
+      });
+    }
+
+    if (quickCreatedId && openCompleteAfterSave) {
+      setOpenCompleteModal(true);
+    } else {
+      onSaved();
+      onClose();
+    }
+  };
+
+  const handleConfirmSeriesChoice = (applyToSubsequent: boolean) => {
+    if (!seriesModalState.pendingUpdates) return;
+    const updates = seriesModalState.pendingUpdates;
+    const amt = seriesModalState.pendingAmount;
+    const info = seriesModalState.seriesInfo;
+
+    setSeriesModalState({
+      isOpen: false,
+      pendingAmount: 0,
+      seriesInfo: null,
+      pendingUpdates: null
+    });
+
+    executeFinalSave(updates, amt, applyToSubsequent, info);
+  };
+
+  const handleCancelSeriesChoice = () => {
+    setSeriesModalState(prev => ({ ...prev, isOpen: false }));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -232,8 +347,6 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       return;
     }
 
-    const newBalance = originalAmount - title.settledPrincipal;
-
     // Se marcou para liquidar/baixar agora o saldo restante
     if (isAlreadySettled) {
       if (!settlementBankAccountId) {
@@ -251,53 +364,37 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       }
     }
 
-    storage.updateTitle(title.id, {
+    const updatesPayload: Partial<FinancialTitle> = {
       description: description.trim(),
       counterpartyId,
       accountId,
       competence,
       dueDate,
       expectedCashDate: dueDate, // Oculto da interface, leva em conta a data de vencimento
-      originalAmount: Number(originalAmount),
-      balancePrincipal: newBalance,
       expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
       barcode: barcode.trim() || undefined,
       notes
-    });
+    };
 
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'EDICAO_TITULO',
-      module: isReceber ? 'Contas a Receber' : 'Contas a Pagar',
-      recordId: title.id,
-      details: `Edição do título ${title.titleNumber} (${description}). Valor: ${formatBRL(originalAmount)}, Vencimento: ${dueDate}.`
-    });
+    // Verificar se houve alteração no valor do título
+    const amountChanged = Math.abs(Number(originalAmount) - Number(title.originalAmount)) > 0.001;
 
-    // Se marcou como liquidado agora, efetuar a baixa do saldo remanescente
-    if (isAlreadySettled && newBalance > 0) {
-      FinancialEngine.postSettlement({
-        titleId: title.id,
-        settlementDate,
-        bankAccountId: settlementBankAccountId,
-        principalSettled: newBalance,
-        discount: settlementDiscount,
-        interest: settlementInterest,
-        fine: 0,
-        bankFee: isReceber ? settlementBankFee : 0,
-        voucherRef: settlementVoucherRef.trim() || undefined,
-        notes: settlementNotes.trim() 
-          ? `${settlementNotes.trim()} [${settlementPaymentMethod}]` 
-          : `Baixa realizada na edição do título [${settlementPaymentMethod}]`
-      });
+    if (amountChanged) {
+      const seriesInfo = RecurringSeriesService.detectSeries(title);
+      // Se pertence a uma série e há meses/parcelas seguintes em aberto
+      if (seriesInfo.isSeries && seriesInfo.subsequentOpenTitles.length > 0) {
+        setSeriesModalState({
+          isOpen: true,
+          pendingAmount: Number(originalAmount),
+          seriesInfo,
+          pendingUpdates: updatesPayload
+        });
+        return;
+      }
     }
 
-    if (quickCreatedId && openCompleteAfterSave) {
-      setOpenCompleteModal(true);
-    } else {
-      onSaved();
-      onClose();
-    }
+    // Sem alteração de valor ou sem parcelas seguintes em aberto: salvar diretamente
+    executeFinalSave(updatesPayload, Number(originalAmount), false, null);
   };
 
   return (
@@ -824,6 +921,18 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           }
         }}
       />
+
+      {/* Modal de Confirmação para Atualização em Lote de Recorrências e Parcelamentos */}
+      {seriesModalState.isOpen && seriesModalState.seriesInfo && (
+        <SeriesUpdateConfirmationModal
+          isOpen={seriesModalState.isOpen}
+          targetTitle={title}
+          newAmount={seriesModalState.pendingAmount}
+          seriesInfo={seriesModalState.seriesInfo}
+          onConfirm={handleConfirmSeriesChoice}
+          onCancel={handleCancelSeriesChoice}
+        />
+      )}
     </>
   );
 };
