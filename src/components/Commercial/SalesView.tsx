@@ -19,7 +19,8 @@ import {
   Edit2,
   Trash2,
   Save,
-  RotateCcw
+  RotateCcw,
+  BarChart3
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR, formatCompetence } from '../../services/financialEngine';
@@ -32,15 +33,33 @@ import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
 interface SalesViewProps {
   onOpenBillingModal?: () => void;
   initialSearch?: string;
+  onNavigate?: (screen: string) => void;
 }
 
-export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initialSearch = '' }) => {
+export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initialSearch = '', onNavigate }) => {
   const today = new Date().toISOString().split('T')[0];
   const currentMonth = today.substring(0, 7);
+  const currentYear = new Date().getFullYear();
+
+  // Próximo mês e mês anterior calculados de forma segura
+  const nextMonthDate = new Date();
+  nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+  const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+
+  const prevMonthDate = new Date();
+  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+  const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [clientModalId, setClientModalId] = useState<string | null>(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+
+  // Estados de Filtragem Temporal e Período Avançado
+  const [filterDateType, setFilterDateType] = useState<'COMPETENCIA' | 'VENCIMENTO' | 'EMISSAO'>('COMPETENCIA');
+  const [periodPreset, setPeriodPreset] = useState<'ALL' | 'CURRENT_MONTH' | 'NEXT_MONTH' | 'PREV_MONTH' | 'CURRENT_YEAR' | 'CUSTOM_MONTH' | 'CUSTOM_RANGE'>('ALL');
+  const [customSelectedMonth, setCustomSelectedMonth] = useState<string>(currentMonth);
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
 
   useEffect(() => {
     return storage.subscribe(() => setRefreshTrigger(k => k + 1));
@@ -54,7 +73,6 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
   const [salesTab, setSalesTab] = useState<'ALL' | 'CONTRATO' | 'AVULSO'>('ALL');
   const [searchTerm, setSearchTerm] = useState(initialSearch);
-  const [selectedCompetence, setSelectedCompetence] = useState<string>('ALL');
 
   useEffect(() => {
     if (initialSearch !== undefined) {
@@ -273,7 +291,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           titleNumber: `${baseNumber}/${i.toString().padStart(2, '0')}`,
           counterpartyId: customerId,
           description: `${description} (Parcela ${i}/${installmentsCount})`,
-          accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01',
+          accountId: accountId || chartAccounts[0]?.id || 'acc-1.1.01',
           launchDate: today,
           competence: competence, // Competência econômica contábil da venda (regime de competência único no DRE)
           issueDate: today,
@@ -317,7 +335,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             unitPrice: totalAmount,
             discount: 0,
             total: totalAmount,
-            accountId: accountId || chartAccounts[0]?.id || 'acc-rec-01'
+            accountId: accountId || chartAccounts[0]?.id || 'acc-1.1.01'
           }
         ],
         grossTotal: totalAmount,
@@ -354,7 +372,61 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
     return sales.filter(s => {
       if (salesTab === 'CONTRATO' && s.originType !== 'CONTRATO') return false;
       if (salesTab === 'AVULSO' && s.originType === 'CONTRATO') return false;
-      if (selectedCompetence !== 'ALL' && s.competence !== selectedCompetence) return false;
+
+      // Filtragem por Período
+      if (periodPreset !== 'ALL') {
+        const sComp = s.competence || (s.date ? s.date.substring(0, 7) : '');
+        const sDate = s.date || '';
+
+        // Títulos desta venda para verificar datas de vencimento financeiro
+        const titlesForSale = allTitles.filter(t =>
+          t.saleId === s.id ||
+          (s.titleIds && s.titleIds.includes(t.id)) ||
+          (s.contractId && (t.originId === s.contractId || t.contractId === s.contractId) && t.competence === s.competence)
+        );
+        const dueDates = titlesForSale.map(t => t.dueDate || '').filter(Boolean);
+
+        if (filterDateType === 'COMPETENCIA') {
+          if (periodPreset === 'CURRENT_MONTH' && sComp !== currentMonth) return false;
+          if (periodPreset === 'NEXT_MONTH' && sComp !== nextMonth) return false;
+          if (periodPreset === 'PREV_MONTH' && sComp !== prevMonth) return false;
+          if (periodPreset === 'CURRENT_YEAR' && !sComp.startsWith(String(currentYear))) return false;
+          if (periodPreset === 'CUSTOM_MONTH' && sComp !== customSelectedMonth) return false;
+          if (periodPreset === 'CUSTOM_RANGE') {
+            const compStart = customStartDate ? customStartDate.substring(0, 7) : '';
+            const compEnd = customEndDate ? customEndDate.substring(0, 7) : '';
+            if (compStart && sComp < compStart) return false;
+            if (compEnd && sComp > compEnd) return false;
+          }
+        } else if (filterDateType === 'EMISSAO') {
+          if (periodPreset === 'CURRENT_MONTH' && !sDate.startsWith(currentMonth)) return false;
+          if (periodPreset === 'NEXT_MONTH' && !sDate.startsWith(nextMonth)) return false;
+          if (periodPreset === 'PREV_MONTH' && !sDate.startsWith(prevMonth)) return false;
+          if (periodPreset === 'CURRENT_YEAR' && !sDate.startsWith(String(currentYear))) return false;
+          if (periodPreset === 'CUSTOM_MONTH' && !sDate.startsWith(customSelectedMonth)) return false;
+          if (periodPreset === 'CUSTOM_RANGE') {
+            if (customStartDate && sDate < customStartDate) return false;
+            if (customEndDate && sDate > customEndDate) return false;
+          }
+        } else if (filterDateType === 'VENCIMENTO') {
+          // No filtro por vencimento, a venda passa se pelo menos uma das suas parcelas vencer no período
+          const targetDates = dueDates.length > 0 ? dueDates : [sDate];
+          let matchesDue = false;
+          for (const d of targetDates) {
+            if (periodPreset === 'CURRENT_MONTH' && d.startsWith(currentMonth)) { matchesDue = true; break; }
+            if (periodPreset === 'NEXT_MONTH' && d.startsWith(nextMonth)) { matchesDue = true; break; }
+            if (periodPreset === 'PREV_MONTH' && d.startsWith(prevMonth)) { matchesDue = true; break; }
+            if (periodPreset === 'CURRENT_YEAR' && d.startsWith(String(currentYear))) { matchesDue = true; break; }
+            if (periodPreset === 'CUSTOM_MONTH' && d.startsWith(customSelectedMonth)) { matchesDue = true; break; }
+            if (periodPreset === 'CUSTOM_RANGE') {
+              const afterStart = !customStartDate || d >= customStartDate;
+              const beforeEnd = !customEndDate || d <= customEndDate;
+              if (afterStart && beforeEnd) { matchesDue = true; break; }
+            }
+          }
+          if (!matchesDue) return false;
+        }
+      }
 
       const client = counterparties.find(c => c.id === s.customerId);
       return matchesSearch([
@@ -370,16 +442,36 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
       if (compCompare !== 0) return compCompare;
       return (b.date || '').localeCompare(a.date || '');
     });
-  }, [sales, salesTab, selectedCompetence, searchTerm, counterparties]);
+  }, [
+    sales, 
+    salesTab, 
+    filterDateType, 
+    periodPreset, 
+    customSelectedMonth, 
+    customStartDate, 
+    customEndDate, 
+    currentMonth, 
+    nextMonth, 
+    prevMonth, 
+    currentYear, 
+    searchTerm, 
+    counterparties, 
+    allTitles
+  ]);
 
-  // Lista de competências disponíveis
+  // Lista de competências disponíveis enriquecida
   const availableCompetences = useMemo(() => {
     const set = new Set<string>();
     sales.forEach(s => {
       if (s.competence) set.add(s.competence);
     });
+    const y = currentYear;
+    for (let m = 1; m <= 12; m++) {
+      set.add(`${y}-${String(m).padStart(2, '0')}`);
+      set.add(`${y + 1}-${String(m).padStart(2, '0')}`);
+    }
     return Array.from(set).sort().reverse();
-  }, [sales]);
+  }, [sales, currentYear]);
 
   // Lógica de Operações em Lote de Vendas
   const isAllSelected = useMemo(() => {
@@ -572,11 +664,11 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
       <div className="bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] p-4 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 
-          {/* Tabs */}
-          <div className="flex items-center gap-1.5 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)]">
+          {/* Tabs de Tipo de Venda */}
+          <div className="flex items-center gap-1.5 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] overflow-x-auto">
             <button
               onClick={() => setSalesTab('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 salesTab === 'ALL'
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -586,7 +678,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             </button>
             <button
               onClick={() => setSalesTab('CONTRATO')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 salesTab === 'CONTRATO'
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -596,7 +688,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             </button>
             <button
               onClick={() => setSalesTab('AVULSO')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 salesTab === 'AVULSO'
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -606,32 +698,143 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             </button>
           </div>
 
-          {/* Search & Competence */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[220px]">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Buscar cliente, venda ou contrato..."
-                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 focus:outline-none"
-              />
-            </div>
-
-            <select
-              value={selectedCompetence}
-              onChange={e => setSelectedCompetence(e.target.value)}
-              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
-            >
-              <option value="ALL">Todas as Competências</option>
-              {availableCompetences.map(c => (
-                <option key={c} value={c}>{formatCompetence(c)}</option>
-              ))}
-            </select>
+          {/* Search Input */}
+          <div className="relative min-w-[220px] sm:w-64">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Buscar cliente, venda ou contrato..."
+              className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 focus:outline-none"
+            />
           </div>
 
         </div>
+
+        {/* Linha de Filtros de Período & Modo Temporal */}
+        <div className="pt-2 border-t border-[var(--border-subtle)]/60 flex flex-wrap items-center justify-between gap-3">
+          
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Toggle Tipo de Data */}
+            <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-[11px] font-medium">
+              <span className="text-[10px] text-[var(--text-secondary)] px-1 font-semibold uppercase">Filtrar por:</span>
+              <button
+                type="button"
+                onClick={() => setFilterDateType('COMPETENCIA')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  filterDateType === 'COMPETENCIA'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Filtrar pelo mês contábil da competência econômica (como no DRE)"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Competência (DRE)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterDateType('VENCIMENTO')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  filterDateType === 'VENCIMENTO'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Filtrar pela data de vencimento financeiro das parcelas (como no Fluxo de Caixa / Contas a Receber)"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Vencimento (Caixa)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterDateType('EMISSAO')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  filterDateType === 'EMISSAO'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Filtrar pela data em que a venda foi faturada / emitida"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Emissão
+              </button>
+            </div>
+
+            {/* Presets de Período */}
+            <select
+              value={periodPreset}
+              onChange={e => setPeriodPreset(e.target.value as any)}
+              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
+            >
+              <option value="ALL">Todos os Períodos</option>
+              <option value="CURRENT_MONTH">Mês Atual ({formatCompetence(currentMonth)})</option>
+              <option value="NEXT_MONTH">Próximo Mês ({formatCompetence(nextMonth)})</option>
+              <option value="PREV_MONTH">Mês Anterior ({formatCompetence(prevMonth)})</option>
+              <option value="CURRENT_YEAR">Ano Completo ({currentYear})</option>
+              <option value="CUSTOM_MONTH">Mês Específico...</option>
+              <option value="CUSTOM_RANGE">Personalizado (De / Até)...</option>
+            </select>
+
+            {/* Seletor quando for Mês Específico */}
+            {periodPreset === 'CUSTOM_MONTH' && (
+              <select
+                value={customSelectedMonth}
+                onChange={e => setCustomSelectedMonth(e.target.value)}
+                className="rounded-xl border border-amber-500/40 bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 focus:ring-2 focus:ring-amber-500"
+              >
+                {availableCompetences.map(c => (
+                  <option key={c} value={c}>{formatCompetence(c)}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Inputs quando for Intervalo Personalizado */}
+            {periodPreset === 'CUSTOM_RANGE' && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
+                  placeholder="Data Início"
+                />
+                <span className="text-xs text-[var(--text-secondary)]">até</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-1 text-xs text-[var(--text-primary)]"
+                  placeholder="Data Fim"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Reset / Indicador */}
+          <div className="flex items-center gap-2">
+            {(periodPreset !== 'ALL' || searchTerm) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodPreset('ALL');
+                  setSearchTerm('');
+                  setCustomStartDate('');
+                  setCustomEndDate('');
+                }}
+                className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Limpar Filtros
+              </button>
+            )}
+
+            <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--surface-elevated)] px-2 py-1 rounded-md border border-[var(--border-subtle)]">
+              {filteredSales.length} de {sales.length} vendas
+            </span>
+          </div>
+
+        </div>
+
       </div>
 
       {/* Batch Actions Toolbar */}
@@ -716,6 +919,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 <th className="py-3 px-4">Descrição do Serviço</th>
                 <th className="py-3 px-4 text-center w-[110px]">Competência (DRE)</th>
                 <th className="py-3 px-4 text-center w-[100px]">Data Emissão</th>
+                <th className="py-3 px-4 text-center w-[130px]">Vencimento (Caixa)</th>
                 <th className="py-3 px-4 text-right w-[130px]">Valor da Venda</th>
                 <th className="py-3 px-4 text-center w-[120px]">Parcelas a Receber</th>
                 <th className="py-3 px-4 text-center w-[110px]">Ações</th>
@@ -724,7 +928,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
             <tbody className="divide-y divide-[var(--border-subtle)]">
               {filteredSales.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-[var(--text-secondary)] italic">
+                  <td colSpan={11} className="p-8 text-center text-[var(--text-secondary)] italic">
                     Nenhuma venda encontrada com os filtros selecionados.
                   </td>
                 </tr>
@@ -812,6 +1016,31 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                       </td>
                       <td className="py-3 px-4 text-center text-[var(--text-secondary)] font-mono">
                         {formatDateBR(s.date)}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono">
+                        {(() => {
+                          const dueDates = titlesForSale.map(t => t.dueDate).filter(Boolean).sort();
+                          if (dueDates.length === 0) {
+                            return <span className="text-[10px] text-[var(--text-secondary)] italic">Sem parcelas</span>;
+                          }
+                          if (dueDates.length === 1) {
+                            return (
+                              <span className="text-[11px] font-semibold text-[var(--text-primary)]">
+                                {formatDateBR(dueDates[0])}
+                              </span>
+                            );
+                          }
+                          return (
+                            <div className="flex flex-col items-center">
+                              <span className="text-[11px] font-semibold text-[var(--text-primary)]">
+                                {formatDateBR(dueDates[0])}
+                              </span>
+                              <span className="text-[10px] text-[var(--text-secondary)]">
+                                até {formatDateBR(dueDates[dueDates.length - 1])} ({dueDates.length}x)
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-[var(--text-primary)]">
                         {formatBRL(s.netTotal || s.grossTotal)}
@@ -964,8 +1193,36 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
                 </div>
               </div>
 
-              <div className="flex justify-between items-center pt-3 border-t border-[var(--border-subtle)]">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-3 border-t border-[var(--border-subtle)]">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {onNavigate && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSaleForDetails(null);
+                          onNavigate('CONTAS_RECEBER');
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-xl border border-emerald-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                        title="Ir para tela de Contas a Receber para visualizar ou quitar estas parcelas"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        Ver no Contas a Receber
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSaleForDetails(null);
+                          onNavigate('DRE');
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 rounded-xl border border-sky-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                        title="Conferir reconhecimento de receita deste período na Demonstração do Resultado"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        Conferir no DRE
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

@@ -81,7 +81,35 @@ export const INITIAL_BANK_ACCOUNTS: BankAccount[] = [];
 
 export const INITIAL_COUNTERPARTIES: Counterparty[] = [];
 
-export const INITIAL_SERVICES: ServiceItem[] = [];
+export const INITIAL_SERVICES: ServiceItem[] = [
+  {
+    id: 'srv-1',
+    name: 'Honorários Contábeis Mensais',
+    description: 'Serviços contábeis, fiscais e folha recorrentes',
+    defaultPrice: 1500,
+    modality: 'RECORRENTE',
+    defaultAccountId: 'acc-1.1.01',
+    status: 'ATIVO'
+  },
+  {
+    id: 'srv-2',
+    name: 'BPO Financeiro',
+    description: 'Gestão de contas a pagar, a receber e conciliação bancária',
+    defaultPrice: 2000,
+    modality: 'RECORRENTE',
+    defaultAccountId: 'acc-1.1.03',
+    status: 'ATIVO'
+  },
+  {
+    id: 'srv-3',
+    name: 'Consultoria e Planejamento Tributário',
+    description: 'Consultoria fiscal e tributária especializada',
+    defaultPrice: 3500,
+    modality: 'AVULSO',
+    defaultAccountId: 'acc-1.1.06',
+    status: 'ATIVO'
+  }
+];
 
 export const INITIAL_CONTRACTS: Contract[] = [];
 

@@ -336,9 +336,14 @@ class StorageService {
     this.initIfEmpty(true);
   }
 
+  private inMemoryFallback: Record<string, string> = {};
+
   // Generic getter/setter
   private get<T>(key: string, fallback: T): T {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return fallback;
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      const memData = this.inMemoryFallback[key];
+      return memData ? JSON.parse(memData) : fallback;
+    }
     try {
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : fallback;
@@ -348,7 +353,11 @@ class StorageService {
   }
 
   private set<T>(key: string, value: T) {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      this.inMemoryFallback[key] = JSON.stringify(value);
+      this.notify();
+      return;
+    }
     localStorage.setItem(key, JSON.stringify(value));
     this.notify();
   }
@@ -433,6 +442,9 @@ class StorageService {
 
   public getCurrentUser(): User {
     const users = this.getUsers();
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return users[0] || { id: 'usr-1', name: 'Administrador', email: 'admin@contaju.com.br', role: 'ADMIN', status: 'ATIVO', password: '' };
+    }
     const sessionStr = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
     let activeId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
 
@@ -1016,7 +1028,18 @@ class StorageService {
 
   // Contracts
   public getContracts(): Contract[] {
-    return this.get(STORAGE_KEYS.CONTRACTS, INITIAL_CONTRACTS);
+    const raw = this.get<Contract[]>(STORAGE_KEYS.CONTRACTS, INITIAL_CONTRACTS);
+    if (!Array.isArray(raw)) return [];
+    return raw.map(c => {
+      if (c && c.items && Array.isArray(c.items)) {
+        c.items.forEach(it => {
+          if (it.accountId === 'acc-rec-01' || !it.accountId) {
+            it.accountId = 'acc-1.1.01';
+          }
+        });
+      }
+      return c;
+    });
   }
   public saveContracts(contracts: Contract[]) {
     this.set(STORAGE_KEYS.CONTRACTS, contracts);
@@ -1097,7 +1120,18 @@ class StorageService {
       localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
     }
 
-    return sales;
+    const sanitizedSales = sales.map(s => {
+      if (s && s.items && Array.isArray(s.items)) {
+        s.items.forEach(it => {
+          if (it.accountId === 'acc-rec-01' || !it.accountId) {
+            it.accountId = 'acc-1.1.01';
+          }
+        });
+      }
+      return s;
+    });
+
+    return sanitizedSales;
   }
 
   public saveSales(sales: Sale[]): void {
@@ -1499,8 +1533,14 @@ class StorageService {
       const bal = typeof t.balancePrincipal === 'number' && !isNaN(t.balancePrincipal)
         ? t.balancePrincipal
         : Math.max(0, orig - settled);
+      const rawAccountId = t.accountId || (t as any).chartAccountId;
+      const normalizedAccountId = (rawAccountId === 'acc-rec-01' || !rawAccountId) && t.type === 'RECEBER'
+        ? 'acc-1.1.01'
+        : (rawAccountId || (t.type === 'RECEBER' ? 'acc-1.1.01' : 'acc-2.1.01'));
+
       return {
         ...t,
+        accountId: normalizedAccountId,
         originalAmount: orig,
         settledPrincipal: settled,
         balancePrincipal: bal,

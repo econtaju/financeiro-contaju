@@ -204,6 +204,7 @@ function AppContent() {
           <SalesView 
             onOpenBillingModal={() => setIsBillingModalOpen(true)} 
             initialSearch={currentSearchTerm}
+            onNavigate={(screen) => setCurrentScreen(screen as any)}
           />
         );
 

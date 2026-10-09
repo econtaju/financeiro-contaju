@@ -414,7 +414,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
               description: formData.description || 'Honorários Contábeis',
               quantity: 1,
               unitPrice: Number(formData.monthlyTotal) || 0,
-              accountId: services[0]?.defaultAccountId || 'acc-rec-01',
+              accountId: services[0]?.defaultAccountId || 'acc-1.1.01',
               total: Number(formData.monthlyTotal) || 0
             }
           ],
@@ -669,7 +669,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
               description: formData.description || 'Honorários Contábeis',
               quantity: 1,
               unitPrice: Number(formData.monthlyTotal) || 0,
-              accountId: services[0]?.defaultAccountId || 'acc-rec-01',
+              accountId: services[0]?.defaultAccountId || 'acc-1.1.01',
               total: Number(formData.monthlyTotal) || 0
             }
           ],

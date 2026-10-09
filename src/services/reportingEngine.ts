@@ -72,6 +72,8 @@ export class ReportingEngine {
 
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+    const allSales = storage.getSales().filter(s => s.status !== 'CANCELADA');
+
     // Helper para apurar competência e caixa de cada conta analítica
     const getValuesForAccount = (accId: string): {
       monthlyComp: number[];
@@ -84,18 +86,63 @@ export class ReportingEngine {
       const monthlyCash = new Array(12).fill(0);
       const titleIds: string[] = [];
 
-      // 1. Competência (conforme competence YYYY-MM)
+      const isTargetAccount = (title: FinancialTitle): boolean => {
+        const tAccId = title.accountId || (title as any).chartAccountId;
+        if (tAccId === accId) return true;
+        // Compatibilidade com títulos a receber legados ou sem conta apontando para acc-1.1.01
+        if (accId === 'acc-1.1.01' && title.type === 'RECEBER' && (!tAccId || tAccId === 'acc-rec-01' || tAccId === 'acc-srv-1')) {
+          return true;
+        }
+        return false;
+      };
+
+      // 1. Competência (conforme competence YYYY-MM ou corte de mês)
       for (let m = 0; m < 12; m++) {
         const compStr = `${year}-${(m + 1).toString().padStart(2, '0')}`;
-        const matchingTitles = titles.filter(t => 
-          (t.accountId === accId || (t as any).chartAccountId === accId) && 
-          t.competence === compStr
-        );
+        const matchingTitles = titles.filter(t => {
+          if (!isTargetAccount(t)) return false;
+          const tComp = (t.competence ? t.competence.substring(0, 7) : (t.dueDate ? t.dueDate.substring(0, 7) : ''));
+          return tComp === compStr;
+        });
 
         for (const title of matchingTitles) {
           if (!titleIds.includes(title.id)) titleIds.push(title.id);
           monthlyComp[m] += title.originalAmount || 0;
         }
+
+        // Conciliação de Vendas Confirmadas da competência:
+        // Se uma venda confirmada existir para o mês, mas não tiver títulos no array de títulos somados, computar o faturamento
+        for (const sale of allSales) {
+          const saleComp = (sale.competence || sale.date || '').substring(0, 7);
+          if (saleComp !== compStr) continue;
+
+          const saleLinkedTitles = titles.filter(t => 
+            t.saleId === sale.id || 
+            (sale.titleIds && sale.titleIds.includes(t.id)) ||
+            (sale.contractId && (t.originId === sale.contractId || t.contractId === sale.contractId) && (t.competence?.substring(0, 7) === compStr))
+          );
+
+          // Se nenhum título da venda estiver registrado em titles, computar pelos itens da venda
+          if (saleLinkedTitles.length === 0) {
+            const saleItems = sale.items && sale.items.length > 0 ? sale.items : [
+              {
+                id: `item-${sale.id}`,
+                unitPrice: sale.netTotal || sale.grossTotal || 0,
+                total: sale.netTotal || sale.grossTotal || 0,
+                accountId: accId
+              }
+            ];
+
+            for (const item of saleItems) {
+              const itemAccId = item.accountId || 'acc-1.1.01';
+              const matchesThisAcc = itemAccId === accId || (accId === 'acc-1.1.01' && (!itemAccId || itemAccId === 'acc-rec-01'));
+              if (matchesThisAcc) {
+                monthlyComp[m] += item.total || item.unitPrice || 0;
+              }
+            }
+          }
+        }
+
         monthlyComp[m] = Math.round(monthlyComp[m] * 100) / 100;
       }
 
@@ -104,7 +151,7 @@ export class ReportingEngine {
         const monthStr = `${year}-${(m + 1).toString().padStart(2, '0')}`;
 
         for (const title of titles) {
-          if (title.accountId !== accId && (title as any).chartAccountId !== accId) continue;
+          if (!isTargetAccount(title)) continue;
 
           let monthSettled = 0;
           const matchingSettlements = allSettlements.filter(s => s.titleId === title.id);

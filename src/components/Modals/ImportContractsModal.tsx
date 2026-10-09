@@ -314,7 +314,7 @@ export const ImportContractsModal: React.FC<ImportContractsModalProps> = ({
     const clientMapByNameOrDoc = new Map<string, string>();
 
     const services = storage.getServices();
-    const defaultService = services[0] || { id: 'srv-default', defaultAccountId: 'acc-rec-01' };
+    const defaultService = services[0] || { id: 'srv-default', defaultAccountId: 'acc-1.1.01' };
 
     validRows.forEach((row, idx) => {
       let finalCustomerId = row.existingClientId;
@@ -368,7 +368,7 @@ export const ImportContractsModal: React.FC<ImportContractsModalProps> = ({
             description: row.description,
             quantity: 1,
             unitPrice: row.monthlyTotal,
-            accountId: defaultService.defaultAccountId || 'acc-rec-01',
+            accountId: defaultService.defaultAccountId || 'acc-1.1.01',
             total: row.monthlyTotal
           }
         ],

@@ -833,7 +833,8 @@ export class FinancialEngine {
 
       const client = counterparties.find(c => c.id === contract.customerId);
       const clientName = client ? client.name : 'Cliente';
-      const mainAccountId = contract.items[0]?.accountId || 'acc-1.1.01';
+      const rawAcc = contract.items?.[0]?.accountId;
+      const mainAccountId = (rawAcc === 'acc-rec-01' || !rawAcc) ? 'acc-1.1.01' : rawAcc;
 
       // 1. Mensalidade Ordinária Recorrente
       const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
@@ -1087,7 +1088,8 @@ export class FinancialEngine {
 
     const currentTitles = storage.getTitles();
     const currentSales = storage.getSales();
-    const mainAccountId = contract.items?.[0]?.accountId || 'acc-1.1.01';
+    const rawMainAcc = contract.items?.[0]?.accountId;
+    const mainAccountId = (rawMainAcc === 'acc-rec-01' || !rawMainAcc) ? 'acc-1.1.01' : rawMainAcc;
 
     // Determinar competência inicial
     const today = new Date();
@@ -1248,7 +1250,7 @@ export class FinancialEngine {
             unitPrice: it.unitPrice,
             discount: 0,
             total: it.total,
-            accountId: it.accountId
+            accountId: (it.accountId === 'acc-rec-01' || !it.accountId) ? 'acc-1.1.01' : it.accountId
           })) : [
             {
               id: `item-${newTitleId}`,

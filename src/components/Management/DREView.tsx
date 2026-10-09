@@ -168,12 +168,18 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
   const [regime, setRegime] = useState<DRERegime>('COMPETENCIA');
 
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    return storage.subscribe(() => setRefreshTrigger(k => k + 1));
+  }, []);
+
   const dreData = useMemo(() => {
     return ReportingEngine.generateDRE(effectiveYear, regime);
-  }, [effectiveYear, regime]);
+  }, [effectiveYear, regime, refreshTrigger]);
 
-  const allTitles = storage.getTitles();
-  const counterparties = storage.getCounterparties();
+  const allTitles = useMemo(() => storage.getTitles(), [refreshTrigger]);
+  const counterparties = useMemo(() => storage.getCounterparties(), [refreshTrigger]);
 
   // Apuração de Conciliação Caixa x Competência (Sugestão 2)
   const cashReconciliation = useMemo(() => {
@@ -524,7 +530,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
     if (monthIdx >= 0) {
       const targetMonthStr = `${effectiveYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
-      matchingTitles = lineTitles.filter(t => t.competence === targetMonthStr);
+      matchingTitles = lineTitles.filter(t => (t.competence?.substring(0, 7) || t.dueDate?.substring(0, 7)) === targetMonthStr);
       monthName = `${dreData.months[monthIdx]}/${effectiveYear}`;
     }
 
