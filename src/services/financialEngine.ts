@@ -58,6 +58,31 @@ export const formatCompetence = (comp: string): string => {
 
 export type TemporalStatus = 'A_VENCER' | 'VENCE_HOJE' | 'VENCIDO' | 'QUITADO';
 
+export interface ContractGenerationProgressState {
+  percent: number;
+  stage: string;
+  currentMonth: string;
+  processed: number;
+  total: number;
+  currentContract?: string;
+}
+
+export type ContractGenerationProgressCallback = (state: ContractGenerationProgressState) => void;
+
+export interface BatchBillingProgressState {
+  percent: number;
+  stage: string;
+  currentContractNumber: string;
+  currentCustomerName: string;
+  processedContracts: number;
+  totalContracts: number;
+  totalGenerated: number;
+  totalUpdated: number;
+  totalAmountGenerated: number;
+}
+
+export type BatchBillingProgressCallback = (state: BatchBillingProgressState) => void;
+
 export const getTemporalStatus = (title?: FinancialTitle | null, referenceDateStr?: string): TemporalStatus => {
   if (!title) return 'A_VENCER';
   if (title.settlementState === 'LIQUIDADO') {
@@ -1421,6 +1446,589 @@ export class FinancialEngine {
       totalAmountGenerated,
       competences: competencesGenerated,
       titles: newTitles
+    };
+  }
+
+  /**
+   * GERAÇÃO ASSÍNCRONA EM SEGUNDO PLANO COM RELATÓRIO DE PROGRESSO
+   * Processa meses futuros em lotes assíncronos não bloqueantes com feedback percentual
+   */
+  public static async generateContractFutureInstallmentsAsync(
+    contractOrId: Contract | string,
+    numberOfMonths: number = 12,
+    startFromCompetence?: string,
+    options?: {
+      overwriteOpen?: boolean;
+      updateExistingOpen?: boolean;
+    },
+    onProgress?: ContractGenerationProgressCallback
+  ): Promise<{
+    generatedCount: number;
+    updatedCount: number;
+    alreadyExistingCount: number;
+    totalAmountGenerated: number;
+    competences: string[];
+    titles: FinancialTitle[];
+    error?: string;
+  }> {
+    const contracts = storage.getContracts();
+    const contract = typeof contractOrId === 'string'
+      ? contracts.find(c => c.id === contractOrId)
+      : (contracts.find(c => c.id === contractOrId.id) || contractOrId);
+
+    if (!contract) {
+      return {
+        generatedCount: 0,
+        updatedCount: 0,
+        alreadyExistingCount: 0,
+        totalAmountGenerated: 0,
+        competences: [],
+        titles: [],
+        error: 'Contrato não encontrado.'
+      };
+    }
+
+    const statusNorm = String(contract.status || '').toUpperCase();
+    if (statusNorm === 'CANCELADO' || statusNorm === 'INATIVO') {
+      return {
+        generatedCount: 0,
+        updatedCount: 0,
+        alreadyExistingCount: 0,
+        totalAmountGenerated: 0,
+        competences: [],
+        titles: [],
+        error: `O contrato ${contract.contractNumber} está ${contract.status}. Reative o contrato antes de gerar novas faturas.`
+      };
+    }
+
+    onProgress?.({
+      percent: 5,
+      stage: 'Carregando estrutura e regras contratuais...',
+      currentMonth: '',
+      processed: 0,
+      total: numberOfMonths,
+      currentContract: contract.contractNumber
+    });
+    await new Promise(r => setTimeout(r, 10));
+
+    const currentTitles = storage.getTitles();
+    const currentSales = storage.getSales();
+    const rawMainAcc = contract.items?.[0]?.accountId;
+    const mainAccountId = (rawMainAcc === 'acc-rec-01' || !rawMainAcc) ? 'acc-1.1.01' : rawMainAcc;
+
+    const today = new Date();
+    const currentCompStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const startComp = startFromCompetence || currentCompStr;
+    const [startYear, startMonth] = startComp.split('-').map(Number);
+    
+    let generatedCount = 0;
+    let updatedCount = 0;
+    let alreadyExistingCount = 0;
+    let totalAmountGenerated = 0;
+    const competencesGenerated: string[] = [];
+    const newTitles: FinancialTitle[] = [];
+    const newSales: Sale[] = [];
+    const updatedTitleMap = new Map<string, FinancialTitle>();
+    const updatedSaleMap = new Map<string, Sale>();
+
+    const nowIso = new Date().toISOString();
+    const todayYmd = nowIso.split('T')[0];
+    const isRecurringContract = contract.contractType !== 'AVULSO' && contract.isRecurring !== false;
+    const shouldUpdateOpen = options?.updateExistingOpen || options?.overwriteOpen;
+
+    for (let i = 0; i < numberOfMonths; i++) {
+      const targetDate = new Date(startYear, startMonth - 1 + i, 1);
+      const cYear = targetDate.getFullYear();
+      const cMonth = targetDate.getMonth() + 1;
+      const cMonthFormatted = String(cMonth).padStart(2, '0');
+      const competence = `${cYear}-${cMonthFormatted}`;
+
+      if (!isRecurringContract && contract.endDate && competence > contract.endDate.substring(0, 7)) {
+        break;
+      }
+      const isExplicitlyCancelled = statusNorm === 'CANCELADO' || statusNorm === 'INATIVO';
+      if (isExplicitlyCancelled && contract.cancellationDate && competence >= contract.cancellationDate.substring(0, 7)) {
+        break;
+      }
+
+      competencesGenerated.push(competence);
+
+      let dueYear = cYear;
+      let dueMonth = cMonth;
+      if (contract.dueRule === 'NEXT_MONTH') {
+        dueMonth += 1;
+        if (dueMonth > 12) {
+          dueMonth = 1;
+          dueYear += 1;
+        }
+      }
+
+      const lastDayOfMonth = new Date(dueYear, dueMonth, 0).getDate();
+      const actualDueDay = Math.min(contract.dueDay || 10, lastDayOfMonth);
+      const dueDayFormatted = String(actualDueDay).padStart(2, '0');
+      const dueMonthFormatted = String(dueMonth).padStart(2, '0');
+      const dueDate = `${dueYear}-${dueMonthFormatted}-${dueDayFormatted}`;
+
+      const titleNumber = `FAT-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+      const existing = currentTitles.find(t => 
+        (t.originType === 'CONTRATO' || t.originType === 'VENDA') && 
+        (t.originId === contract.id || t.contractId === contract.id || t.contractNumber === contract.contractNumber || t.originId === contract.contractNumber) && 
+        t.competence === competence &&
+        (t.titleNumber === titleNumber || !t.titleNumber.startsWith('TB-')) &&
+        t.documentState !== 'CANCELADO'
+      );
+
+      if (existing) {
+        if (shouldUpdateOpen && existing.settlementState !== 'LIQUIDADO' && existing.documentState !== 'CANCELADO') {
+          const oldAmount = existing.originalAmount;
+          const updatedTitle: FinancialTitle = {
+            ...existing,
+            originalAmount: contract.monthlyTotal,
+            balancePrincipal: Math.max(0, contract.monthlyTotal - (existing.settledPrincipal || 0)),
+            dueDate,
+            expectedCashDate: dueDate,
+            updatedAt: nowIso,
+            notes: `${existing.notes || ''} [Sincronizado com contrato em ${todayYmd}: de ${formatBRL(oldAmount)} para ${formatBRL(contract.monthlyTotal)}]`
+          };
+          updatedTitleMap.set(updatedTitle.id, updatedTitle);
+          updatedCount++;
+          totalAmountGenerated += contract.monthlyTotal;
+
+          const linkedSale = currentSales.find(s => 
+            s.id === existing.saleId || 
+            (s.titleIds && s.titleIds.includes(existing.id)) ||
+            (s.contractId === contract.id && s.competence === competence)
+          );
+          if (linkedSale) {
+            updatedSaleMap.set(linkedSale.id, {
+              ...linkedSale,
+              grossTotal: contract.monthlyTotal,
+              netTotal: contract.monthlyTotal,
+              items: linkedSale.items?.map(it => ({
+                ...it,
+                unitPrice: contract.monthlyTotal,
+                total: contract.monthlyTotal
+              })) || []
+            });
+          }
+        } else {
+          alreadyExistingCount++;
+        }
+      } else {
+        const saleId = `sale-${contract.id}-${competence}`;
+        const saleNumber = `VEN-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+        const newTitleId = `tit-fat-${Date.now()}-${contract.id}-${competence}`;
+
+        const newTitle: FinancialTitle = {
+          id: newTitleId,
+          companyId: 'comp-1',
+          type: 'RECEBER',
+          titleNumber,
+          counterpartyId: contract.customerId,
+          description: `Mensalidade ${contract.description} - Comp. ${cMonthFormatted}/${cYear}`,
+          accountId: mainAccountId,
+          launchDate: todayYmd,
+          competence,
+          issueDate: todayYmd,
+          dueDate,
+          expectedCashDate: dueDate,
+          originalAmount: contract.monthlyTotal,
+          settledPrincipal: 0,
+          balancePrincipal: contract.monthlyTotal,
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: 'CONTRATO',
+          originId: contract.id,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          saleId: saleId,
+          saleNumber: saleNumber,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          notes: `Faturamento recorrente automático programado (Contrato ${contract.contractNumber} • Venda ${saleNumber}).`
+        };
+
+        const newSale: Sale = {
+          id: saleId,
+          saleNumber,
+          customerId: contract.customerId,
+          competence,
+          date: todayYmd,
+          items: (contract.items && contract.items.length > 0) ? contract.items.map(it => ({
+            id: `item-${newTitleId}-${it.id}`,
+            serviceId: it.serviceId,
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            discount: 0,
+            total: it.total,
+            accountId: (it.accountId === 'acc-rec-01' || !it.accountId) ? 'acc-1.1.01' : it.accountId
+          })) : [
+            {
+              id: `item-${newTitleId}`,
+              serviceId: 'srv-1',
+              description: `Mensalidade ${contract.description}`,
+              quantity: 1,
+              unitPrice: contract.monthlyTotal,
+              discount: 0,
+              total: contract.monthlyTotal,
+              accountId: mainAccountId
+            }
+          ],
+          grossTotal: contract.monthlyTotal,
+          discountTotal: 0,
+          netTotal: contract.monthlyTotal,
+          installmentsCount: 1,
+          notes: `Faturamento recorrente do Contrato ${contract.contractNumber}`,
+          createdAt: nowIso,
+          originType: 'CONTRATO',
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          status: 'CONFIRMADA',
+          titleIds: [newTitleId]
+        };
+
+        newTitles.push(newTitle);
+        newSales.push(newSale);
+        generatedCount++;
+        totalAmountGenerated += contract.monthlyTotal;
+      }
+
+      // Taxa de Balanço Anual (se configurada e incluir este mês)
+      if (
+        contract.annualBalanceFee && 
+        contract.annualBalanceFee.enabled && 
+        contract.annualBalanceFee.amount > 0 &&
+        Array.isArray(contract.annualBalanceFee.billingMonths) &&
+        contract.annualBalanceFee.billingMonths.includes(cMonth)
+      ) {
+        const totalInstallments = contract.annualBalanceFee.billingMonths.length || 1;
+        const currentInstallmentIndex = contract.annualBalanceFee.billingMonths.indexOf(cMonth) + 1;
+        
+        const baseInstallmentAmount = Math.round((contract.annualBalanceFee.amount / totalInstallments) * 100) / 100;
+        const isLastInstallment = currentInstallmentIndex === totalInstallments;
+        const installmentAmount = isLastInstallment 
+          ? Math.round((contract.annualBalanceFee.amount - baseInstallmentAmount * (totalInstallments - 1)) * 100) / 100
+          : baseInstallmentAmount;
+
+        const tbTitleNumber = `FAT-TB-${competence}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+        const existingBalanceFee = currentTitles.find(t => 
+          (t.originType === 'CONTRATO' || t.originType === 'VENDA') &&
+          (t.originId === contract.id || t.contractId === contract.id) &&
+          t.competence === competence &&
+          (t.titleNumber === tbTitleNumber || t.description.includes('Taxa de Balanço')) &&
+          t.documentState !== 'CANCELADO'
+        );
+
+        if (!existingBalanceFee) {
+          const tbTitleId = `tit-tb-${Date.now()}-${contract.id}-${competence}`;
+          const newTB: FinancialTitle = {
+            id: tbTitleId,
+            companyId: 'comp-1',
+            type: 'RECEBER',
+            titleNumber: tbTitleNumber,
+            counterpartyId: contract.customerId,
+            description: `Taxa de Balanço Anual (${currentInstallmentIndex}/${totalInstallments}) - Comp. ${cMonthFormatted}/${cYear}`,
+            accountId: mainAccountId,
+            launchDate: todayYmd,
+            competence,
+            issueDate: todayYmd,
+            dueDate,
+            expectedCashDate: dueDate,
+            originalAmount: installmentAmount,
+            settledPrincipal: 0,
+            balancePrincipal: installmentAmount,
+            accruedInterest: 0,
+            accruedFine: 0,
+            documentState: 'CONFIRMADO',
+            settlementState: 'ABERTO',
+            originType: 'CONTRATO',
+            originId: contract.id,
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            notes: `Taxa de Balanço Anual programada do Contrato ${contract.contractNumber}.`
+          };
+          newTitles.push(newTB);
+          generatedCount++;
+          totalAmountGenerated += installmentAmount;
+        } else if (shouldUpdateOpen && existingBalanceFee.settlementState !== 'LIQUIDADO') {
+          const updatedTB: FinancialTitle = {
+            ...existingBalanceFee,
+            originalAmount: installmentAmount,
+            balancePrincipal: Math.max(0, installmentAmount - (existingBalanceFee.settledPrincipal || 0)),
+            updatedAt: nowIso
+          };
+          updatedTitleMap.set(updatedTB.id, updatedTB);
+          updatedCount++;
+          totalAmountGenerated += installmentAmount;
+        }
+      }
+
+      // Emite atualização progressiva não bloqueante
+      const pct = Math.min(88, Math.round(10 + ((i + 1) / numberOfMonths) * 75));
+      onProgress?.({
+        percent: pct,
+        stage: `Processando ${cMonthFormatted}/${cYear} (${i + 1} de ${numberOfMonths} meses)...`,
+        currentMonth: competence,
+        processed: i + 1,
+        total: numberOfMonths,
+        currentContract: contract.contractNumber
+      });
+      await new Promise(r => setTimeout(r, 15));
+    }
+
+    // Persistência
+    if (newTitles.length > 0 || updatedTitleMap.size > 0) {
+      onProgress?.({
+        percent: 92,
+        stage: 'Gravando títulos e faturas com proteção de armazenamento...',
+        currentMonth: '',
+        processed: numberOfMonths,
+        total: numberOfMonths,
+        currentContract: contract.contractNumber
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      let finalTitles = [...currentTitles];
+      if (updatedTitleMap.size > 0) {
+        finalTitles = finalTitles.map(t => updatedTitleMap.get(t.id) || t);
+      }
+      if (newTitles.length > 0) {
+        finalTitles = [...newTitles, ...finalTitles];
+      }
+      storage.saveTitles(finalTitles);
+
+      if (newSales.length > 0 || updatedSaleMap.size > 0) {
+        let finalSales = [...currentSales];
+        if (updatedSaleMap.size > 0) {
+          finalSales = finalSales.map(s => updatedSaleMap.get(s.id) || s);
+        }
+        if (newSales.length > 0) {
+          finalSales = [...newSales, ...finalSales];
+        }
+        storage.saveSales(finalSales);
+      }
+
+      const lastComp = competencesGenerated[competencesGenerated.length - 1] || startComp;
+      const updatedContracts = contracts.map(c => {
+        if (c.id === contract.id) {
+          return {
+            ...c,
+            status: 'ATIVO' as const,
+            cancellationDate: undefined,
+            cancellationReason: undefined,
+            lastGeneratedCompetence: lastComp,
+            endDate: (c.endDate && c.endDate.substring(0, 7) < lastComp) ? `${lastComp}-28` : c.endDate
+          };
+        }
+        return c;
+      });
+      storage.saveContracts(updatedContracts);
+
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'GERACAO_FATURAMENTO_FUTURO_ASSINCRONO',
+        module: 'Contratos Recorrentes',
+        recordId: contract.id,
+        details: `Geração assíncrona do contrato ${contract.contractNumber}: ${generatedCount} novos títulos criados, ${updatedCount} títulos em aberto atualizados, cobrindo ${competencesGenerated.length} competências (${competencesGenerated[0] || startComp} até ${lastComp}) totalizando ${formatBRL(totalAmountGenerated)}.`
+      });
+    }
+
+    onProgress?.({
+      percent: 100,
+      stage: 'Faturamento concluído com sucesso!',
+      currentMonth: '',
+      processed: numberOfMonths,
+      total: numberOfMonths,
+      currentContract: contract.contractNumber
+    });
+
+    return {
+      generatedCount,
+      updatedCount,
+      alreadyExistingCount,
+      totalAmountGenerated,
+      competences: competencesGenerated,
+      titles: newTitles
+    };
+  }
+
+  /**
+   * FATURAMENTO EM LOTE DE MÚLTIPLOS CONTRATOS ATIVOS
+   * Itera pelos contratos selecionados com barra de progresso unificada e assíncrona
+   */
+  public static async generateMultipleContractsFutureInstallmentsAsync(
+    contractsList?: Contract[],
+    numberOfMonths: number = 12,
+    startFromCompetence?: string,
+    options?: {
+      overwriteOpen?: boolean;
+      updateExistingOpen?: boolean;
+    },
+    onProgress?: BatchBillingProgressCallback
+  ): Promise<{
+    totalProcessedContracts: number;
+    totalGeneratedCount: number;
+    totalUpdatedCount: number;
+    totalAlreadyExistingCount: number;
+    totalAmountGenerated: number;
+    contractsSummary: Array<{
+      contractId: string;
+      contractNumber: string;
+      customerName: string;
+      generated: number;
+      updated: number;
+      existing: number;
+      amount: number;
+      error?: string;
+    }>;
+  }> {
+    const all = storage.getContracts();
+    const targetContracts = (contractsList && contractsList.length > 0)
+      ? contractsList
+      : all.filter(c => c.status === 'ATIVO' && c.contractType !== 'AVULSO' && c.isRecurring !== false);
+
+    const counterparties = storage.getCounterparties();
+    const totalCount = targetContracts.length;
+
+    let totalGeneratedCount = 0;
+    let totalUpdatedCount = 0;
+    let totalAlreadyExistingCount = 0;
+    let totalAmountGenerated = 0;
+
+    const summary: Array<{
+      contractId: string;
+      contractNumber: string;
+      customerName: string;
+      generated: number;
+      updated: number;
+      existing: number;
+      amount: number;
+      error?: string;
+    }> = [];
+
+    onProgress?.({
+      percent: 0,
+      stage: `Iniciando faturamento em lote para ${totalCount} contrato(s)...`,
+      currentContractNumber: '',
+      currentCustomerName: '',
+      processedContracts: 0,
+      totalContracts: totalCount,
+      totalGenerated: 0,
+      totalUpdated: 0,
+      totalAmountGenerated: 0
+    });
+    await new Promise(r => setTimeout(r, 20));
+
+    for (let i = 0; i < totalCount; i++) {
+      const contract = targetContracts[i];
+      const client = counterparties.find(c => c.id === contract.customerId);
+      const clientName = client?.name || 'Cliente';
+
+      const basePct = Math.round((i / totalCount) * 100);
+
+      onProgress?.({
+        percent: basePct,
+        stage: `Processando contrato ${i + 1} de ${totalCount}: ${contract.contractNumber} (${clientName})...`,
+        currentContractNumber: contract.contractNumber,
+        currentCustomerName: clientName,
+        processedContracts: i,
+        totalContracts: totalCount,
+        totalGenerated: totalGeneratedCount,
+        totalUpdated: totalUpdatedCount,
+        totalAmountGenerated
+      });
+
+      try {
+        const res = await this.generateContractFutureInstallmentsAsync(
+          contract,
+          numberOfMonths,
+          startFromCompetence,
+          options,
+          (subProgress) => {
+            const stepContribution = (subProgress.percent / 100) * (100 / Math.max(1, totalCount));
+            const livePct = Math.min(99, Math.round(basePct + stepContribution));
+            onProgress?.({
+              percent: livePct,
+              stage: `Contrato ${i + 1}/${totalCount} (${contract.contractNumber}): ${subProgress.stage}`,
+              currentContractNumber: contract.contractNumber,
+              currentCustomerName: clientName,
+              processedContracts: i,
+              totalContracts: totalCount,
+              totalGenerated: totalGeneratedCount,
+              totalUpdated: totalUpdatedCount,
+              totalAmountGenerated
+            });
+          }
+        );
+
+        totalGeneratedCount += res.generatedCount;
+        totalUpdatedCount += res.updatedCount;
+        totalAlreadyExistingCount += res.alreadyExistingCount;
+        totalAmountGenerated += res.totalAmountGenerated;
+
+        summary.push({
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          customerName: clientName,
+          generated: res.generatedCount,
+          updated: res.updatedCount,
+          existing: res.alreadyExistingCount,
+          amount: res.totalAmountGenerated,
+          error: res.error
+        });
+      } catch (err: any) {
+        summary.push({
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          customerName: clientName,
+          generated: 0,
+          updated: 0,
+          existing: 0,
+          amount: 0,
+          error: err?.message || 'Erro inesperado'
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 10));
+    }
+
+    onProgress?.({
+      percent: 100,
+      stage: `Faturamento em lote concluído com sucesso para ${totalCount} contrato(s)!`,
+      currentContractNumber: '',
+      currentCustomerName: '',
+      processedContracts: totalCount,
+      totalContracts: totalCount,
+      totalGenerated: totalGeneratedCount,
+      totalUpdated: totalUpdatedCount,
+      totalAmountGenerated
+    });
+
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'FATURAMENTO_EM_LOTE_CONTRATOS',
+      module: 'Contratos Recorrentes',
+      recordId: `batch-all-${totalCount}`,
+      details: `Faturamento em lote de ${totalCount} contratos ativos concluído: ${totalGeneratedCount} títulos criados, ${totalUpdatedCount} atualizados (${formatBRL(totalAmountGenerated)}).`
+    });
+
+    return {
+      totalProcessedContracts: totalCount,
+      totalGeneratedCount,
+      totalUpdatedCount,
+      totalAlreadyExistingCount,
+      totalAmountGenerated,
+      contractsSummary: summary
     };
   }
 

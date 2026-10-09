@@ -19,7 +19,14 @@ import {
 } from 'lucide-react';
 import { Contract, FinancialTitle, Sale } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR, formatCompetence, getTemporalStatus } from '../../services/financialEngine';
+import { 
+  FinancialEngine, 
+  formatBRL, 
+  formatDateBR, 
+  formatCompetence, 
+  getTemporalStatus,
+  ContractGenerationProgressState 
+} from '../../services/financialEngine';
 
 interface ContractScheduleModalProps {
   contract: Contract | null;
@@ -41,6 +48,7 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
   const [startMonthMode, setStartMonthMode] = useState<'CURRENT_MONTH' | 'NEXT_MONTH' | 'CONTRACT_START' | 'CUSTOM'>('CURRENT_MONTH');
   const [customStartMonth, setCustomStartMonth] = useState<string>(currentMonth);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState<ContractGenerationProgressState | null>(null);
   const [feedback, setFeedback] = useState<{
     count: number;
     amount: number;
@@ -149,17 +157,25 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
 
   if (!isOpen || !contract) return null;
 
-  const handleGenerate = (options?: { updateExistingOpen?: boolean }) => {
+  const handleGenerate = async (options?: { updateExistingOpen?: boolean }) => {
     setIsGenerating(true);
     setFeedback(null);
+    setProgress({
+      percent: 5,
+      stage: 'Iniciando processamento das parcelas...',
+      currentMonth: '',
+      processed: 0,
+      total: monthsCount
+    });
 
     try {
       const freshContract = storage.getContracts().find(c => c.id === contract.id) || contract;
-      const res = FinancialEngine.generateContractFutureInstallments(
+      const res = await FinancialEngine.generateContractFutureInstallmentsAsync(
         freshContract, 
         monthsCount, 
         effectiveStartCompetence,
-        options
+        options,
+        (p) => setProgress(p)
       );
 
       if (res.error) {
@@ -198,6 +214,7 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
       });
     } finally {
       setIsGenerating(false);
+      setTimeout(() => setProgress(null), 1200);
     }
   };
 
@@ -506,6 +523,33 @@ export const ContractScheduleModal: React.FC<ContractScheduleModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Live Progress Bar durante a geração assíncrona */}
+            {progress && (
+              <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-amber-500/5 border border-amber-500/30 rounded-xl space-y-2 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    <Sparkles className="w-4 h-4 animate-spin text-amber-500" />
+                    <span>{progress.stage}</span>
+                  </div>
+                  <span className="font-mono text-amber-700 dark:text-amber-300 font-bold bg-amber-500/20 px-2 py-0.5 rounded-md text-[11px]">
+                    {progress.percent}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-[var(--surface-elevated)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)] p-0.5">
+                  <div 
+                    className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 rounded-full transition-all duration-300 ease-out shadow-xs"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
+                  <span>Processando em segundo plano sem travar a tela</span>
+                  <span>{progress.processed} de {progress.total} meses processados</span>
+                </div>
+              </div>
+            )}
 
             {feedback && (
               <div className="space-y-2">
