@@ -70,16 +70,17 @@ export const Header: React.FC<HeaderProps> = ({
   const receivablesPeriod = useModulePeriod('RECEIVABLES');
   const dashboardPeriod = useModulePeriod('DASHBOARD');
 
-  // Identifica a configuração de período contextual para a aba aberta
+  // Identifica a configuração de período contextual para a aba aberta (Sincronizado globalmente)
   const currentPeriodConfig = useMemo(() => {
+    const syncGlobally = (p: any) => storage.saveGlobalPeriodFilter(p);
     if (currentScreen === 'CONTAS_PAGAR') {
       return {
         label: 'Vencimentos a Pagar',
         shortLabel: 'Pagar',
         period: payablesPeriod.period,
-        updatePeriod: payablesPeriod.updatePeriod,
+        updatePeriod: syncGlobally,
         title: 'Filtro de Vencimentos - Contas a Pagar',
-        subtitle: 'Filtro específico por data de vencimento das contas a pagar'
+        subtitle: 'Filtro sincronizado por período de vencimento das contas a pagar'
       };
     }
     if (currentScreen === 'CONTAS_RECEBER') {
@@ -87,20 +88,20 @@ export const Header: React.FC<HeaderProps> = ({
         label: 'Vencimentos a Receber',
         shortLabel: 'Receber',
         period: receivablesPeriod.period,
-        updatePeriod: receivablesPeriod.updatePeriod,
+        updatePeriod: syncGlobally,
         title: 'Filtro de Vencimentos - Contas a Receber',
-        subtitle: 'Filtro específico por data de vencimento das contas a receber'
+        subtitle: 'Filtro sincronizado por período de vencimento das contas a receber'
       };
     }
     return {
       label: 'Painel Executivo',
       shortLabel: 'Painel',
       period: dashboardPeriod.period,
-      updatePeriod: dashboardPeriod.updatePeriod,
+      updatePeriod: syncGlobally,
       title: 'Período do Painel Executivo',
-      subtitle: 'Período de apuração dos gráficos e DRE'
+      subtitle: 'Período unificado de apuração dos gráficos, DRE e módulos'
     };
-  }, [currentScreen, payablesPeriod.period, payablesPeriod.updatePeriod, receivablesPeriod.period, receivablesPeriod.updatePeriod, dashboardPeriod.period, dashboardPeriod.updatePeriod]);
+  }, [currentScreen, payablesPeriod.period, receivablesPeriod.period, dashboardPeriod.period]);
 
   const company = storage.getCompany();
   const users = storage.getUsers();

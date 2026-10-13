@@ -283,10 +283,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     }
   }, [periodTitles, today, weekRange]);
 
-  // Diagnóstico Preditivo de Risco de Crédito da Carteira
+  // Diagnóstico Preditivo de Risco de Crédito da Carteira (Escopado estritamente ao Período Selecionado)
   const portfolioRisk = useMemo(() => {
-    return CreditRiskService.getPortfolioRiskOverview(today);
-  }, [titles, refreshKey, today]);
+    return CreditRiskService.getPortfolioRiskOverview(today, periodTitles);
+  }, [periodTitles, titles, refreshKey, today]);
 
   // Estatísticas e agrupamento de categorias ativas com receita no período selecionado
   const categoryStats = useMemo(() => {
@@ -835,9 +835,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                     IA
                   </span>
+                  {period && period.active && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                      Período: {period.month === 0 ? `Ano ${period.year}` : `${String(period.month).padStart(2, '0')}/${period.year}`}
+                    </span>
+                  )}
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
-                  Score histórico de pontualidade por cliente, atrasos médios e títulos em risco de caixa
+                  {period && period.active 
+                    ? `Previsibilidade e valores em aberto escopados exclusivamente para ${period.month === 0 ? `o ano ${period.year}` : `${String(period.month).padStart(2, '0')}/${period.year}`}`
+                    : 'Score histórico de pontualidade por cliente e valores em aberto na carteira'}
                 </p>
               </div>
             </div>

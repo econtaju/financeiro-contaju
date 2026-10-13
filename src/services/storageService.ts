@@ -1775,16 +1775,20 @@ class StorageService {
     this.set(STORAGE_KEYS.BUDGET_VERSIONS, updated);
   }
 
-  // Global Period Filter (Legacy compatibility)
+  // Global Period Filter (Sincronizado entre todos os módulos de dados)
   public getGlobalPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, DEFAULT_GLOBAL_PERIOD_FILTER);
   }
 
   public saveGlobalPeriodFilter(filter: GlobalPeriodFilter) {
     this.set(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, filter);
+    // Sincroniza em cascata para Contas a Pagar, Contas a Receber e Dashboard
+    this.set(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, filter);
+    this.set(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, filter);
+    this.set(STORAGE_KEYS.DASHBOARD_PERIOD_FILTER, filter);
   }
 
-  // Payables Period Filter (Mês/Ano dos Vencimentos - Isolado)
+  // Payables Period Filter (Mês/Ano dos Vencimentos)
   public getPayablesPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
   }
@@ -1793,7 +1797,7 @@ class StorageService {
     this.set(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, filter);
   }
 
-  // Receivables Period Filter (Mês/Ano dos Vencimentos - Isolado)
+  // Receivables Period Filter (Mês/Ano dos Vencimentos)
   public getReceivablesPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
   }
@@ -1802,13 +1806,17 @@ class StorageService {
     this.set(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, filter);
   }
 
-  // Dashboard Period Filter (Período do Dashboard - Isolado)
+  // Dashboard Period Filter (Período da Aba Inicial - Sincroniza com todas as abas)
   public getDashboardPeriodFilter(): GlobalPeriodFilter {
     return this.get(STORAGE_KEYS.DASHBOARD_PERIOD_FILTER, DEFAULT_MODULE_PERIOD_FILTER);
   }
 
   public saveDashboardPeriodFilter(filter: GlobalPeriodFilter) {
     this.set(STORAGE_KEYS.DASHBOARD_PERIOD_FILTER, filter);
+    // Ao definir o período na aba inicial (Dashboard), sincroniza automaticamente com todas as abas de dados!
+    this.set(STORAGE_KEYS.GLOBAL_PERIOD_FILTER, filter);
+    this.set(STORAGE_KEYS.PAYABLES_PERIOD_FILTER, filter);
+    this.set(STORAGE_KEYS.RECEIVABLES_PERIOD_FILTER, filter);
   }
 
   // Dashboard Config

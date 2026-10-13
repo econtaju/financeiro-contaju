@@ -201,8 +201,11 @@ export class CreditRiskService {
 
   /**
    * Diagnóstico consolidado de risco da carteira de recebíveis
+   * Se targetTitles for informado (ex: títulos do período de vencimento selecionado),
+   * o saldo em aberto (Recebimento Seguro, Moderado e Alto Risco) é calculado
+   * estritamente para o período especificado.
    */
-  public static getPortfolioRiskOverview(referenceDateStr?: string) {
+  public static getPortfolioRiskOverview(referenceDateStr?: string, targetTitles?: FinancialTitle[]) {
     const titles = storage.getTitles().filter(t => t.type === 'RECEBER' && t.documentState !== 'CANCELADO');
     const settlements = storage.getSettlements();
     const counterparties = storage.getCounterparties().filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
@@ -217,10 +220,28 @@ export class CreditRiskService {
     let moderateRiskOpenAmount = 0;
     let highRiskOpenAmount = 0;
 
-    const openTitles = titles.filter(t => t.settlementState !== 'LIQUIDADO');
+    // Se fornecido targetTitles, avalia estritamente os títulos pertencentes ao período selecionado
+    const candidateTitles = targetTitles
+      ? targetTitles.filter(t => t.type === 'RECEBER' && t.documentState !== 'CANCELADO')
+      : titles;
+
+    const openTitles = candidateTitles.filter(t => {
+      if (t.settlementState === 'LIQUIDADO') return false;
+      const bal = Number(t.balancePrincipal);
+      return isNaN(bal) ? true : bal > 0;
+    });
+
+    const customersWithOpenInPeriod = new Set<string>();
 
     for (const t of openTitles) {
-      const amount = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
+      const amount = (Number(t.balancePrincipal) > 0)
+        ? Number(t.balancePrincipal)
+        : (Number(t.originalAmount) || 0);
+
+      if (t.counterpartyId) {
+        customersWithOpenInPeriod.add(t.counterpartyId);
+      }
+
       const profile = customerProfiles[t.counterpartyId];
       if (!profile || profile.riskLevel === 'BAIXO' || profile.riskLevel === 'NOVO') {
         lowRiskOpenAmount += amount;
@@ -237,8 +258,8 @@ export class CreditRiskService {
       lowRiskOpenAmount,
       moderateRiskOpenAmount,
       highRiskOpenAmount,
-      highRiskCustomerCount: Object.values(customerProfiles).filter(p => p.riskLevel === 'ALTO' && p.openCount > 0).length,
-      moderateRiskCustomerCount: Object.values(customerProfiles).filter(p => p.riskLevel === 'MODERADO' && p.openCount > 0).length
+      highRiskCustomerCount: Object.values(customerProfiles).filter(p => p.riskLevel === 'ALTO' && customersWithOpenInPeriod.has(p.counterpartyId)).length,
+      moderateRiskCustomerCount: Object.values(customerProfiles).filter(p => p.riskLevel === 'MODERADO' && customersWithOpenInPeriod.has(p.counterpartyId)).length
     };
   }
 }

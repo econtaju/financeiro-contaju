@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Users, 
   Plus, 
@@ -47,7 +47,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
       setSearchTerm(initialSearch);
     }
   }, [initialSearch]);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'INATIVO'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'COM_CONTRATO' | 'SEM_CONTRATO' | 'INATIVO'>('ALL');
   const [toastMessage, setToastMessage] = useState<string>('');
   const [selectedClient, setSelectedClient] = useState<Counterparty | null>(null);
   const [selectedContractForModal, setSelectedContractForModal] = useState<string | undefined>(undefined);
@@ -61,13 +61,23 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
   const activeClientsCount = allClientsList.filter(c => c.status === 'ATIVO').length;
   const inactiveClientsCount = allClientsList.filter(c => c.status === 'INATIVO').length;
 
+  const contracts = storage.getContracts();
+  const activeContractsList = contracts.filter(c => c.status === 'ATIVO');
+  const clientsWithActiveContractIds = useMemo(() => {
+    return new Set(activeContractsList.map(c => c.customerId));
+  }, [activeContractsList]);
+
+  const activeWithContractCount = allClientsList.filter(c => c.status === 'ATIVO' && clientsWithActiveContractIds.has(c.id)).length;
+  const activeWithoutContractCount = allClientsList.filter(c => c.status === 'ATIVO' && !clientsWithActiveContractIds.has(c.id)).length;
+
   const clients = allClientsList.filter(c => {
     if (statusFilter === 'ATIVO' && c.status !== 'ATIVO') return false;
     if (statusFilter === 'INATIVO' && c.status !== 'INATIVO') return false;
+    if (statusFilter === 'COM_CONTRATO' && (c.status !== 'ATIVO' || !clientsWithActiveContractIds.has(c.id))) return false;
+    if (statusFilter === 'SEM_CONTRATO' && (c.status !== 'ATIVO' || clientsWithActiveContractIds.has(c.id))) return false;
     return matchesSearch([c.name, c.tradeName, c.document, c.email, c.phone, c.address, c.notes], searchTerm);
   });
 
-  const contracts = storage.getContracts();
   const titles = storage.getTitles().filter(t => t.type === 'RECEBER');
   const today = new Date().toISOString().split('T')[0];
 
@@ -413,9 +423,48 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
         </div>
       )}
 
+      {/* Banner de Auditoria e Transparência da Carteira */}
+      <div className="bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-xl p-3 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-500 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <FileText className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-bold text-[var(--text-primary)]">Diagnóstico da Carteira Comercial: </span>
+            <span className="text-[var(--text-secondary)]">
+              A base possui <strong>{activeClientsCount} clientes com cadastro ativo</strong>. Destes, <strong>{activeWithContractCount} clientes possuem contratos de mensalidades/honorários ativos (MRR)</strong> e <strong>{activeWithoutContractCount} clientes são avulsos ou não possuem contrato recorrente vinculado</strong>.
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('COM_CONTRATO')}
+            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+              statusFilter === 'COM_CONTRATO' 
+                ? 'bg-amber-400 text-[#071321] shadow-xs' 
+                : 'bg-[var(--surface-elevated)] text-[var(--text-primary)] hover:bg-amber-500/20 border border-[var(--border-subtle)]'
+            }`}
+          >
+            Ver com Contrato ({activeWithContractCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('SEM_CONTRATO')}
+            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+              statusFilter === 'SEM_CONTRATO' 
+                ? 'bg-amber-400 text-[#071321] shadow-xs' 
+                : 'bg-[var(--surface-elevated)] text-[var(--text-primary)] hover:bg-amber-500/20 border border-[var(--border-subtle)]'
+            }`}
+          >
+            Ver sem Contrato ({activeWithoutContractCount})
+          </button>
+        </div>
+      </div>
+
       {/* Filter and Search com Abas de Status */}
       <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
           <button
             onClick={() => setStatusFilter('ALL')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -446,6 +495,38 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
               statusFilter === 'ATIVO' ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-400'
             }`}>
               {activeClientsCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('COM_CONTRATO')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              statusFilter === 'COM_CONTRATO'
+                ? 'bg-amber-500 text-white shadow-xs shadow-amber-500/20'
+                : 'text-[var(--text-secondary)] hover:bg-amber-500/10 hover:text-amber-400'
+            }`}
+          >
+            <span>Com Contrato Ativo</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+              statusFilter === 'COM_CONTRATO' ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-400'
+            }`}>
+              {activeWithContractCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('SEM_CONTRATO')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              statusFilter === 'SEM_CONTRATO'
+                ? 'bg-amber-600 text-white shadow-xs shadow-amber-600/20'
+                : 'text-[var(--text-secondary)] hover:bg-amber-600/10 hover:text-amber-400'
+            }`}
+          >
+            <span>Sem Contrato (Avulsos)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+              statusFilter === 'SEM_CONTRATO' ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-400'
+            }`}>
+              {activeWithoutContractCount}
             </span>
           </button>
 

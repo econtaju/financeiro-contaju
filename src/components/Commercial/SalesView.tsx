@@ -29,6 +29,7 @@ import { matchesSearch } from '../../utils/searchUtils';
 import { addMonthsSafe } from '../../utils/dateUtils';
 import { BatchEditSalesModal } from '../Modals/BatchEditSalesModal';
 import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
+import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
 
 interface SalesViewProps {
   onOpenBillingModal?: () => void;
@@ -40,6 +41,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   const today = new Date().toISOString().split('T')[0];
   const currentMonth = today.substring(0, 7);
   const currentYear = new Date().getFullYear();
+  const { period: globalPeriod } = useGlobalPeriod();
 
   // Próximo mês e mês anterior calculados de forma segura
   const nextMonthDate = new Date();
@@ -56,10 +58,30 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
 
   // Estados de Filtragem Temporal e Período Avançado
   const [filterDateType, setFilterDateType] = useState<'COMPETENCIA' | 'VENCIMENTO' | 'EMISSAO'>('COMPETENCIA');
-  const [periodPreset, setPeriodPreset] = useState<string>('ALL');
+  const [periodPreset, setPeriodPreset] = useState<string>(() => {
+    if (globalPeriod && globalPeriod.active) {
+      if (globalPeriod.month > 0) {
+        return `${globalPeriod.year}-${String(globalPeriod.month).padStart(2, '0')}`;
+      }
+      return 'CURRENT_YEAR';
+    }
+    return 'CURRENT_MONTH';
+  });
   const [customSelectedMonth, setCustomSelectedMonth] = useState<string>(currentMonth);
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // Sincroniza automaticamente a visualização de Vendas com o período ativo no app
+  useEffect(() => {
+    if (globalPeriod && globalPeriod.active) {
+      if (globalPeriod.month > 0) {
+        const ym = `${globalPeriod.year}-${String(globalPeriod.month).padStart(2, '0')}`;
+        setPeriodPreset(ym);
+      } else {
+        setPeriodPreset('CURRENT_YEAR');
+      }
+    }
+  }, [globalPeriod?.active, globalPeriod?.year, globalPeriod?.month]);
 
   const activePeriodLabel = useMemo(() => {
     if (periodPreset === 'ALL') return 'Todo o Histórico';
