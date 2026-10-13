@@ -2,7 +2,9 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Network, Plus, Search, Layers, Edit2, CornerDownRight, FolderPlus, 
   CheckCircle2, Copy, Sparkles, GripVertical, ChevronUp, ChevronDown, 
-  FolderInput, Folder, ArrowUpDown, Wand2, Check, X, AlertTriangle, HelpCircle 
+  ChevronRight, FolderInput, Folder, FolderOpen, ArrowUpDown, Wand2, 
+  Check, X, AlertTriangle, HelpCircle, Activity, Clock, Filter, 
+  Maximize2, Minimize2 
 } from 'lucide-react';
 import { ChartOfAccount, OperationNature, CashFlowCategory } from '../../types';
 import { storage } from '../../services/storageService';
@@ -102,6 +104,11 @@ interface ModalCreationContext {
 export const ChartOfAccountsView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRootFilter, setSelectedRootFilter] = useState<string>('TODOS');
+  const [usageFilter, setUsageFilter] = useState<'TODOS' | 'COM_LANCAMENTOS' | 'OCIOSAS'>('TODOS');
+  
+  // Opção 1: Acordeão Retrátil (Grupos Sintéticos Recolhidos)
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRenumberModalOpen, setIsRenumberModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null);
@@ -112,7 +119,7 @@ export const ChartOfAccountsView: React.FC = () => {
   // Estados de Arrastar e Soltar (Drag and Drop)
   const [draggedAccountId, setDraggedAccountId] = useState<string | null>(null);
   const [dragOverAccountId, setDragOverAccountId] = useState<string | null>(null);
-  const [dragOverPlacement, setDragOverPlacement] = useState<'BEFORE' | 'AFTER' | null>(null);
+  const [dragOverPlacement, setDragOverPlacement] = useState<'BEFORE' | 'AFTER' | 'INTO' | null>(null);
 
   // Gatilho de atualização do storage
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -126,6 +133,69 @@ export const ChartOfAccountsView: React.FC = () => {
     return [...raw].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   }, [refreshTrigger]);
 
+  // Opção 2: Auditoria de Lançamentos e Uso de Contas
+  const accountUsageIndex = useMemo(() => {
+    const titles = storage.getTitles();
+    const movements = storage.getMovements();
+    const services = storage.getServices();
+    const contracts = storage.getContracts();
+    const rules = storage.getReconciliationRules ? storage.getReconciliationRules() : [];
+
+    const map = new Map<string, {
+      total: number;
+      titles: number;
+      movements: number;
+      other: number;
+      lastDate?: string;
+    }>();
+
+    const recordUsage = (accId: string | undefined, type: 'title' | 'movement' | 'other', date?: string) => {
+      if (!accId) return;
+      const current = map.get(accId) || { total: 0, titles: 0, movements: 0, other: 0 };
+      current.total += 1;
+      if (type === 'title') current.titles += 1;
+      else if (type === 'movement') current.movements += 1;
+      else current.other += 1;
+
+      if (date && (!current.lastDate || date > current.lastDate)) {
+        current.lastDate = date;
+      }
+      map.set(accId, current);
+    };
+
+    titles.forEach(t => recordUsage(t.accountId, 'title', t.issueDate || t.launchDate || t.dueDate));
+    movements.forEach(m => recordUsage(m.accountId, 'movement', m.createdAt));
+    services.forEach(s => recordUsage(s.chartAccountId || (s as any).defaultAccountId, 'other'));
+    contracts.forEach(c => {
+      c.items?.forEach(it => recordUsage(it.accountId, 'other'));
+    });
+    rules.forEach(r => recordUsage(r.chartAccountId, 'other'));
+
+    return map;
+  }, [refreshTrigger]);
+
+  // Calcular lançamentos consolidados para grupos sintéticos (soma das filhas)
+  const syntheticGroupUsageTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    accounts.forEach(acc => {
+      if (acc.isSynthetic || !acc.isAnalytical) {
+        // Encontrar todas as filhas deste grupo pelo prefixo
+        const prefixDot = `${acc.code}.`;
+        let sum = 0;
+        accounts.forEach(child => {
+          if (child.isAnalytical && (child.parentId === acc.id || child.code.startsWith(prefixDot))) {
+            const usage = accountUsageIndex.get(child.id);
+            if (usage) sum += usage.total;
+          }
+        });
+        totals.set(acc.id, sum);
+      }
+    });
+
+    return totals;
+  }, [accounts, accountUsageIndex]);
+
   const [formData, setFormData] = useState<Partial<ChartOfAccount>>({
     code: '',
     name: '',
@@ -136,14 +206,34 @@ export const ChartOfAccountsView: React.FC = () => {
     parentId: 'grp-3.2'
   });
 
-  // Estatísticas do Plano de Contas
+  // Estatísticas do Plano de Contas e Auditoria
   const stats = useMemo(() => {
     const total = accounts.length;
-    const analytical = accounts.filter(a => a.isAnalytical).length;
-    const synthetic = accounts.filter(a => a.isSynthetic || !a.isAnalytical).length;
+    const analytical = accounts.filter(a => a.isAnalytical);
+    const synthetic = accounts.filter(a => a.isSynthetic || !a.isAnalytical);
+    
+    let inUse = 0;
+    let idle = 0;
+
+    analytical.forEach(a => {
+      const usage = accountUsageIndex.get(a.id);
+      if (usage && usage.total > 0) inUse++;
+      else idle++;
+    });
+
     const mapped = accounts.filter(a => a.dremap && a.dremap.include).length;
-    return { total, analytical, synthetic, mapped };
-  }, [accounts]);
+    const inUsePct = analytical.length > 0 ? Math.round((inUse / analytical.length) * 100) : 0;
+
+    return { 
+      total, 
+      analyticalCount: analytical.length, 
+      syntheticCount: synthetic.length, 
+      inUse, 
+      idle, 
+      inUsePct,
+      mapped 
+    };
+  }, [accounts, accountUsageIndex]);
 
   // Exibir toast temporário
   const showToast = (message: string) => {
@@ -153,18 +243,83 @@ export const ChartOfAccountsView: React.FC = () => {
     }, 4000);
   };
 
-  // Filtragem
+  // Alternar recolhimento de um grupo (Opção 1)
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroupIds(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  const expandAllGroups = () => {
+    setCollapsedGroupIds(new Set());
+    showToast('Todos os grupos contábeis foram expandidos.');
+  };
+
+  const collapseAllGroups = () => {
+    const allSyntheticIds = accounts
+      .filter(a => a.isSynthetic || !a.isAnalytical)
+      .map(a => a.id);
+    setCollapsedGroupIds(new Set(allSyntheticIds));
+    showToast('Todos os grupos contábeis foram recolhidos.');
+  };
+
+  // Verifica se uma conta deve ser visível de acordo com o estado do acordeão
+  const isAccountVisibleInAccordion = (acc: ChartOfAccount): boolean => {
+    // Se estiver buscando por texto, expande tudo automaticamente
+    if (searchTerm.trim().length > 0) return true;
+
+    // Se for conta raiz de 1º nível, sempre visível
+    if (!acc.parentId || !acc.code.includes('.')) return true;
+
+    // Verificar se algum ancestral direto ou indireto está recolhido
+    let currentParentId: string | null | undefined = acc.parentId;
+    while (currentParentId) {
+      if (collapsedGroupIds.has(currentParentId)) {
+        return false;
+      }
+      const parentAcc = accounts.find(a => a.id === currentParentId);
+      currentParentId = parentAcc?.parentId;
+    }
+
+    return true;
+  };
+
+  // Filtragem combinada (Raiz, Busca, Auditoria de Uso e Acordeão)
   const filtered = useMemo(() => {
     return accounts.filter(a => {
-      // Filtro de raiz estratégica
+      // 1. Filtro de raiz estratégica (Tabs 1..8)
       if (selectedRootFilter !== 'TODOS') {
         const rootDigit = a.code.charAt(0);
         if (rootDigit !== selectedRootFilter) return false;
       }
-      // Busca textual
-      return matchesSearch([a.code, a.name, a.nature, a.dreLineMapping], searchTerm);
+
+      // 2. Filtro de Auditoria de Uso (Opção 2)
+      if (usageFilter !== 'TODOS' && a.isAnalytical) {
+        const usage = accountUsageIndex.get(a.id);
+        const hasUsage = usage && usage.total > 0;
+        if (usageFilter === 'COM_LANCAMENTOS' && !hasUsage) return false;
+        if (usageFilter === 'OCIOSAS' && hasUsage) return false;
+      }
+
+      // 3. Busca textual
+      if (!matchesSearch([a.code, a.name, a.nature, a.dreLineMapping], searchTerm)) {
+        return false;
+      }
+
+      // 4. Verificação de visibilidade no acordeão (Opção 1)
+      if (!isAccountVisibleInAccordion(a)) {
+        return false;
+      }
+
+      return true;
     });
-  }, [accounts, selectedRootFilter, searchTerm]);
+  }, [accounts, selectedRootFilter, usageFilter, searchTerm, collapsedGroupIds, accountUsageIndex]);
 
   // Ao trocar o grupo estratégico pai no Modal, recalcular código e vínculos imediatamente
   const handleParentGroupSelect = (parentGroupId: string) => {
@@ -174,7 +329,6 @@ export const ChartOfAccountsView: React.FC = () => {
       return;
     }
 
-    // Calcular próximo código disponível no grupo selecionado
     const nextCode = calculateNextChildCode(groupDef.prefix, accounts);
 
     setFormData(prev => ({
@@ -196,7 +350,6 @@ export const ChartOfAccountsView: React.FC = () => {
     setEditingAccount(null);
     setCreationContext({ mode: 'NEW' });
     
-    // Padrão: Despesas Administrativas (3.2)
     const defaultGroup = STRATEGIC_DRE_GROUPS.find(g => g.id === 'grp-3.2') || STRATEGIC_DRE_GROUPS[0];
     const nextCode = calculateNextChildCode(defaultGroup.prefix, accounts);
 
@@ -218,6 +371,15 @@ export const ChartOfAccountsView: React.FC = () => {
     const prefix = parent.code;
     const nextCode = calculateNextChildCode(prefix, accounts);
     const parentGroup = findStrategicGroupByAccount(parent);
+
+    // Se o grupo estava recolhido, expandir para mostrar o novo filho
+    if (collapsedGroupIds.has(parent.id)) {
+      setCollapsedGroupIds(prev => {
+        const next = new Set(prev);
+        next.delete(parent.id);
+        return next;
+      });
+    }
 
     setEditingAccount(null);
     setCreationContext({ mode: 'CHILD', referenceAccount: parent });
@@ -376,6 +538,13 @@ export const ChartOfAccountsView: React.FC = () => {
     const { updatedAccounts, newAccountCode } = moveAccountToStrategicGroup(accounts, account.id, targetGroupId);
     storage.saveChartAccounts(updatedAccounts);
 
+    // Expandir o grupo de destino para exibir a conta inserida
+    setCollapsedGroupIds(prev => {
+      const next = new Set(prev);
+      next.delete(targetGroupId);
+      return next;
+    });
+
     const targetGroup = STRATEGIC_DRE_GROUPS.find(g => g.id === targetGroupId);
     const currentUser = storage.getCurrentUser();
     storage.addAuditLog({
@@ -409,7 +578,6 @@ export const ChartOfAccountsView: React.FC = () => {
     e.preventDefault();
     if (!draggedAccountId || draggedAccountId === targetAccount.id) return;
 
-    // Calcular se o cursor está na metade superior ou inferior da linha
     const rect = e.currentTarget.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
     const placement: 'BEFORE' | 'AFTER' = e.clientY < midY ? 'BEFORE' : 'AFTER';
@@ -438,8 +606,17 @@ export const ChartOfAccountsView: React.FC = () => {
     const sourceAccount = accounts.find(a => a.id === sourceId);
     if (!sourceAccount) return;
 
+    // Se soltou em cima de um grupo sintético, garantir que o grupo fique expandido
+    if (targetAccount.isSynthetic) {
+      setCollapsedGroupIds(prev => {
+        const next = new Set(prev);
+        next.delete(targetAccount.id);
+        return next;
+      });
+    }
+
     const placement = dragOverPlacement || 'BEFORE';
-    const reordered = reorderAndRenumberAccounts(accounts, sourceId, targetAccount.id, placement);
+    const reordered = reorderAndRenumberAccounts(accounts, sourceId, targetAccount.id, placement as any);
     storage.saveChartAccounts(reordered);
 
     const finalSource = reordered.find(a => a.id === sourceId);
@@ -514,7 +691,7 @@ export const ChartOfAccountsView: React.FC = () => {
                 Plano de Contas Gerencial & Mapeamento DRE
               </h1>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                Auto-numeração hierárquica inteligente. Arraste linhas para reordenar, separe despesas (Administrativas vs Gerais) e mantenha a DRE sempre alinhada.
+                Árvore hierárquica retrátil, auto-renumeração por arrasto, auditoria de lançamentos e separação categórica (Administrativas vs Gerais).
               </p>
             </div>
           </div>
@@ -544,33 +721,40 @@ export const ChartOfAccountsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Cards de Métricas e Indicadores Rápidos */}
+      {/* Cards de Métricas e Auditoria de Lançamentos (Opção 2) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Total de Contas</span>
           <div className="text-xl font-bold font-mono text-[var(--text-primary)] mt-1">{stats.total}</div>
-          <span className="text-[10px] text-slate-400">Cadastradas no sistema</span>
+          <span className="text-[10px] text-slate-400">{stats.analyticalCount} analíticas • {stats.syntheticCount} sintéticas</span>
         </div>
+
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 block">Contas Analíticas</span>
-          <div className="text-xl font-bold font-mono text-amber-500 mt-1">{stats.analytical}</div>
-          <span className="text-[10px] text-slate-400">Recebem lançamentos diretos</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block flex items-center justify-between">
+            <span>Em Uso Ativo</span>
+            <span className="font-mono">{stats.inUsePct}%</span>
+          </span>
+          <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">{stats.inUse}</div>
+          <span className="text-[10px] text-slate-400">Com títulos e movimentações</span>
         </div>
+
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500 block">Grupos Sintéticos</span>
-          <div className="text-xl font-bold font-mono text-blue-500 mt-1">{stats.synthetic}</div>
-          <span className="text-[10px] text-slate-400">Pastas de agrupamento</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 block">Contas Ociosas</span>
+          <div className="text-xl font-bold font-mono text-amber-500 mt-1">{stats.idle}</div>
+          <span className="text-[10px] text-slate-400">Zero lançamentos (Auditoria)</span>
         </div>
+
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 block">Alinhadas à DRE</span>
-          <div className="text-xl font-bold font-mono text-emerald-500 mt-1">{stats.mapped}</div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500 block">Mapeadas na DRE</span>
+          <div className="text-xl font-bold font-mono text-blue-500 mt-1">{stats.mapped}</div>
           <span className="text-[10px] text-slate-400">Com impacto em relatórios</span>
         </div>
       </div>
 
-      {/* Barra de Filtro e Abas Estratégicas DRE */}
+      {/* Barra de Filtro, Abas Estratégicas e Controles de Acordeão (Opções 1 e 2) */}
       <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-2xs space-y-3">
-        {/* Abas Rápidas por Seção */}
+        
+        {/* Linha Superior: Abas Estratégicas por Seção DRE */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
           <button
             type="button"
@@ -673,8 +857,10 @@ export const ChartOfAccountsView: React.FC = () => {
           </button>
         </div>
 
-        {/* Input de Busca */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)]">
+        {/* Linha Intermediária: Busca, Filtro de Auditoria e Controles de Acordeão */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)]">
+          
+          {/* Input de Busca */}
           <div className="relative flex-1 max-w-md w-full">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
@@ -685,16 +871,79 @@ export const ChartOfAccountsView: React.FC = () => {
               className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] focus:outline-hidden focus:border-amber-500"
             />
           </div>
-          <div className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
-            <span>Exibindo <strong>{filtered.length}</strong> de {accounts.length} contas</span>
-            <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-              💡 Dica: Arraste pela alça ou use o menu "Mover" para alinhar
-            </span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            
+            {/* Opção 2: Filtro de Auditoria de Lançamentos */}
+            <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
+              <span className="text-[10px] font-bold text-slate-500 px-1.5 flex items-center gap-1">
+                <Filter className="w-3 h-3 text-amber-500" />
+                Uso:
+              </span>
+              <button
+                type="button"
+                onClick={() => setUsageFilter('TODOS')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                  usageFilter === 'TODOS'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsageFilter('COM_LANCAMENTOS')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  usageFilter === 'COM_LANCAMENTOS'
+                    ? 'bg-emerald-600 text-white font-bold'
+                    : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-500'
+                }`}
+                title="Exibir apenas contas que possuem lançamentos vinculados"
+              >
+                <span>🔥 Em Uso ({stats.inUse})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsageFilter('OCIOSAS')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  usageFilter === 'OCIOSAS'
+                    ? 'bg-amber-600 text-white font-bold'
+                    : 'text-amber-600 dark:text-amber-400 hover:text-amber-500'
+                }`}
+                title="Exibir contas analíticas sem lançamentos (auditoria)"
+              >
+                <span>💤 Ociosas ({stats.idle})</span>
+              </button>
+            </div>
+
+            {/* Opção 1: Controles Globais de Acordeão */}
+            <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
+              <button
+                type="button"
+                onClick={expandAllGroups}
+                className="px-2 py-1 rounded-lg text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)] transition-colors flex items-center gap-1 cursor-pointer"
+                title="Expandir todas as pastas e subpastas"
+              >
+                <Maximize2 className="w-3 h-3 text-amber-500" />
+                <span>Expandir Tudo</span>
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllGroups}
+                className="px-2 py-1 rounded-lg text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)] transition-colors flex items-center gap-1 cursor-pointer"
+                title="Recolher todas as pastas sintéticas"
+              >
+                <Minimize2 className="w-3 h-3 text-slate-400" />
+                <span>Recolher Tudo</span>
+              </button>
+            </div>
+
           </div>
         </div>
       </div>
 
-      {/* Tabela Interativa de Contas com Drag & Drop */}
+      {/* Tabela Interativa de Contas com Acordeão, Drag & Drop e Auditoria */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -705,6 +954,7 @@ export const ChartOfAccountsView: React.FC = () => {
                 <th className="py-3 px-4">Descrição da Conta</th>
                 <th className="py-3 px-3">Tipo</th>
                 <th className="py-3 px-4">Linha Estratégica DRE</th>
+                <th className="py-3 px-4">Auditoria & Uso</th>
                 <th className="py-3 px-3">Mover de Grupo</th>
                 <th className="py-3 px-3 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações Rápidas</th>
@@ -716,8 +966,16 @@ export const ChartOfAccountsView: React.FC = () => {
                 const level = acc.code.split('.').length;
                 const isDragging = draggedAccountId === acc.id;
                 const isOver = dragOverAccountId === acc.id;
+                const isCollapsed = collapsedGroupIds.has(acc.id);
 
                 const groupDef = findStrategicGroupByAccount(acc);
+                const usage = accountUsageIndex.get(acc.id);
+                const syntheticUsageSum = isSynthetic ? (syntheticGroupUsageTotals.get(acc.id) || 0) : 0;
+
+                // Contar filhas diretas do grupo sintético
+                const directChildrenCount = isSynthetic 
+                  ? accounts.filter(child => child.parentId === acc.id || (child.code.startsWith(acc.code + '.') && child.code.split('.').length === level + 1)).length
+                  : 0;
 
                 return (
                   <tr 
@@ -730,7 +988,7 @@ export const ChartOfAccountsView: React.FC = () => {
                     onDragEnd={handleDragEnd}
                     className={`transition-colors select-none ${
                       isSynthetic 
-                        ? 'bg-[var(--surface-elevated)]/70 font-bold text-[var(--text-primary)]' 
+                        ? 'bg-[var(--surface-elevated)]/80 font-bold text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]' 
                         : 'hover:bg-[var(--surface-elevated)] text-[var(--text-primary)]'
                     } ${isDragging ? 'opacity-30 bg-amber-500/15' : ''} ${
                       isOver 
@@ -740,7 +998,7 @@ export const ChartOfAccountsView: React.FC = () => {
                         : ''
                     }`}
                   >
-                    {/* Alça de Arraste e Setas de Movimento */}
+                    {/* Alça de Arraste OU Toggle do Acordeão (Opção 1) */}
                     <td className="py-2 px-2 text-center">
                       {!isSynthetic ? (
                         <div className="flex items-center justify-center gap-0.5">
@@ -768,9 +1026,18 @@ export const ChartOfAccountsView: React.FC = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex justify-center">
-                          <Folder className="w-3.5 h-3.5 text-amber-500" />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(acc.id)}
+                          className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer mx-auto"
+                          title={isCollapsed ? 'Expandir este grupo de contas' : 'Recolher este grupo de contas'}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-4 h-4 text-amber-500" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-amber-500" />
+                          )}
+                        </button>
                       )}
                     </td>
 
@@ -778,20 +1045,44 @@ export const ChartOfAccountsView: React.FC = () => {
                     <td className="py-2.5 px-4 font-mono text-[var(--text-primary)] font-bold whitespace-nowrap">
                       <span className={`px-2 py-0.5 rounded-md ${
                         isSynthetic 
-                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-extrabold' 
+                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-extrabold shadow-2xs' 
                           : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                       }`}>
                         {acc.code}
                       </span>
                     </td>
 
-                    {/* Descrição com Indentação */}
+                    {/* Descrição com Indentação e Ícone de Pasta (Opção 1) */}
                     <td className="py-2.5 px-4" style={{ paddingLeft: `${Math.max(16, level * 18)}px` }}>
-                      <div className="flex items-center gap-1.5">
-                        {level > 1 && <span className="text-slate-400 font-mono text-[10px]">└</span>}
-                        <span className={isSynthetic ? 'font-bold uppercase tracking-wide' : 'font-medium'}>
-                          {acc.name}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        {isSynthetic ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(acc.id)}
+                            className="flex items-center gap-1.5 cursor-pointer hover:text-amber-500 transition-colors text-left"
+                          >
+                            {isCollapsed ? (
+                              <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                            ) : (
+                              <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
+                            )}
+                            <span className="font-bold uppercase tracking-wide">
+                              {acc.name}
+                            </span>
+                            {directChildrenCount > 0 && (
+                              <span className="text-[10px] font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded-full font-normal">
+                                {directChildrenCount} {directChildrenCount === 1 ? 'filha' : 'filhas'}
+                              </span>
+                            )}
+                          </button>
+                        ) : (
+                          <>
+                            {level > 1 && <span className="text-slate-400 font-mono text-[10px]">└</span>}
+                            <span className="font-medium">
+                              {acc.name}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </td>
 
@@ -825,6 +1116,35 @@ export const ChartOfAccountsView: React.FC = () => {
                       ) : (
                         <span className="text-[11px] text-slate-400 font-mono">
                           {acc.dreLineMapping || acc.dremap?.line || 'Geral'}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Opção 2: Auditoria de Lançamentos & Uso */}
+                    <td className="py-2.5 px-4 whitespace-nowrap">
+                      {isSynthetic ? (
+                        syntheticUsageSum > 0 ? (
+                          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 flex items-center gap-1 w-fit">
+                            <Activity className="w-3 h-3 text-blue-500" />
+                            <span>{syntheticUsageSum} no grupo</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Grupo sem registros</span>
+                        )
+                      ) : usage && usage.total > 0 ? (
+                        <div className="flex items-center gap-1.5" title={`${usage.titles} títulos, ${usage.movements} movimentações${usage.lastDate ? ` • Último uso: ${usage.lastDate}` : ''}`}>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            <span>{usage.total} {usage.total === 1 ? 'lançamento' : 'lançamentos'}</span>
+                          </span>
+                          {usage.titles > 0 && (
+                            <span className="text-[9px] font-mono text-slate-400">({usage.titles} T)</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1 w-fit" title="Nenhum título ou movimentação vinculado a esta conta">
+                          <Clock className="w-3 h-3 text-amber-500" />
+                          <span>Ociosa (0)</span>
                         </span>
                       )}
                     </td>
