@@ -1075,7 +1075,15 @@ class StorageService {
 
   // Chart of accounts
   public getChartAccounts(): ChartAccount[] {
-    return this.get(STORAGE_KEYS.CHART_ACCOUNTS, INITIAL_CHART_ACCOUNTS);
+    const list = this.get<ChartAccount[]>(STORAGE_KEYS.CHART_ACCOUNTS, INITIAL_CHART_ACCOUNTS);
+    if (!Array.isArray(list) || list.length === 0) return INITIAL_CHART_ACCOUNTS;
+    if (!list.some(a => a.id === 'grp-3.4' || (a.code === '3.4' && !a.isAnalytical))) {
+      const grp34 = INITIAL_CHART_ACCOUNTS.find(a => a.id === 'grp-3.4');
+      if (grp34) {
+        list.push(grp34);
+      }
+    }
+    return list;
   }
   public saveChartAccounts(accounts: ChartAccount[]) {
     this.set(STORAGE_KEYS.CHART_ACCOUNTS, accounts);

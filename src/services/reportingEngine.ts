@@ -351,11 +351,25 @@ export class ReportingEngine {
     const commCashValues = sumArrays(commLines.map(l => l.cashValuesByMonth || []));
     const commCashTotal = commLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
 
-    // Total Despesas Operacionais
-    const opExpCompValues = sumArrays([personalCompValues, adminCompValues, commCompValues]);
-    const opExpCompTotal = Math.round((personalCompTotal + adminCompTotal + commCompTotal) * 100) / 100;
-    const opExpCashValues = sumArrays([personalCashValues, adminCashValues, commCashValues]);
-    const opExpCashTotal = Math.round((personalCashTotal + adminCashTotal + commCashTotal) * 100) / 100;
+    // 4.4 Despesas Gerais Operacionais (grp-3.4 / DESPESA_OPERACIONAL / DESPESAS_GERAIS / 3.4)
+    const generalAccs = accounts.filter(a => 
+      (a.parentId === 'grp-3.4' || a.nature === 'DESPESA_OPERACIONAL' || (a.code && a.code.startsWith('3.4')) || a.dremap?.line === 'DESPESAS_GERAIS') && 
+      a.isAnalytical
+    );
+    const generalLines: DRELineItem[] = generalAccs.map(acc => {
+      const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
+      return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.4', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
+    });
+    const generalCompValues = sumArrays(generalLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
+    const generalCompTotal = generalLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const generalCashValues = sumArrays(generalLines.map(l => l.cashValuesByMonth || []));
+    const generalCashTotal = generalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+
+    // Total Despesas Operacionais (Pessoal + Administrativas + Comerciais + Gerais)
+    const opExpCompValues = sumArrays([personalCompValues, adminCompValues, commCompValues, generalCompValues]);
+    const opExpCompTotal = Math.round((personalCompTotal + adminCompTotal + commCompTotal + generalCompTotal) * 100) / 100;
+    const opExpCashValues = sumArrays([personalCashValues, adminCashValues, commCashValues, generalCashValues]);
+    const opExpCashTotal = Math.round((personalCashTotal + adminCashTotal + commCashTotal + generalCashTotal) * 100) / 100;
 
     // (=) Resultado Operacional (EBITDA/LAJIR)
     const opResultCompValues = subtractArrays(grossProfitCompValues, opExpCompValues);
@@ -520,7 +534,7 @@ export class ReportingEngine {
         opExpCompTotal,
         opExpCashValues,
         opExpCashTotal,
-        [...personalLines, ...adminLines, ...commLines].flatMap(l => l.matchedTitleIds || []),
+        [...personalLines, ...adminLines, ...commLines, ...generalLines].flatMap(l => l.matchedTitleIds || []),
         true
       ),
       createDRELine(
@@ -570,6 +584,24 @@ export class ReportingEngine {
         true
       ),
       ...commLines,
+
+      ...(generalLines.length > 0 ? [
+        createDRELine(
+          'h-4.4',
+          'Despesas Gerais Operacionais',
+          undefined,
+          1,
+          'h-4',
+          'h-4',
+          generalCompValues,
+          generalCompTotal,
+          generalCashValues,
+          generalCashTotal,
+          generalLines.flatMap(l => l.matchedTitleIds || []),
+          true
+        ),
+        ...generalLines
+      ] : []),
 
       // Summary Resultado Operacional
       createDRELine(

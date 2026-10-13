@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { X, FolderPlus, PlusCircle, Check, AlertCircle } from 'lucide-react';
 import { ChartAccount, OperationNature, CashFlowCategory } from '../../types';
 import { storage } from '../../services/storageService';
+import { calculateNextChildCode } from '../../services/chartOfAccountsEngine';
+import { formatAccountDescription } from '../Config/ChartOfAccountsView';
 
 interface QuickCreateAccountModalProps {
   isOpen: boolean;
@@ -56,20 +58,9 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
       if (parent.dremap?.line) setDreLine(parent.dremap.line);
       if (parent.cashFlowCategory) setCashFlowCategory(parent.cashFlowCategory);
 
-      // Encontrar filhos para sugerir próximo código
-      const prefix = parent.code;
-      const siblings = allAccounts.filter(a => a.parentId === parentId || a.code.startsWith(prefix + '.'));
-      
-      let nextSuffix = 1;
-      siblings.forEach(s => {
-        const parts = s.code.replace(prefix + '.', '').split('.');
-        const num = parseInt(parts[0], 10);
-        if (!isNaN(num) && num >= nextSuffix) {
-          nextSuffix = num + 1;
-        }
-      });
-      const formattedSuffix = nextSuffix < 10 ? `0${nextSuffix}` : `${nextSuffix}`;
-      setAccountCode(`${prefix}.${formattedSuffix}`);
+      // Calcular próximo código com precisão hierárquica
+      const nextCode = calculateNextChildCode(parent.code, allAccounts);
+      setAccountCode(nextCode);
     }
   };
 
@@ -104,10 +95,11 @@ export const QuickCreateAccountModal: React.FC<QuickCreateAccountModalProps> = (
 
     const isSub = mode === 'SUBCATEGORIA';
     const newId = `acc-${Date.now()}`;
+    const formattedName = formatAccountDescription(accountName.trim());
     const newAccount: ChartAccount = {
       id: newId,
       code: accountCode.trim(),
-      name: accountName.trim(),
+      name: formattedName,
       parentId: isSub ? (parentAccountId || null) : null,
       nature,
       dremap: {
