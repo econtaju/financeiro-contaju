@@ -1,4 +1,5 @@
 import { ChartAccount, OperationNature, CashFlowCategory } from '../types';
+import { storage } from './storageService';
 
 export interface StrategicGroupDefinition {
   id: string;
@@ -547,3 +548,267 @@ export function renumberAllChartAccounts(accounts: ChartAccount[]): {
     renumberedCount: changed
   };
 }
+
+export interface MergeAccountsSummary {
+  migratedTitles: number;
+  migratedMovements: number;
+  migratedServices: number;
+  migratedContracts: number;
+  migratedRules: number;
+  totalMigrated: number;
+}
+
+/**
+ * Executa a unificação / fusão em lote de duas contas contábeis analíticas.
+ * Transfere todo o histórico de títulos, movimentações, serviços, contratos e regras
+ * da conta de origem para a conta de destino, e inativa a conta de origem.
+ */
+export function executeMergeAccounts(
+  sourceAccountId: string,
+  targetAccountId: string,
+  inactivateSource: boolean = true
+): {
+  success: boolean;
+  summary: MergeAccountsSummary;
+  sourceAccountName?: string;
+  targetAccountName?: string;
+  errorMessage?: string;
+} {
+  if (!sourceAccountId || !targetAccountId || sourceAccountId === targetAccountId) {
+    return {
+      success: false,
+      summary: { migratedTitles: 0, migratedMovements: 0, migratedServices: 0, migratedContracts: 0, migratedRules: 0, totalMigrated: 0 },
+      errorMessage: 'Selecione duas contas distintas para realizar a fusão.'
+    };
+  }
+
+  const allAccounts = storage.getChartAccounts();
+  const sourceAcc = allAccounts.find(a => a.id === sourceAccountId);
+  const targetAcc = allAccounts.find(a => a.id === targetAccountId);
+
+  if (!sourceAcc || !targetAcc) {
+    return {
+      success: false,
+      summary: { migratedTitles: 0, migratedMovements: 0, migratedServices: 0, migratedContracts: 0, migratedRules: 0, totalMigrated: 0 },
+      errorMessage: 'Contas de origem ou destino não foram encontradas.'
+    };
+  }
+
+  // 1. Migrar Títulos Financeiros (Pagar e Receber)
+  const titles = storage.getTitles();
+  let migratedTitles = 0;
+  const updatedTitles = titles.map(t => {
+    if (t.accountId === sourceAccountId) {
+      migratedTitles++;
+      return { ...t, accountId: targetAccountId };
+    }
+    return t;
+  });
+  if (migratedTitles > 0) {
+    storage.saveTitles(updatedTitles);
+  }
+
+  // 2. Migrar Movimentações Financeiras / Extrato Bancário
+  const movements = storage.getMovements();
+  let migratedMovements = 0;
+  const updatedMovements = movements.map(m => {
+    if (m.accountId === sourceAccountId) {
+      migratedMovements++;
+      return { ...m, accountId: targetAccountId };
+    }
+    return m;
+  });
+  if (migratedMovements > 0) {
+    storage.saveMovements(updatedMovements);
+  }
+
+  // 3. Migrar Catálogo de Serviços
+  const services = storage.getServices();
+  let migratedServices = 0;
+  const updatedServices = services.map(s => {
+    let changed = false;
+    const newS = { ...s };
+    if (s.chartAccountId === sourceAccountId) {
+      newS.chartAccountId = targetAccountId;
+      changed = true;
+    }
+    if ((s as any).defaultAccountId === sourceAccountId) {
+      (newS as any).defaultAccountId = targetAccountId;
+      changed = true;
+    }
+    if (changed) migratedServices++;
+    return newS;
+  });
+  if (migratedServices > 0) {
+    storage.saveServices(updatedServices);
+  }
+
+  // 4. Migrar Itens de Contratos Ativos
+  const contracts = storage.getContracts();
+  let migratedContracts = 0;
+  const updatedContracts = contracts.map(c => {
+    if (!c.items || !Array.isArray(c.items)) return c;
+    let changed = false;
+    const newItems = c.items.map(it => {
+      if (it.accountId === sourceAccountId) {
+        changed = true;
+        return { ...it, accountId: targetAccountId };
+      }
+      return it;
+    });
+    if (changed) {
+      migratedContracts++;
+      return { ...c, items: newItems };
+    }
+    return c;
+  });
+  if (migratedContracts > 0) {
+    storage.saveContracts(updatedContracts);
+  }
+
+  // 5. Migrar Regras de Conciliação Automática
+  let migratedRules = 0;
+  if (storage.getReconciliationRules) {
+    const rules = storage.getReconciliationRules();
+    const updatedRules = rules.map(r => {
+      if (r.chartAccountId === sourceAccountId) {
+        migratedRules++;
+        return { ...r, chartAccountId: targetAccountId };
+      }
+      return r;
+    });
+    if (migratedRules > 0) {
+      storage.saveReconciliationRules(updatedRules);
+    }
+  }
+
+  // 6. Atualizar a Conta de Origem no Plano de Contas
+  const updatedAccounts = allAccounts.map(a => {
+    if (a.id === sourceAccountId) {
+      return {
+        ...a,
+        isActive: !inactivateSource ? a.isActive : false,
+        status: !inactivateSource ? a.status : ('INATIVO' as const),
+        name: inactivateSource && !a.name.includes('(Fundida em')
+          ? `${a.name} (Fundida em ${targetAcc.code})`
+          : a.name
+      };
+    }
+    return a;
+  });
+  storage.saveChartAccounts(updatedAccounts);
+
+  // 7. Registro no Log de Auditoria
+  const currentUser = storage.getCurrentUser();
+  const totalMigrated = migratedTitles + migratedMovements + migratedServices + migratedContracts + migratedRules;
+  storage.addAuditLog({
+    userName: currentUser.name,
+    userRole: currentUser.role,
+    action: 'FUSAO_CONTAS_CONTABEIS',
+    module: 'Plano de Contas',
+    recordId: `${sourceAccountId}->${targetAccountId}`,
+    details: `Fusão da conta [${sourceAcc.code} - ${sourceAcc.name}] na conta [${targetAcc.code} - ${targetAcc.name}]. ` +
+      `Histórico transferido: ${migratedTitles} títulos, ${migratedMovements} movimentações bancárias, ${migratedContracts} contratos, ${migratedServices} serviços, ${migratedRules} regras de conciliação.`
+  });
+
+  return {
+    success: true,
+    summary: {
+      migratedTitles,
+      migratedMovements,
+      migratedServices,
+      migratedContracts,
+      migratedRules,
+      totalMigrated
+    },
+    sourceAccountName: sourceAcc.name,
+    targetAccountName: targetAcc.name
+  };
+}
+
+/**
+ * Verifica se uma conta contábil pode ser excluída permanentemente.
+ * Bloqueia se possuir lançamentos vinculados ou se for pasta sintética com filhas (Trava de Segurança Contábil).
+ */
+export function checkAccountDeletionSafety(
+  account: ChartAccount,
+  allAccounts: ChartAccount[],
+  usageTotal: number
+): {
+  canDelete: boolean;
+  reason?: string;
+  isBlockedByUsage: boolean;
+  isBlockedByChildren: boolean;
+} {
+  const isSynthetic = account.isSynthetic || !account.isAnalytical;
+
+  // 1. Se for sintética e possuir filhas diretas ou descendentes
+  if (isSynthetic) {
+    const hasChildren = allAccounts.some(a => 
+      a.id !== account.id && 
+      (a.parentId === account.id || a.code.startsWith(`${account.code}.`))
+    );
+    if (hasChildren) {
+      return {
+        canDelete: false,
+        reason: `A pasta "${account.code} - ${account.name}" possui subcontas vinculadas. Mova ou exclua as subcontas primeiro.`,
+        isBlockedByUsage: false,
+        isBlockedByChildren: true
+      };
+    }
+  }
+
+  // 2. Se possuir lançamentos vinculados (Trava de Segurança Contábil - Opção 2)
+  if (usageTotal > 0) {
+    return {
+      canDelete: false,
+      reason: `A conta "${account.code} - ${account.name}" possui ${usageTotal} lançamento(s) financeiro(s) ativo(s). A exclusão permanente é estritamente bloqueada para manter a integridade fiscal da DRE e do Contas a Pagar/Receber. Inative ou funda esta conta para arquivá-la com segurança.`,
+      isBlockedByUsage: true,
+      isBlockedByChildren: false
+    };
+  }
+
+  return {
+    canDelete: true,
+    isBlockedByUsage: false,
+    isBlockedByChildren: false
+  };
+}
+
+/**
+ * Exclui uma conta contábil ociosa e renumera o restante do grupo sequencialmente.
+ */
+export function executeDeleteAccount(
+  accounts: ChartAccount[],
+  accountId: string
+): ChartAccount[] {
+  const accountToDelete = accounts.find(a => a.id === accountId);
+  if (!accountToDelete) return accounts;
+
+  const remaining = accounts.filter(a => a.id !== accountId);
+  const group = findStrategicGroupByAccount(accountToDelete);
+  const prefix = group ? group.prefix : accountToDelete.code.substring(0, accountToDelete.code.lastIndexOf('.'));
+
+  return renumberDirectChildren(remaining, prefix, accountToDelete.parentId);
+}
+
+/**
+ * Alterna o status ativo/inativo de uma conta contábil.
+ */
+export function toggleAccountStatus(
+  accounts: ChartAccount[],
+  accountId: string
+): ChartAccount[] {
+  return accounts.map(a => {
+    if (a.id === accountId) {
+      const willBeActive = a.status === 'INATIVO' || a.isActive === false;
+      return {
+        ...a,
+        isActive: willBeActive,
+        status: willBeActive ? 'ATIVO' : 'INATIVO'
+      };
+    }
+    return a;
+  });
+}
+

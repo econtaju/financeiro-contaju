@@ -4,7 +4,7 @@ import {
   CheckCircle2, Copy, Sparkles, GripVertical, ChevronUp, ChevronDown, 
   ChevronRight, FolderInput, Folder, FolderOpen, ArrowUpDown, Wand2, 
   Check, X, AlertTriangle, HelpCircle, Activity, Clock, Filter, 
-  Maximize2, Minimize2 
+  Maximize2, Minimize2, GitMerge, Trash2, Eye, EyeOff, ShieldAlert, ShieldCheck 
 } from 'lucide-react';
 import { ChartOfAccount, OperationNature, CashFlowCategory } from '../../types';
 import { storage } from '../../services/storageService';
@@ -17,7 +17,12 @@ import {
   moveAccountOneStep, 
   renumberAllChartAccounts,
   findStrategicGroupByAccount,
-  StrategicGroupDefinition 
+  executeMergeAccounts,
+  checkAccountDeletionSafety,
+  executeDeleteAccount,
+  toggleAccountStatus,
+  StrategicGroupDefinition,
+  MergeAccountsSummary 
 } from '../../services/chartOfAccountsEngine';
 
 /**
@@ -109,12 +114,31 @@ export const ChartOfAccountsView: React.FC = () => {
   // Opção 1: Acordeão Retrátil (Grupos Sintéticos Recolhidos)
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
 
+  // Modais de Criação, Edição, Renumeração, Fusão e Trava de Exclusão
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRenumberModalOpen, setIsRenumberModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null);
   const [creationContext, setCreationContext] = useState<ModalCreationContext>({ mode: 'NEW' });
   const [toastFeedback, setToastFeedback] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados de Fusão de Contas (Opção 1)
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [mergeSourceAccount, setMergeSourceAccount] = useState<ChartOfAccount | null>(null);
+  const [mergeTargetAccountId, setMergeTargetAccountId] = useState<string>('');
+  const [mergeInactivateSource, setMergeInactivateSource] = useState<boolean>(true);
+  const [isExecutingMerge, setIsExecutingMerge] = useState<boolean>(false);
+
+  // Estados de Trava de Segurança e Exclusão (Opção 2)
+  const [safetyModalData, setSafetyModalData] = useState<{
+    isOpen: boolean;
+    account: ChartOfAccount | null;
+    checkResult: ReturnType<typeof checkAccountDeletionSafety> | null;
+  }>({
+    isOpen: false,
+    account: null,
+    checkResult: null
+  });
 
   // Estados de Arrastar e Soltar (Drag and Drop)
   const [draggedAccountId, setDraggedAccountId] = useState<string | null>(null);
@@ -133,7 +157,7 @@ export const ChartOfAccountsView: React.FC = () => {
     return [...raw].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   }, [refreshTrigger]);
 
-  // Opção 2: Auditoria de Lançamentos e Uso de Contas
+  // Auditoria de Lançamentos e Uso de Contas
   const accountUsageIndex = useMemo(() => {
     const titles = storage.getTitles();
     const movements = storage.getMovements();
@@ -180,7 +204,6 @@ export const ChartOfAccountsView: React.FC = () => {
 
     accounts.forEach(acc => {
       if (acc.isSynthetic || !acc.isAnalytical) {
-        // Encontrar todas as filhas deste grupo pelo prefixo
         const prefixDot = `${acc.code}.`;
         let sum = 0;
         accounts.forEach(child => {
@@ -235,12 +258,17 @@ export const ChartOfAccountsView: React.FC = () => {
     };
   }, [accounts, accountUsageIndex]);
 
-  // Exibir toast temporário
+  // Contas analíticas disponíveis para destino de fusão
+  const availableMergeTargets = useMemo(() => {
+    if (!mergeSourceAccount) return [];
+    return accounts.filter(a => a.isAnalytical && a.id !== mergeSourceAccount.id && a.isActive);
+  }, [accounts, mergeSourceAccount]);
+
   const showToast = (message: string) => {
     setToastFeedback(message);
     setTimeout(() => {
       setToastFeedback(prev => prev === message ? null : prev);
-    }, 4000);
+    }, 4500);
   };
 
   // Alternar recolhimento de um grupo (Opção 1)
@@ -271,13 +299,9 @@ export const ChartOfAccountsView: React.FC = () => {
 
   // Verifica se uma conta deve ser visível de acordo com o estado do acordeão
   const isAccountVisibleInAccordion = (acc: ChartOfAccount): boolean => {
-    // Se estiver buscando por texto, expande tudo automaticamente
     if (searchTerm.trim().length > 0) return true;
-
-    // Se for conta raiz de 1º nível, sempre visível
     if (!acc.parentId || !acc.code.includes('.')) return true;
 
-    // Verificar se algum ancestral direto ou indireto está recolhido
     let currentParentId: string | null | undefined = acc.parentId;
     while (currentParentId) {
       if (collapsedGroupIds.has(currentParentId)) {
@@ -293,13 +317,11 @@ export const ChartOfAccountsView: React.FC = () => {
   // Filtragem combinada (Raiz, Busca, Auditoria de Uso e Acordeão)
   const filtered = useMemo(() => {
     return accounts.filter(a => {
-      // 1. Filtro de raiz estratégica (Tabs 1..8)
       if (selectedRootFilter !== 'TODOS') {
         const rootDigit = a.code.charAt(0);
         if (rootDigit !== selectedRootFilter) return false;
       }
 
-      // 2. Filtro de Auditoria de Uso (Opção 2)
       if (usageFilter !== 'TODOS' && a.isAnalytical) {
         const usage = accountUsageIndex.get(a.id);
         const hasUsage = usage && usage.total > 0;
@@ -307,12 +329,10 @@ export const ChartOfAccountsView: React.FC = () => {
         if (usageFilter === 'OCIOSAS' && hasUsage) return false;
       }
 
-      // 3. Busca textual
       if (!matchesSearch([a.code, a.name, a.nature, a.dreLineMapping], searchTerm)) {
         return false;
       }
 
-      // 4. Verificação de visibilidade no acordeão (Opção 1)
       if (!isAccountVisibleInAccordion(a)) {
         return false;
       }
@@ -321,7 +341,6 @@ export const ChartOfAccountsView: React.FC = () => {
     });
   }, [accounts, selectedRootFilter, usageFilter, searchTerm, collapsedGroupIds, accountUsageIndex]);
 
-  // Ao trocar o grupo estratégico pai no Modal, recalcular código e vínculos imediatamente
   const handleParentGroupSelect = (parentGroupId: string) => {
     const groupDef = STRATEGIC_DRE_GROUPS.find(g => g.id === parentGroupId);
     if (!groupDef) {
@@ -372,7 +391,6 @@ export const ChartOfAccountsView: React.FC = () => {
     const nextCode = calculateNextChildCode(prefix, accounts);
     const parentGroup = findStrategicGroupByAccount(parent);
 
-    // Se o grupo estava recolhido, expandir para mostrar o novo filho
     if (collapsedGroupIds.has(parent.id)) {
       setCollapsedGroupIds(prev => {
         const next = new Set(prev);
@@ -531,14 +549,12 @@ export const ChartOfAccountsView: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // Mover Rápido para Outro Grupo DRE diretamente pela linha
   const handleQuickMoveGroup = (account: ChartOfAccount, targetGroupId: string) => {
     if (!targetGroupId || account.parentId === targetGroupId) return;
 
     const { updatedAccounts, newAccountCode } = moveAccountToStrategicGroup(accounts, account.id, targetGroupId);
     storage.saveChartAccounts(updatedAccounts);
 
-    // Expandir o grupo de destino para exibir a conta inserida
     setCollapsedGroupIds(prev => {
       const next = new Set(prev);
       next.delete(targetGroupId);
@@ -559,7 +575,6 @@ export const ChartOfAccountsView: React.FC = () => {
     showToast(`Conta "${account.name}" movida para ${targetGroup?.name || 'novo grupo'}. Novo código: ${newAccountCode}`);
   };
 
-  // Mover 1 passo acima ou abaixo
   const handleStepMove = (account: ChartOfAccount, direction: 'UP' | 'DOWN') => {
     const updated = moveAccountOneStep(accounts, account.id, direction);
     storage.saveChartAccounts(updated);
@@ -606,7 +621,6 @@ export const ChartOfAccountsView: React.FC = () => {
     const sourceAccount = accounts.find(a => a.id === sourceId);
     if (!sourceAccount) return;
 
-    // Se soltou em cima de um grupo sintético, garantir que o grupo fique expandido
     if (targetAccount.isSynthetic) {
       setCollapsedGroupIds(prev => {
         const next = new Set(prev);
@@ -661,6 +675,101 @@ export const ChartOfAccountsView: React.FC = () => {
     showToast(`⚡ Sucesso! ${renumberedCount} contas foram realinhadas e renumeradas sequencialmente de acordo com a DRE.`);
   };
 
+  // ==========================================
+  // OPÇÃO 1: FUSÃO / UNIFICAÇÃO DE CONTAS
+  // ==========================================
+  const handleOpenMergeModal = (sourceAcc: ChartOfAccount) => {
+    setMergeSourceAccount(sourceAcc);
+    setMergeTargetAccountId('');
+    setMergeInactivateSource(true);
+    setIsMergeModalOpen(true);
+  };
+
+  const handleConfirmMerge = () => {
+    if (!mergeSourceAccount || !mergeTargetAccountId) {
+      alert('Por favor, selecione uma conta de destino válida para a fusão.');
+      return;
+    }
+
+    setIsExecutingMerge(true);
+    try {
+      const res = executeMergeAccounts(mergeSourceAccount.id, mergeTargetAccountId, mergeInactivateSource);
+      if (res.success) {
+        showToast(
+          `✓ Fusão concluída! ${res.summary.totalMigrated} registros migrados com sucesso para ${res.targetAccountName}.`
+        );
+        setIsMergeModalOpen(false);
+        setMergeSourceAccount(null);
+        setMergeTargetAccountId('');
+      } else {
+        alert(`Erro na fusão: ${res.errorMessage || 'Falha ao processar migração'}`);
+      }
+    } finally {
+      setIsExecutingMerge(false);
+    }
+  };
+
+  // ==========================================
+  // OPÇÃO 2: TRAVA DE SEGURANÇA CONTRA EXCLUSÃO
+  // ==========================================
+  const handleAttemptDeleteAccount = (account: ChartOfAccount) => {
+    const usage = accountUsageIndex.get(account.id);
+    const usageTotal = usage ? usage.total : 0;
+    const safetyResult = checkAccountDeletionSafety(account, accounts, usageTotal);
+
+    setSafetyModalData({
+      isOpen: true,
+      account,
+      checkResult: safetyResult
+    });
+  };
+
+  const handleConfirmDeleteIdleAccount = () => {
+    if (!safetyModalData.account) return;
+    const accountToDelete = safetyModalData.account;
+
+    const updated = executeDeleteAccount(accounts, accountToDelete.id);
+    storage.saveChartAccounts(updated);
+
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_CONTA_OCIOSA',
+      module: 'Plano de Contas',
+      recordId: accountToDelete.id,
+      details: `Conta ociosa ${accountToDelete.code} - ${accountToDelete.name} excluída permanentemente. Grupo renumerado sequencialmente.`
+    });
+
+    setSafetyModalData({ isOpen: false, account: null, checkResult: null });
+    showToast(`Conta ociosa "${accountToDelete.code} - ${accountToDelete.name}" excluída e grupo renumerado com sucesso.`);
+  };
+
+  const handleInactivateBlockedAccount = (account: ChartOfAccount) => {
+    const updated = toggleAccountStatus(accounts, account.id);
+    storage.saveChartAccounts(updated);
+
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'INATIVACAO_CONTA_CONTABIL',
+      module: 'Plano de Contas',
+      recordId: account.id,
+      details: `Conta ${account.code} - ${account.name} inativada para novos lançamentos com preservação do histórico fiscal.`
+    });
+
+    setSafetyModalData({ isOpen: false, account: null, checkResult: null });
+    showToast(`Conta "${account.code} - ${account.name}" inativada para novos lançamentos com histórico 100% preservado.`);
+  };
+
+  const handleToggleStatus = (account: ChartOfAccount) => {
+    const updated = toggleAccountStatus(accounts, account.id);
+    storage.saveChartAccounts(updated);
+    const target = updated.find(a => a.id === account.id);
+    showToast(`Status da conta "${account.name}" alterado para ${target?.status || (target?.isActive ? 'ATIVO' : 'INATIVO')}.`);
+  };
+
   return (
     <div className="space-y-6">
       
@@ -672,7 +781,7 @@ export const ChartOfAccountsView: React.FC = () => {
           <button 
             type="button" 
             onClick={() => setToastFeedback(null)}
-            className="text-slate-400 hover:text-white ml-2 text-xs"
+            className="text-slate-400 hover:text-white ml-2 text-xs cursor-pointer"
           >
             ✕
           </button>
@@ -691,7 +800,7 @@ export const ChartOfAccountsView: React.FC = () => {
                 Plano de Contas Gerencial & Mapeamento DRE
               </h1>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                Árvore hierárquica retrátil, auto-renumeração por arrasto, auditoria de lançamentos e separação categórica (Administrativas vs Gerais).
+                Árvore retrátil, auto-renumeração por arrasto, trava de exclusão de lançamentos e fusão de contas em lote.
               </p>
             </div>
           </div>
@@ -721,7 +830,7 @@ export const ChartOfAccountsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Cards de Métricas e Auditoria de Lançamentos (Opção 2) */}
+      {/* Cards de Métricas e Auditoria de Lançamentos */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Total de Contas</span>
@@ -741,7 +850,7 @@ export const ChartOfAccountsView: React.FC = () => {
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 block">Contas Ociosas</span>
           <div className="text-xl font-bold font-mono text-amber-500 mt-1">{stats.idle}</div>
-          <span className="text-[10px] text-slate-400">Zero lançamentos (Auditoria)</span>
+          <span className="text-[10px] text-slate-400">Zero lançamentos (Prontas p/ auditoria)</span>
         </div>
 
         <div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xs">
@@ -751,7 +860,7 @@ export const ChartOfAccountsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Barra de Filtro, Abas Estratégicas e Controles de Acordeão (Opções 1 e 2) */}
+      {/* Barra de Filtro, Abas Estratégicas e Controles */}
       <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-2xs space-y-3">
         
         {/* Linha Superior: Abas Estratégicas por Seção DRE */}
@@ -857,7 +966,7 @@ export const ChartOfAccountsView: React.FC = () => {
           </button>
         </div>
 
-        {/* Linha Intermediária: Busca, Filtro de Auditoria e Controles de Acordeão */}
+        {/* Linha Intermediária: Busca, Filtro de Auditoria e Controles */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)]">
           
           {/* Input de Busca */}
@@ -874,7 +983,7 @@ export const ChartOfAccountsView: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             
-            {/* Opção 2: Filtro de Auditoria de Lançamentos */}
+            {/* Filtro de Auditoria de Lançamentos */}
             <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
               <span className="text-[10px] font-bold text-slate-500 px-1.5 flex items-center gap-1">
                 <Filter className="w-3 h-3 text-amber-500" />
@@ -917,7 +1026,7 @@ export const ChartOfAccountsView: React.FC = () => {
               </button>
             </div>
 
-            {/* Opção 1: Controles Globais de Acordeão */}
+            {/* Controles Globais de Acordeão */}
             <div className="flex items-center gap-1 bg-[var(--surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] text-xs">
               <button
                 type="button"
@@ -943,7 +1052,7 @@ export const ChartOfAccountsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabela Interativa de Contas com Acordeão, Drag & Drop e Auditoria */}
+      {/* Tabela Interativa de Contas com Acordeão, Drag & Drop, Auditoria e Fusão */}
       <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -972,7 +1081,6 @@ export const ChartOfAccountsView: React.FC = () => {
                 const usage = accountUsageIndex.get(acc.id);
                 const syntheticUsageSum = isSynthetic ? (syntheticGroupUsageTotals.get(acc.id) || 0) : 0;
 
-                // Contar filhas diretas do grupo sintético
                 const directChildrenCount = isSynthetic 
                   ? accounts.filter(child => child.parentId === acc.id || (child.code.startsWith(acc.code + '.') && child.code.split('.').length === level + 1)).length
                   : 0;
@@ -996,9 +1104,9 @@ export const ChartOfAccountsView: React.FC = () => {
                           ? 'border-t-2 border-amber-500 bg-amber-500/10' 
                           : 'border-b-2 border-amber-500 bg-amber-500/10' 
                         : ''
-                    }`}
+                    } ${acc.status === 'INATIVO' || acc.isActive === false ? 'opacity-60 bg-slate-50 dark:bg-slate-900/30' : ''}`}
                   >
-                    {/* Alça de Arraste OU Toggle do Acordeão (Opção 1) */}
+                    {/* Alça de Arraste OU Toggle do Acordeão */}
                     <td className="py-2 px-2 text-center">
                       {!isSynthetic ? (
                         <div className="flex items-center justify-center gap-0.5">
@@ -1052,7 +1160,7 @@ export const ChartOfAccountsView: React.FC = () => {
                       </span>
                     </td>
 
-                    {/* Descrição com Indentação e Ícone de Pasta (Opção 1) */}
+                    {/* Descrição com Indentação e Ícone de Pasta */}
                     <td className="py-2.5 px-4" style={{ paddingLeft: `${Math.max(16, level * 18)}px` }}>
                       <div className="flex items-center gap-2">
                         {isSynthetic ? (
@@ -1120,7 +1228,7 @@ export const ChartOfAccountsView: React.FC = () => {
                       )}
                     </td>
 
-                    {/* Opção 2: Auditoria de Lançamentos & Uso */}
+                    {/* Auditoria de Lançamentos & Uso */}
                     <td className="py-2.5 px-4 whitespace-nowrap">
                       {isSynthetic ? (
                         syntheticUsageSum > 0 ? (
@@ -1172,14 +1280,37 @@ export const ChartOfAccountsView: React.FC = () => {
 
                     {/* Status */}
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(acc)}
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                          acc.status === 'INATIVO' || acc.isActive === false
+                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300'
+                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200'
+                        }`}
+                        title="Clique para alternar entre Ativo e Inativo"
+                      >
                         {acc.status || (acc.isActive ? 'ATIVO' : 'INATIVO')}
-                      </span>
+                      </button>
                     </td>
 
-                    {/* Ações Rápidas */}
+                    {/* Ações Rápidas (Fusão, Clonagem, Edição e Exclusão com Trava) */}
                     <td className="py-2.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
+                        
+                        {/* Botão de Fusão de Contas (Opção 1) */}
+                        {!isSynthetic && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenMergeModal(acc)}
+                            className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                            title={`Fundir ${acc.code} com outra conta transferindo todo o histórico`}
+                          >
+                            <GitMerge className="w-3 h-3 text-blue-500" />
+                            <span>Fundir</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => handleCloneAccount(acc)}
@@ -1218,6 +1349,16 @@ export const ChartOfAccountsView: React.FC = () => {
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* Botão de Exclusão com Trava de Segurança Contábil (Opção 2) */}
+                        <button
+                          type="button"
+                          onClick={() => handleAttemptDeleteAccount(acc)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
+                          title="Excluir conta (protegida por trava contábil caso possua lançamentos)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1227,6 +1368,257 @@ export const ChartOfAccountsView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* MODAL DE FUSÃO / UNIFICAÇÃO DE CONTAS EM LOTE (OPÇÃO 1) */}
+      {/* ======================================================== */}
+      {isMergeModalOpen && mergeSourceAccount && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-lg w-full border border-[var(--border-subtle)] overflow-hidden animate-in fade-in duration-150">
+            
+            <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-500">
+                  <GitMerge className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-[var(--text-primary)]">
+                    Fusão de Contas Contábeis (Merge em Lote)
+                  </h2>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                    Transfira todo o histórico da conta obsoleta para uma conta de destino com segurança.
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsMergeModalOpen(false)} 
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              
+              {/* Conta de Origem (Fixa) */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Conta de Origem (A ser fundida):</span>
+                <div className="text-sm font-bold text-rose-600 dark:text-rose-400 font-mono">
+                  {mergeSourceAccount.code} - {mergeSourceAccount.name}
+                </div>
+                <div className="text-[11px] text-slate-500 pt-1 flex items-center gap-2">
+                  <span>Natureza: <strong>{mergeSourceAccount.nature}</strong></span>
+                  <span>•</span>
+                  <span>Vínculos ativos: <strong>{accountUsageIndex.get(mergeSourceAccount.id)?.total || 0}</strong> registros</span>
+                </div>
+              </div>
+
+              {/* Conta de Destino (Dropdown com busca) */}
+              <div>
+                <label className="block font-bold text-[var(--text-primary)] mb-1">
+                  Conta de Destino (Que receberá todo o histórico) *
+                </label>
+                <select
+                  value={mergeTargetAccountId}
+                  onChange={e => setMergeTargetAccountId(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-primary)] px-3 py-2 text-xs font-medium focus:border-amber-500 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">Selecione a conta analítica de destino...</option>
+                  {availableMergeTargets.map(target => (
+                    <option key={target.id} value={target.id}>
+                      {target.code} - {target.name} ({target.nature})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Todos os títulos a pagar/receber, conciliações, serviços e contratos apontarão para esta conta.
+                </p>
+              </div>
+
+              {/* Opção de Inativação da Conta de Origem */}
+              <div className="p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)]">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mergeInactivateSource}
+                    onChange={e => setMergeInactivateSource(e.target.checked)}
+                    className="mt-0.5 rounded border-[var(--border-subtle)] text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="font-bold text-[var(--text-primary)] block">
+                      Inativar a conta de origem após a fusão (Recomendado)
+                    </span>
+                    <span className="text-[10px] text-[var(--text-secondary)] block mt-0.5">
+                      Evita que operadores façam novos lançamentos acidentais na conta anterior, preservando o nome com a indicação "(Fundida em X)".
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Card de Segurança */}
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-start gap-2.5 text-blue-700 dark:text-blue-300">
+                <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
+                <div className="text-[11px] leading-relaxed">
+                  <strong>Garantia de Integridade:</strong> Nenhum lançamento será excluído ou perdido. O sistema reclassifica automaticamente os lançamentos fiscais, atualiza a DRE em tempo real e grava histórico de auditoria.
+                </div>
+              </div>
+
+              {/* Rodapé */}
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--border-subtle)]">
+                <button
+                  type="button"
+                  onClick={() => setIsMergeModalOpen(false)}
+                  disabled={isExecutingMerge}
+                  className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmMerge}
+                  disabled={isExecutingMerge || !mergeTargetAccountId}
+                  className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-xs cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <GitMerge className="w-4 h-4" />
+                  <span>{isExecutingMerge ? 'Processando Fusão...' : 'Confirmar Fusão em Lote'}</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL DE TRAVA DE SEGURANÇA CONTRA EXCLUSÃO (OPÇÃO 2)    */}
+      {/* ======================================================== */}
+      {safetyModalData.isOpen && safetyModalData.account && safetyModalData.checkResult && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-md w-full border border-[var(--border-subtle)] overflow-hidden animate-in fade-in duration-150">
+            
+            {/* Header com Ícone Condicional */}
+            <div className={`px-6 py-4 border-b border-[var(--border-subtle)] flex items-center gap-3 ${
+              safetyModalData.checkResult.canDelete 
+                ? 'bg-rose-500/10' 
+                : 'bg-amber-500/10'
+            }`}>
+              <div className={`p-2.5 rounded-xl border ${
+                safetyModalData.checkResult.canDelete
+                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                  : 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400'
+              }`}>
+                {safetyModalData.checkResult.canDelete ? (
+                  <Trash2 className="w-6 h-6" />
+                ) : (
+                  <ShieldAlert className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">
+                  {safetyModalData.checkResult.canDelete
+                    ? 'Confirmar Exclusão de Conta Ociosa'
+                    : 'Trava de Segurança Contábil'}
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {safetyModalData.checkResult.canDelete
+                    ? 'Conta sem lançamentos vinculados'
+                    : 'Proteção de integridade contábil e fiscal'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              
+              {/* Mensagem e Motivação */}
+              <div className="p-3.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] leading-relaxed space-y-2">
+                <div className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
+                  {safetyModalData.account.code} - {safetyModalData.account.name}
+                </div>
+                {safetyModalData.checkResult.reason && (
+                  <p className="text-amber-800 dark:text-amber-300 font-medium">
+                    {safetyModalData.checkResult.reason}
+                  </p>
+                )}
+                {safetyModalData.checkResult.canDelete && (
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Esta conta analítica não possui nenhum lançamento ou contrato registrado. A exclusão permanente é segura e o grupo restante será reorganizado e renumerado automaticamente.
+                  </p>
+                )}
+              </div>
+
+              {/* Botões Condicionais de Resolução Segura */}
+              {!safetyModalData.checkResult.canDelete ? (
+                <div className="space-y-2 pt-1">
+                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Ações seguras recomendadas:</span>
+                  
+                  {safetyModalData.checkResult.isBlockedByUsage && (
+                    <>
+                      {/* Ação 1: Inativar Conta */}
+                      <button
+                        type="button"
+                        onClick={() => handleInactivateBlockedAccount(safetyModalData.account!)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 font-bold border border-slate-300 dark:border-slate-700 flex items-center justify-between cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <EyeOff className="w-4 h-4 text-amber-500" />
+                          <span>Inativar Conta para Novos Lançamentos</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-normal">Recomendado</span>
+                      </button>
+
+                      {/* Ação 2: Fundir com Outra Conta */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const acc = safetyModalData.account!;
+                          setSafetyModalData({ isOpen: false, account: null, checkResult: null });
+                          handleOpenMergeModal(acc);
+                        }}
+                        className="w-full px-4 py-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold border border-blue-500/30 flex items-center justify-between cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <GitMerge className="w-4 h-4 text-blue-500" />
+                          <span>Fundir com Outra Conta (Migrar Histórico)</span>
+                        </div>
+                        <span className="text-[10px] text-blue-400 font-normal">Transfere dados</span>
+                      </button>
+                    </>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSafetyModalData({ isOpen: false, account: null, checkResult: null })}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] cursor-pointer"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSafetyModalData({ isOpen: false, account: null, checkResult: null })}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDeleteIdleAccount}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-xs cursor-pointer transition-colors"
+                  >
+                    Excluir Conta Ociosa
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Criação / Edição / Clonagem com Menu Suspenso Inteligente */}
       {isModalOpen && (
