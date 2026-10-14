@@ -47,7 +47,8 @@ import {
   formatBRL, 
   formatDateBR, 
   formatCompetence,
-  ContractGenerationProgressState
+  ContractGenerationProgressState,
+  calculateBalanceFeeDueDate
 } from '../../services/financialEngine';
 import { SearchableSelect } from '../Common/SearchableSelect';
 import { ImportContractsModal } from '../Modals/ImportContractsModal';
@@ -520,7 +521,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   };
 
   const handleBalanceFeeTypeChange = (type: 'UNICA_DEZEMBRO' | 'DUAS_PARCELAS' | 'TRES_PARCELAS' | 'PERSONALIZADO') => {
-    let months: number[] = [12];
+    let months: number[] = [formData.annualBalanceFee?.competenceMonth || 12];
     if (type === 'DUAS_PARCELAS') {
       months = [11, 12];
     } else if (type === 'TRES_PARCELAS') {
@@ -532,9 +533,33 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
     setFormData({
       ...formData,
       annualBalanceFee: {
-        ...(formData.annualBalanceFee || { enabled: true, amount: formData.monthlyTotal || 0 }),
+        ...(formData.annualBalanceFee || { 
+          enabled: true, 
+          amount: formData.monthlyTotal || 0,
+          dueRule: 'SAME_MONTH',
+          dueDay: formData.dueDay || 10
+        }),
         installmentType: type,
-        billingMonths: months
+        billingMonths: months,
+        competenceMonth: type === 'UNICA_DEZEMBRO' ? (formData.annualBalanceFee?.competenceMonth || months[0] || 12) : undefined,
+        dueRule: formData.annualBalanceFee?.dueRule || 'SAME_MONTH'
+      }
+    });
+  };
+
+  const handleSingleCompetenceMonthChange = (monthNum: number) => {
+    setFormData({
+      ...formData,
+      annualBalanceFee: {
+        ...(formData.annualBalanceFee || { 
+          enabled: true, 
+          amount: formData.monthlyTotal || 0,
+          dueRule: 'SAME_MONTH',
+          dueDay: formData.dueDay || 10
+        }),
+        installmentType: 'UNICA_DEZEMBRO',
+        billingMonths: [monthNum],
+        competenceMonth: monthNum
       }
     });
   };
@@ -2810,9 +2835,10 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                   {formData.annualBalanceFee?.enabled && (
                     <div className="space-y-4 pt-2 border-t border-amber-500/20 animate-in fade-in">
                       
+                      {/* Linha 1: Valor, Forma de Cobrança e Escolha da Competência */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
                         <div>
-                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs">
                             Valor Total da Taxa de Balanço (R$) *
                           </label>
                           <div className="relative">
@@ -2854,7 +2880,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                         </div>
 
                         <div>
-                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs">
                             Forma de Cobrança / Parcelamento *
                           </label>
                           <select
@@ -2862,45 +2888,61 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                             onChange={(e) => handleBalanceFeeTypeChange(e.target.value as any)}
                             className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3 py-2 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
                           >
-                            <option value="UNICA_DEZEMBRO">1x Parcela Única em Dezembro</option>
+                            <option value="UNICA_DEZEMBRO">1x Parcela Única</option>
                             <option value="DUAS_PARCELAS">2x Dividido em 2 Meses (Nov e Dez)</option>
                             <option value="TRES_PARCELAS">3x Dividido em 3 Meses (Out, Nov e Dez)</option>
                             <option value="PERSONALIZADO">Personalizado (Escolher Meses)</option>
                           </select>
                           <span className="text-[10px] text-slate-500 mt-1 block">
-                            Define em quais meses a taxa será cobrada
+                            {formData.annualBalanceFee.installmentType === 'UNICA_DEZEMBRO' 
+                              ? 'Cobrança em cota única anual' 
+                              : 'Cobrança parcelada em múltiplos meses'}
                           </span>
                         </div>
 
-                        <div>
-                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
-                            Dia do Vencimento da Taxa
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="31"
-                            value={formData.annualBalanceFee.dueDay || formData.dueDay || 10}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              annualBalanceFee: {
-                                ...formData.annualBalanceFee!,
-                                dueDay: parseInt(e.target.value) || 10
-                              }
-                            })}
-                            className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3.5 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                          />
-                          <span className="text-[10px] text-slate-500 mt-1 block">
-                            Padrão: dia {formData.dueDay || 10} do mês de faturamento
-                          </span>
-                        </div>
+                        {formData.annualBalanceFee.installmentType === 'UNICA_DEZEMBRO' ? (
+                          <div>
+                            <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs flex items-center justify-between">
+                              <span>Mês da Competência *</span>
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal">Mês de referência</span>
+                            </label>
+                            <select
+                              value={formData.annualBalanceFee.competenceMonth || (formData.annualBalanceFee.billingMonths?.[0] || 12)}
+                              onChange={(e) => handleSingleCompetenceMonthChange(parseInt(e.target.value, 10))}
+                              className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            >
+                              {MONTH_NAMES.map((name, idx) => (
+                                <option key={idx + 1} value={idx + 1}>
+                                  {String(idx + 1).padStart(2, '0')} - {name} {idx + 1 === 12 ? ' (Encerramento do Exercício)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              Define em qual mês contábil a taxa será alocada
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs">
+                              Competências Selecionadas
+                            </label>
+                            <div className="px-3 py-2 bg-slate-50 dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-lg text-xs font-bold text-amber-700 dark:text-amber-300 truncate">
+                              {formData.annualBalanceFee.billingMonths && formData.annualBalanceFee.billingMonths.length > 0
+                                ? formData.annualBalanceFee.billingMonths.map(m => MONTH_NAMES[m - 1]).join(', ')
+                                : 'Nenhuma selecionada'}
+                            </div>
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              {formData.annualBalanceFee.billingMonths?.length || 0} competência(s) de faturamento
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Seleção Personalizada de Meses (se PERSONALIZADO) */}
                       {formData.annualBalanceFee.installmentType === 'PERSONALIZADO' && (
                         <div className="p-3 bg-white dark:bg-[#131720] rounded-xl border border-amber-500/30 space-y-2">
                           <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
-                            Selecione os meses em que a Taxa de Balanço será cobrada:
+                            Selecione os meses de competência em que a Taxa de Balanço será cobrada:
                           </span>
                           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                             {MONTH_NAMES.map((name, index) => {
@@ -2925,34 +2967,161 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
                         </div>
                       )}
 
-                      {/* Caixa de Simulação Dinâmica da Cobrança */}
-                      <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-xl flex items-start gap-3">
-                        <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                        <div className="text-xs space-y-1">
-                          <span className="font-bold text-amber-950 dark:text-amber-300 block">
-                            Previsão de Faturamento da Taxa de Balanço:
-                          </span>
-                          <p className="text-slate-700 dark:text-slate-300">
-                            {formData.annualBalanceFee.billingMonths && formData.annualBalanceFee.billingMonths.length > 0 ? (
-                              <>
-                                O valor total de <strong>{formatBRL(formData.annualBalanceFee.amount || 0)}</strong> será cobrado em{' '}
-                                <strong>{formData.annualBalanceFee.billingMonths.length} parcela(s)</strong> de{' '}
-                                <strong>
-                                  {formatBRL((formData.annualBalanceFee.amount || 0) / formData.annualBalanceFee.billingMonths.length)}
-                                </strong>{' '}
-                                no(s) mês(es) de:{' '}
-                                <span className="font-semibold text-amber-800 dark:text-amber-300">
-                                  {formData.annualBalanceFee.billingMonths.map(m => MONTH_NAMES[m - 1]).join(', ')}
-                                </span>.
-                              </>
-                            ) : (
-                              'Nenhum mês de faturamento selecionado.'
-                            )}
-                          </p>
-                          <span className="text-[11px] text-slate-500 block">
-                            ℹ️ Quando você processar o <strong>Faturamento Mensal</strong> dessas competências, o sistema gerará automaticamente o título correspondente no Contas a Receber.
+                      {/* Linha 2: Regra de Vencimento e Data de Vencimento */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start p-3 bg-amber-500/5 dark:bg-amber-500/10 rounded-xl border border-amber-500/20">
+                        <div>
+                          <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs flex items-center gap-1.5">
+                            <CalendarClock className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Regra de Vencimento da Taxa *</span>
+                          </label>
+                          <select
+                            value={formData.annualBalanceFee.dueRule || 'SAME_MONTH'}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              annualBalanceFee: {
+                                ...formData.annualBalanceFee!,
+                                dueRule: e.target.value as any
+                              }
+                            })}
+                            className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                          >
+                            <option value="SAME_MONTH">✓ Vencimento na própria competência (mesmo mês) [Padrão]</option>
+                            <option value="NEXT_MONTH">Vencimento no mês seguinte à competência</option>
+                            <option value="SPECIFIC_DATE">Data de Vencimento Específica (Data Fixa)</option>
+                          </select>
+                          <span className="text-[10px] text-slate-500 mt-1 block">
+                            {formData.annualBalanceFee.dueRule === 'NEXT_MONTH'
+                              ? 'O título vencerá no mês subsequente à competência faturada'
+                              : formData.annualBalanceFee.dueRule === 'SPECIFIC_DATE'
+                              ? 'O título terá uma data exata de vencimento fixada no calendário'
+                              : 'O título vencerá dentro do próprio mês da competência (ex.: competência Dezembro vence em Dezembro)'}
                           </span>
                         </div>
+
+                        {formData.annualBalanceFee.dueRule === 'SPECIFIC_DATE' ? (
+                          <div>
+                            <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs">
+                              Data Exata de Vencimento *
+                            </label>
+                            <input
+                              type="date"
+                              required={formData.annualBalanceFee?.dueRule === 'SPECIFIC_DATE'}
+                              value={formData.annualBalanceFee.specificDueDate || ''}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                annualBalanceFee: {
+                                  ...formData.annualBalanceFee!,
+                                  specificDueDate: e.target.value
+                                }
+                              })}
+                              className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3.5 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              Data definitiva de vencimento nos lançamentos a receber
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5 text-xs">
+                              Dia do Vencimento da Taxa *
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="31"
+                              value={formData.annualBalanceFee.dueDay || formData.dueDay || 10}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                annualBalanceFee: {
+                                  ...formData.annualBalanceFee!,
+                                  dueDay: parseInt(e.target.value) || 10
+                                }
+                              })}
+                              className="w-full rounded-lg border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] px-3.5 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              {formData.annualBalanceFee.dueRule === 'NEXT_MONTH'
+                                ? `Vencerá dia ${formData.annualBalanceFee.dueDay || formData.dueDay || 10} do mês seguinte`
+                                : `Vencerá dia ${formData.annualBalanceFee.dueDay || formData.dueDay || 10} da própria competência`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Caixa de Simulação Dinâmica da Cobrança */}
+                      <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-xl space-y-2">
+                        <div className="flex items-center gap-2 text-amber-950 dark:text-amber-300 font-bold text-xs">
+                          <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                          <span>Previsão de Lançamentos da Taxa de Balanço:</span>
+                        </div>
+
+                        {formData.annualBalanceFee.billingMonths && formData.annualBalanceFee.billingMonths.length > 0 ? (
+                          <div className="space-y-2 pt-1">
+                            <p className="text-xs text-slate-700 dark:text-slate-300">
+                              Valor total de <strong>{formatBRL(formData.annualBalanceFee.amount || 0)}</strong> distribuído em{' '}
+                              <strong>{formData.annualBalanceFee.billingMonths.length} parcela(s)</strong>:
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                              {formData.annualBalanceFee.billingMonths.map((m, idx) => {
+                                const currentYear = new Date().getFullYear();
+                                const compStr = `${currentYear}-${String(m).padStart(2, '0')}`;
+                                const feeDueDate = calculateBalanceFeeDueDate(
+                                  formData.annualBalanceFee,
+                                  formData.dueDay || 10,
+                                  (formData.dueRule as any) || 'SAME_MONTH',
+                                  compStr
+                                );
+                                const totalInst = formData.annualBalanceFee!.billingMonths.length;
+                                const baseAmount = Math.round(((formData.annualBalanceFee!.amount || 0) / totalInst) * 100) / 100;
+                                const instAmount = (idx + 1 === totalInst)
+                                  ? Math.round(((formData.annualBalanceFee!.amount || 0) - baseAmount * (totalInst - 1)) * 100) / 100
+                                  : baseAmount;
+
+                                const isSameMonth = feeDueDate.startsWith(compStr);
+
+                                return (
+                                  <div 
+                                    key={m}
+                                    className="p-2.5 rounded-lg bg-white dark:bg-[#131720] border border-amber-500/30 text-[11px] space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
+                                      <span>Parcela {idx + 1}/{totalInst}</span>
+                                      <span className="text-amber-600 dark:text-amber-400 font-mono">{formatBRL(instAmount)}</span>
+                                    </div>
+                                    <div className="text-slate-600 dark:text-slate-400">
+                                      Competência: <strong className="text-slate-900 dark:text-slate-100">{MONTH_NAMES[m - 1]}/{currentYear}</strong>
+                                    </div>
+                                    <div className="text-slate-600 dark:text-slate-400 flex items-center justify-between gap-1">
+                                      <span>Vencimento: <strong className="text-slate-900 dark:text-slate-100">{formatDateBR(feeDueDate)}</strong></span>
+                                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                                        formData.annualBalanceFee?.dueRule === 'SPECIFIC_DATE'
+                                          ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300'
+                                          : isSameMonth 
+                                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' 
+                                          : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                                      }`}>
+                                        {formData.annualBalanceFee?.dueRule === 'SPECIFIC_DATE'
+                                          ? 'Data Fixa'
+                                          : isSameMonth 
+                                          ? 'Na competência' 
+                                          : 'Mês seguinte'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Nenhum mês de faturamento selecionado para a Taxa de Balanço.
+                          </p>
+                        )}
+
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block pt-1">
+                          ℹ️ Ao gerar o faturamento destas competências, os títulos a receber serão criados com a competência e data de vencimento configuradas acima.
+                        </span>
                       </div>
                     </div>
                   )}

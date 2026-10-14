@@ -12,7 +12,9 @@ import {
   CreditCard,
   CreditCardPurchase,
   CreditCardInvoicePayment,
-  CashCountRecord
+  CashCountRecord,
+  AnnualBalanceFeeConfig,
+  DueDayRule
 } from '../types';
 import { storage } from './storageService';
 
@@ -54,6 +56,62 @@ export const formatCompetence = (comp: string): string => {
   if (!comp) return '-';
   const [year, month] = comp.split('-');
   return `${getMonthName(month)}/${year}`;
+};
+
+/**
+ * Calcula com precisão a data de vencimento da Taxa de Balanço Anual respeitando:
+ * 1. Data específica fixa configurada (SPECIFIC_DATE)
+ * 2. Vencimento na própria competência (SAME_MONTH) ou no mês subsequente (NEXT_MONTH)
+ * 3. Dia de vencimento específico da taxa ou do contrato
+ */
+export const calculateBalanceFeeDueDate = (
+  balanceFee: AnnualBalanceFeeConfig | undefined,
+  contractDueDay: number,
+  contractDueRule: DueDayRule | undefined,
+  competence: string // 'YYYY-MM'
+): string => {
+  if (!balanceFee) {
+    const [cYear, cMonth] = competence.split('-').map(Number);
+    const day = Math.min(contractDueDay || 10, new Date(cYear, cMonth, 0).getDate());
+    return `${cYear}-${String(cMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  // 1. Data fixa específica
+  if (balanceFee.dueRule === 'SPECIFIC_DATE' && balanceFee.specificDueDate) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(balanceFee.specificDueDate)) {
+      return balanceFee.specificDueDate;
+    }
+  }
+
+  const [compYearStr, compMonthStr] = competence.split('-');
+  const compYear = parseInt(compYearStr, 10);
+  const compMonth = parseInt(compMonthStr, 10);
+
+  // 2. Regra de vencimento:
+  // Se explicitamente 'SAME_MONTH': vence no próprio mês da competência!
+  // Se explicitamente 'NEXT_MONTH': vence no mês seguinte!
+  // Se não definido: assume 'SAME_MONTH' (dentro da própria competência)
+  const feeRule = balanceFee.dueRule || 'SAME_MONTH';
+
+  let targetYear = compYear;
+  let targetMonth = compMonth;
+
+  if (feeRule === 'NEXT_MONTH') {
+    targetMonth += 1;
+    if (targetMonth > 12) {
+      targetMonth = 1;
+      targetYear += 1;
+    }
+  }
+
+  const feeDueDay = balanceFee.dueDay || contractDueDay || 10;
+  const lastDayOfMonth = new Date(targetYear, targetMonth, 0).getDate();
+  const actualDueDay = Math.min(feeDueDay, lastDayOfMonth);
+
+  const monthFormatted = String(targetMonth).padStart(2, '0');
+  const dayFormatted = String(actualDueDay).padStart(2, '0');
+
+  return `${targetYear}-${monthFormatted}-${dayFormatted}`;
 };
 
 export type TemporalStatus = 'A_VENCER' | 'VENCE_HOJE' | 'VENCIDO' | 'QUITADO';
@@ -989,10 +1047,7 @@ export class FinancialEngine {
         );
 
         if (!existingBalanceFee) {
-          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay;
-          const actualFeeDueDay = Math.min(feeDueDay, lastDayOfMonth);
-          const feeDueDayFormatted = actualFeeDueDay.toString().padStart(2, '0');
-          const feeDueDate = `${dueYear}-${dueMonthFormatted}-${feeDueDayFormatted}`;
+          const feeDueDate = calculateBalanceFeeDueDate(contract.annualBalanceFee, contract.dueDay, contract.dueRule, competence);
 
           const newBalanceFeeTitle: FinancialTitle = {
             id: `tit-tb-${Date.now()}-${contract.id}-${compMonth}`,
@@ -1335,10 +1390,7 @@ export class FinancialEngine {
         );
 
         if (!existingBalanceFee) {
-          const feeDueDay = contract.annualBalanceFee.dueDay || contract.dueDay || 10;
-          const actualFeeDueDay = Math.min(feeDueDay, lastDayOfMonth);
-          const feeDueDayFormatted = String(actualFeeDueDay).padStart(2, '0');
-          const feeDueDate = `${dueYear}-${dueMonthFormatted}-${feeDueDayFormatted}`;
+          const feeDueDate = calculateBalanceFeeDueDate(contract.annualBalanceFee, contract.dueDay, contract.dueRule, competence);
 
           const newBalanceFeeTitle: FinancialTitle = {
             id: `tit-tb-${Date.now()}-${contract.id}-${cMonth}`,
@@ -1725,6 +1777,7 @@ export class FinancialEngine {
 
         if (!existingBalanceFee) {
           const tbTitleId = `tit-tb-${Date.now()}-${contract.id}-${competence}`;
+          const feeDueDate = calculateBalanceFeeDueDate(contract.annualBalanceFee, contract.dueDay, contract.dueRule, competence);
           const newTB: FinancialTitle = {
             id: tbTitleId,
             companyId: 'comp-1',
@@ -1736,8 +1789,8 @@ export class FinancialEngine {
             launchDate: todayYmd,
             competence,
             issueDate: todayYmd,
-            dueDate,
-            expectedCashDate: dueDate,
+            dueDate: feeDueDate,
+            expectedCashDate: feeDueDate,
             originalAmount: installmentAmount,
             settledPrincipal: 0,
             balancePrincipal: installmentAmount,

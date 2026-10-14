@@ -143,12 +143,17 @@ export type AnnualBalanceFeeInstallmentType =
   | 'TRES_PARCELAS' 
   | 'PERSONALIZADO';
 
+export type BalanceFeeDueRule = 'SAME_MONTH' | 'NEXT_MONTH' | 'SPECIFIC_DATE';
+
 export interface AnnualBalanceFeeConfig {
   enabled: boolean;
   amount: number; // Valor total da taxa anual em R$ (ex: 2500.00)
   installmentType: AnnualBalanceFeeInstallmentType;
   billingMonths: number[]; // Meses de 1 a 12 em que será cobrada (ex: [12], [11, 12], [10, 11, 12])
-  dueDay?: number; // Dia de vencimento específico (opcional, senão herda o do contrato)
+  competenceMonth?: number; // Mês da competência específico (1 a 12) para parcela única (ex: 12 para Dezembro)
+  dueDay?: number; // Dia de vencimento específico (1 a 31)
+  dueRule?: BalanceFeeDueRule; // 'SAME_MONTH' (dentro da própria competência) | 'NEXT_MONTH' (mês seguinte) | 'SPECIFIC_DATE' (data fixa)
+  specificDueDate?: string; // Data específica fixa de vencimento (YYYY-MM-DD) se aplicável
   notes?: string;
 }
 
