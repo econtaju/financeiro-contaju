@@ -251,7 +251,6 @@ html.dark [class*="divide-slate-"] > :not([hidden]) ~ :not([hidden]) {
 
 /* Formulários e Inputs no Tema Escuro */
 html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
-html.dark select,
 html.dark textarea {
   background-color: var(--surface-elevated) !important;
   color: #FFFFFF !important;
@@ -263,17 +262,67 @@ html.dark textarea::placeholder {
   color: #94A3B8 !important;
 }
 
-html.dark select option {
-  background-color: var(--surface-card) !important;
-  color: #FFFFFF !important;
-}
-
 html.dark input:focus,
-html.dark select:focus,
 html.dark textarea:focus {
   border-color: var(--brand-gold) !important;
   box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3) !important;
   outline: none !important;
+}
+
+/* ========================================================================= */
+/* REGRA MESTRA: SISTEMA DE DROPDOWNS E SELECTS PREMIUM CONTAJU (DARK MODE)  */
+/* Transforma todos os 112+ selects em componentes executivos nobres         */
+/* ========================================================================= */
+select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  cursor: pointer !important;
+  border-radius: 0.625rem !important; /* 10px elegante */
+  padding-right: 2.5rem !important; /* Espaço para o chevron dourado */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.75rem center !important;
+  background-size: 1.15rem 1.15rem !important;
+  min-height: 36px !important;
+}
+
+html.dark select {
+  background-color: #131822 !important;
+  color: #F8FAFC !important;
+  border: 1px solid rgba(212, 175, 55, 0.28) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D4AF37' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+}
+
+html.dark select:hover {
+  border-color: rgba(212, 175, 55, 0.65) !important;
+  background-color: #18202F !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(212, 175, 55, 0.25) !important;
+}
+
+html.dark select:focus {
+  border-color: #D4AF37 !important;
+  background-color: #18202F !important;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.28), 0 4px 14px rgba(0, 0, 0, 0.6) !important;
+  outline: none !important;
+}
+
+html.dark select option {
+  background-color: #121620 !important;
+  color: #FFFFFF !important;
+  padding: 10px 14px !important;
+}
+
+html.dark select optgroup {
+  background-color: #0B0E14 !important;
+  color: #D4AF37 !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.05em !important;
 }
 
 /* Modais no Tema Escuro */
@@ -360,7 +409,6 @@ html.dark table thead th button {
 
 /* Inputs no Tema Claro */
 html.light input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
-html.light select,
 html.light textarea {
   background-color: #FFFFFF !important;
   color: #0F172A !important;
@@ -372,17 +420,72 @@ html.light textarea::placeholder {
   color: #64748B !important;
 }
 
-html.light select option {
-  background-color: #FFFFFF !important;
-  color: #0F172A !important;
-}
-
 html.light input:focus,
-html.light select:focus,
 html.light textarea:focus {
   border-color: #996515 !important;
   box-shadow: 0 0 0 2px rgba(153, 101, 21, 0.25) !important;
   outline: none !important;
+}
+
+/* ========================================================================= */
+/* REGRA MESTRA: SISTEMA DE DROPDOWNS E SELECTS PREMIUM CONTAJU (LIGHT MODE) */
+/* ========================================================================= */
+html.light select {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23996515' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+}
+
+html.light select:hover {
+  border-color: #996515 !important;
+  background-color: #F8FAFC !important;
+  box-shadow: 0 3px 8px rgba(153, 101, 21, 0.12) !important;
+}
+
+html.light select:focus {
+  border-color: #996515 !important;
+  background-color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(153, 101, 21, 0.22), 0 3px 10px rgba(0, 0, 0, 0.08) !important;
+  outline: none !important;
+}
+
+html.light select option {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  padding: 10px 14px !important;
+}
+
+html.light select optgroup {
+  background-color: #F1F5F9 !important;
+  color: #996515 !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* Estado Desabilitado Universal para Selects */
+select:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(35%) !important;
+  box-shadow: none !important;
+}
+
+/* Classes Utilitárias Extras para Dropdowns Nobres */
+.select-premium,
+.dropdown-premium {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  cursor: pointer !important;
+  border-radius: 0.75rem !important;
+  padding-right: 2.75rem !important;
+  font-weight: 600 !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.85rem center !important;
+  background-size: 1.15rem 1.15rem !important;
 }
 
 /* ========================================================================= */
