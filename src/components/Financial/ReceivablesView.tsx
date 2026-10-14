@@ -1785,6 +1785,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             Parcial
                           </span>
                         )}
+                        <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                          #{t.titleNumber}
+                        </span>
                         {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                             🏷️ Contrato {t.contractNumber || ''}
@@ -1808,13 +1811,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       </div>
 
                       {/* Cliente / Devedor em Destaque */}
-                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug truncate">
+                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug">
                         {customer?.tradeName || customer?.name || 'Cliente não especificado'}
                       </div>
 
-                      {/* Descrição */}
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1">
-                        {t.description || 'Sem descrição'}
+                      {/* Descrição em Destaque: maior, legível e com quebra de linha natural */}
+                      <div className="text-xs sm:text-[13px] text-slate-800 dark:text-slate-200 font-medium break-words whitespace-normal leading-snug mt-0.5">
+                        {t.description || 'Sem descrição informada'}
                       </div>
 
                       {/* Data de Vencimento com Ícone */}
@@ -2126,7 +2129,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   title="Clique para ordenar por número do título"
                 >
                   <div className="flex items-center gap-1">
-                    <span>Título / Lançamento</span>
+                    <span>Descrição / Lançamento</span>
                     {sortField === 'titleNumber' ? (
                       sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-500" />
                     ) : (
@@ -2310,9 +2313,20 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         />
                       </td>
 
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{t.titleNumber}</span>
+                      <td className="py-3 px-4 min-w-[240px] max-w-[420px]">
+                        {/* Descrição em Destaque: maior, legível e quebrando linha naturalmente */}
+                        <div className="text-[13px] sm:text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words whitespace-normal">
+                          {t.description || 'Sem descrição'}
+                        </div>
+
+                        {/* Código de Operação e Badges Minimizados (Menorzinhos e discretos) */}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                          <span 
+                            title={`Número do título: ${t.titleNumber}`}
+                            className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/60"
+                          >
+                            #{t.titleNumber}
+                          </span>
                           {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                             <span 
                               title={`Título originado de Contrato Recorrente${t.contractNumber ? `: ${t.contractNumber}` : ''}`}
@@ -2330,7 +2344,6 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{t.description}</div>
                       </td>
 
                       <td className="py-3 px-4">

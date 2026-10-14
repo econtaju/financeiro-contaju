@@ -1668,6 +1668,19 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             Parcial
                           </span>
                         )}
+                        <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                          #{t.titleNumber}
+                        </span>
+                        {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                            🏷️ Contrato {t.contractNumber || ''}
+                          </span>
+                        )}
+                        {t.originType === 'RECORRENCIA_PAGAR' && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                            🏷️ Recorrência
+                          </span>
+                        )}
                         {chartAcc && (
                           <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
                             • {chartAcc.name}
@@ -1676,13 +1689,13 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       </div>
 
                       {/* Fornecedor / Favorecido em Destaque */}
-                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug truncate">
+                      <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm leading-snug">
                         {supplier?.name || supplier?.tradeName || 'Fornecedor não especificado'}
                       </div>
 
-                      {/* Descrição */}
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1">
-                        {t.description || 'Sem descrição'}
+                      {/* Descrição em Destaque: maior, legível e com quebra de linha natural */}
+                      <div className="text-xs sm:text-[13px] text-slate-800 dark:text-slate-200 font-medium break-words whitespace-normal leading-snug mt-0.5">
+                        {t.description || 'Sem descrição informada'}
                       </div>
 
                       {/* Data de Vencimento com Ícone */}
@@ -1952,7 +1965,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   title="Clique para ordenar por Documento/Descrição"
                 >
                   <div className="flex items-center space-x-1">
-                    <span className="text-slate-900 dark:text-slate-100 font-bold">Título / Documento</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">Descrição / Documento</span>
                     {sortField === 'titleNumber' ? (
                       sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> : <ArrowDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     ) : (
@@ -2145,9 +2158,20 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         />
                       </td>
 
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{t.titleNumber}</span>
+                      <td className="py-3 px-4 min-w-[240px] max-w-[420px]">
+                        {/* Descrição em Destaque: maior, legível e quebrando linha naturalmente */}
+                        <div className="text-[13px] sm:text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words whitespace-normal">
+                          {t.description || 'Sem descrição'}
+                        </div>
+
+                        {/* Código de Operação e Badges Minimizados (Menorzinhos e discretos) */}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                          <span 
+                            title={`Número do documento/título: ${t.titleNumber}`}
+                            className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/60"
+                          >
+                            #{t.titleNumber}
+                          </span>
                           {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                             <span 
                               title={`Origem: Contrato ${t.contractNumber || ''}`}
@@ -2162,9 +2186,9 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             </span>
                           )}
                           {t.originType === 'CARTAO_CREDITO' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-2xs">
-                              <CreditCard className="w-3 h-3 text-amber-500" />
-                              Cartão de Crédito
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-2xs">
+                              <CreditCard className="w-2.5 h-2.5 text-amber-500" />
+                              Cartão
                             </span>
                           )}
                           {t.barcode && (
@@ -2176,14 +2200,13 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                                 navigator.clipboard.writeText(t.barcode || '');
                                 setToastMessage({ text: 'Linha digitável do boleto copiada!', type: 'success' });
                               }}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:border-amber-500 cursor-pointer transition-colors"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:border-amber-500 cursor-pointer transition-colors"
                             >
-                              <Barcode className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              <Barcode className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
                               <span>Boleto</span>
                             </button>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate max-w-[220px]">{t.description}</div>
                       </td>
 
                       <td className="py-3 px-4">
