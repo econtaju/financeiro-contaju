@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus } from 'lucide-react';
+import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus, Repeat, CalendarClock } from 'lucide-react';
 import { FinancialTitle, Counterparty, ChartAccount, Contract, ContractAdjustment } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
@@ -9,6 +9,7 @@ import { QuickCreateAccountModal } from './QuickCreateAccountModal';
 import { RecurringSeriesService, SeriesDetectionResult, SeriesFieldChanges } from '../../services/recurringSeriesService';
 import { SeriesUpdateConfirmationModal } from './SeriesUpdateConfirmationModal';
 import { ContractAdjustmentNotificationModal } from './ContractAdjustmentNotificationModal';
+import { advanceCompetence, getDaysInMonth } from '../../utils/dateUtils';
 import { toast } from '../../hooks/useToast';
 
 interface EditTitleModalProps {
@@ -40,6 +41,12 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   const [barcode, setBarcode] = useState('');
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Estados para Ativação de Recorrência a partir do lançamento
+  const [isRecurringEnabled, setIsRecurringEnabled] = useState(false);
+  const [recurringStartMonth, setRecurringStartMonth] = useState('');
+  const [recurringOption, setRecurringOption] = useState<'3' | '6' | '9' | '12' | '24' | '36' | 'CUSTOM'>('12');
+  const [recurringCustomCount, setRecurringCustomCount] = useState<number>(12);
 
   // Quick account creation state
   const [isQuickAccountModalOpen, setIsQuickAccountModalOpen] = useState(false);
@@ -112,6 +119,13 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       setSettlementVoucherRef('');
       setSettlementNotes('');
 
+      // Inicializa recorrência a partir do mês seguinte da competência do título
+      setIsRecurringEnabled(false);
+      const defaultNextMonth = advanceCompetence(title.competence || today.substring(0, 7), 1);
+      setRecurringStartMonth(defaultNextMonth);
+      setRecurringOption('12');
+      setRecurringCustomCount(12);
+
       setSeriesModalState({
         isOpen: false,
         pendingAmount: 0,
@@ -120,6 +134,30 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       });
     }
   }, [title, isOpen]);
+
+  // Helpers de Recorrência
+  const repeatCount = useMemo(() => {
+    if (recurringOption === 'CUSTOM') {
+      return Math.max(1, Math.min(120, Number(recurringCustomCount) || 1));
+    }
+    return parseInt(recurringOption, 10) || 12;
+  }, [recurringOption, recurringCustomCount]);
+
+  const endCompetence = useMemo(() => {
+    if (!recurringStartMonth || repeatCount <= 0) return '';
+    return advanceCompetence(recurringStartMonth, repeatCount - 1);
+  }, [recurringStartMonth, repeatCount]);
+
+  const formatCompetenceDisplay = (comp: string) => {
+    if (!comp || !comp.includes('-')) return comp;
+    const [y, m] = comp.split('-');
+    return `${m}/${y}`;
+  };
+
+  const getDueDayLabel = (d: string) => {
+    if (!d || !d.includes('-')) return '10';
+    return String(parseInt(d.split('-')[2], 10) || 10);
+  };
 
   // Filtrar rigorosamente o plano de contas:
   // - Para RECEBER: apenas Receitas
@@ -291,6 +329,82 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       }
     }
 
+    // Se ativou a recorrência para os próximos meses, gerar os lançamentos subsequentes com segurança
+    if (isRecurringEnabled && repeatCount > 0 && recurringStartMonth) {
+      const now = new Date().toISOString();
+      const existingTitles = storage.getTitles();
+      const newRecurringTitles: FinancialTitle[] = [];
+
+      let baseDueDay = 10;
+      if (dueDate && dueDate.includes('-')) {
+        baseDueDay = parseInt(dueDate.split('-')[2], 10) || 10;
+      }
+
+      const cleanTitleNumber = (title.titleNumber || 'TIT').split(' - ')[0];
+
+      for (let i = 0; i < repeatCount; i++) {
+        const targetComp = advanceCompetence(recurringStartMonth, i);
+        const [tYear, tMonth] = targetComp.split('-').map(Number);
+        const maxDays = getDaysInMonth(tYear, tMonth);
+        const actualDay = Math.min(baseDueDay, maxDays);
+        const targetDueDate = `${targetComp}-${String(actualDay).padStart(2, '0')}`;
+
+        // Verifica se já existe um lançamento com os mesmos dados fundamentais no mesmo mês para evitar duplicidade
+        const alreadyExists = existingTitles.some(
+          et => et.counterpartyId === counterpartyId && 
+                et.competence === targetComp && 
+                et.type === title.type &&
+                et.description === description.trim() &&
+                et.documentState !== 'CANCELADO'
+        );
+        if (alreadyExists) continue;
+
+        const newId = `title-rec-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 6)}`;
+        const newTitleNumber = `${cleanTitleNumber} - ${targetComp}`;
+
+        newRecurringTitles.push({
+          id: newId,
+          companyId: title.companyId || 'comp-1',
+          titleNumber: newTitleNumber,
+          type: title.type,
+          counterpartyId,
+          description: description.trim(),
+          launchDate: today,
+          issueDate: today,
+          competence: targetComp,
+          dueDate: targetDueDate,
+          expectedCashDate: targetDueDate,
+          originalAmount: Number(amountToSave),
+          settledPrincipal: 0,
+          balancePrincipal: Number(amountToSave),
+          accruedInterest: 0,
+          accruedFine: 0,
+          documentState: 'CONFIRMADO',
+          settlementState: 'ABERTO',
+          originType: title.type === 'PAGAR' ? 'RECORRENCIA_PAGAR' : (title.originType === 'CONTRATO' ? 'CONTRATO' : 'MANUAL'),
+          accountId,
+          expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
+          barcode: barcode.trim() || undefined,
+          notes: notes.trim() ? `${notes.trim()} [Recorrência]` : 'Lançamento recorrente mensal gerado via edição',
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      if (newRecurringTitles.length > 0) {
+        storage.saveTitles([...newRecurringTitles, ...existingTitles]);
+        storage.addAuditLog({
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: title.type === 'PAGAR' ? 'NOVO_TITULO_RECORRENTE' : 'NOVO_TITULO_MANUAL',
+          module: isReceber ? 'Contas a Receber' : 'Contas a Pagar',
+          recordId: newRecurringTitles[0].id,
+          details: `Ativação de recorrência a partir do título ${title.titleNumber}. Gerados ${newRecurringTitles.length} lançamentos (${formatCompetenceDisplay(recurringStartMonth)} até ${formatCompetenceDisplay(endCompetence)}) no valor unitário de ${formatBRL(amountToSave)}.`
+        });
+        toast.success(`Recorrência ativada com sucesso! ${newRecurringTitles.length} lançamento(s) foram gerados para os próximos meses.`);
+      }
+    }
+
     // Se marcou como liquidado agora, efetuar a baixa do saldo remanescente
     if (isAlreadySettled && newBalance > 0) {
       FinancialEngine.postSettlement({
@@ -385,6 +499,22 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       return;
     }
 
+    // Validações da ativação de recorrência
+    if (isRecurringEnabled) {
+      if (!recurringStartMonth) {
+        setErrorMessage('Informe o mês a partir do qual a recorrência começará.');
+        return;
+      }
+      if (FinancialEngine.isPeriodClosed(recurringStartMonth)) {
+        setErrorMessage(`O mês inicial da recorrência (${recurringStartMonth}) encontra-se FECHADO e travado para lançamentos contábeis.`);
+        return;
+      }
+      if (repeatCount <= 0) {
+        setErrorMessage('A quantidade de repetições deve ser de pelo menos 1 mês.');
+        return;
+      }
+    }
+
     const currentUser = storage.getCurrentUser();
     if (currentUser.role === 'CONSULTA') {
       setErrorMessage('Perfil de consulta não possui permissão para editar títulos.');
@@ -417,7 +547,8 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       expectedCashDate: dueDate, // Oculto da interface, leva em conta a data de vencimento
       expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
       barcode: barcode.trim() || undefined,
-      notes
+      notes,
+      originType: isRecurringEnabled && title.type === 'PAGAR' ? 'RECORRENCIA_PAGAR' : title.originType
     };
 
     // Verificar se houve alteração no valor, vencimento, categoria ou conta bancária
@@ -714,6 +845,109 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
+            </div>
+
+            {/* SEÇÃO DE ATIVAÇÃO DE RECORRÊNCIA */}
+            <div className={`p-3.5 rounded-xl border transition-all ${
+              isRecurringEnabled
+                ? 'bg-purple-50/70 dark:bg-purple-950/25 border-purple-300 dark:border-purple-800 shadow-xs'
+                : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+            }`}>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isRecurringEnabled}
+                    onChange={(e) => setIsRecurringEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <Repeat className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    Ativar recorrência para os próximos meses
+                  </span>
+                </label>
+
+                {isRecurringEnabled && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    🔄 Recorrência Ativada
+                  </span>
+                )}
+              </div>
+
+              {isRecurringEnabled && (
+                <div className="mt-3 pt-3 border-t border-purple-200/80 dark:border-purple-800/60 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 text-[11px] font-semibold mb-1">
+                        A partir de qual mês começar *
+                      </label>
+                      <input
+                        type="month"
+                        value={recurringStartMonth}
+                        onChange={(e) => setRecurringStartMonth(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium"
+                        required={isRecurringEnabled}
+                      />
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                        Sugestão: próximo mês após a competência atual
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 text-[11px] font-semibold mb-1">
+                        Quantas vezes vai ser (Duração) *
+                      </label>
+                      <select
+                        value={recurringOption}
+                        onChange={(e) => setRecurringOption(e.target.value as any)}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium cursor-pointer"
+                        required={isRecurringEnabled}
+                      >
+                        <option value="3">3 meses (Trimestral)</option>
+                        <option value="6">6 meses (Semestral)</option>
+                        <option value="9">9 meses</option>
+                        <option value="12">12 meses (1 ano)</option>
+                        <option value="24">24 meses (2 anos)</option>
+                        <option value="36">36 meses (3 anos)</option>
+                        <option value="CUSTOM">Período personalizado...</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {recurringOption === 'CUSTOM' && (
+                    <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-purple-200 dark:border-purple-800/60">
+                      <label className="block text-slate-700 dark:text-slate-300 text-[11px] font-semibold mb-1">
+                        Informe a quantidade de meses repetidos (2 a 120):
+                      </label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="120"
+                        value={recurringCustomCount || ''}
+                        onChange={(e) => setRecurringCustomCount(Math.max(2, Math.min(120, parseInt(e.target.value, 10) || 2)))}
+                        className="w-full sm:w-48 rounded-md border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-bold"
+                        placeholder="Ex: 18"
+                        required={isRecurringEnabled && recurringOption === 'CUSTOM'}
+                      />
+                    </div>
+                  )}
+
+                  {/* Resumo dinâmico em tempo real */}
+                  <div className="p-3 bg-purple-100/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-lg text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-purple-900 dark:text-purple-200">
+                      <CalendarClock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                      <span>Resumo da Programação Recorrente</span>
+                    </div>
+                    <p className="text-purple-950 dark:text-purple-200 leading-relaxed text-[11px]">
+                      Serão gerados <strong>{repeatCount} novos lançamentos recorrentes</strong> mensais de <strong>{formatCompetenceDisplay(recurringStartMonth)}</strong> até <strong>{formatCompetenceDisplay(endCompetence)}</strong> no valor de <strong>{formatBRL(originalAmount)}</strong> cada.
+                    </p>
+                    <div className="flex items-center justify-between pt-1 border-t border-purple-200/60 dark:border-purple-800/60 text-[11px] text-purple-800 dark:text-purple-300">
+                      <span>Vencimento programado: <strong>Todo dia {getDueDayLabel(dueDate)}</strong></span>
+                      <span>Total futuro: <strong>{formatBRL(originalAmount * repeatCount)}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* SEÇÃO DE BAIXA / LIQUIDAÇÃO IMEDIATA (se o título ainda possuir saldo a quitar) */}

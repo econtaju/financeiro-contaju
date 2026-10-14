@@ -2717,3 +2717,14 @@ export const formatChartAccountSelectOptions = (
   });
 };
 
+/**
+ * Retorna o nome da conta do plano de contas sem os prefixos numéricos de código
+ * (ex: "3.1.01.001 - Energia Elétrica" -> "Energia Elétrica", "2.1.02 Custos Operacionais" -> "Custos Operacionais").
+ */
+export const formatAccountNameWithoutCode = (account?: ChartAccount | null): string => {
+  if (!account || !account.name) return 'Sem categoria';
+  const cleaned = account.name.replace(/^[\d.]+\s*[-–—]?\s*/, '').trim();
+  return cleaned || account.name;
+};
+
+

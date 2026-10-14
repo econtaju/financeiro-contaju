@@ -28,11 +28,12 @@ import {
   ChevronUp,
   Barcode,
   Lock,
+  Folder,
   X
 } from 'lucide-react';
 import { FinancialTitle, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts, formatAccountNameWithoutCode } from '../../services/financialEngine';
 import { matchesSearch } from '../../utils/searchUtils';
 import { SettlementModal } from '../Modals/SettlementModal';
 import { EditTitleModal } from '../Modals/EditTitleModal';
@@ -1668,9 +1669,6 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             Parcial
                           </span>
                         )}
-                        <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                          #{t.titleNumber}
-                        </span>
                         {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                             🏷️ Contrato {t.contractNumber || ''}
@@ -1681,11 +1679,6 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             🏷️ Recorrência
                           </span>
                         )}
-                        {chartAcc && (
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
-                            • {chartAcc.name}
-                          </span>
-                        )}
                       </div>
 
                       {/* Fornecedor / Favorecido em Destaque */}
@@ -1694,8 +1687,22 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       </div>
 
                       {/* Descrição em Destaque: maior, legível e com quebra de linha natural */}
-                      <div className="text-xs sm:text-[13px] text-slate-800 dark:text-slate-200 font-medium break-words whitespace-normal leading-snug mt-0.5">
+                      <div className="text-xs sm:text-sm text-slate-900 dark:text-slate-100 font-semibold break-words whitespace-normal leading-snug mt-1">
                         {t.description || 'Sem descrição informada'}
+                      </div>
+
+                      {/* Categoria do Plano de Contas (apenas nome) e Código do Documento */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        <span 
+                          title={`Categoria Contábil: ${formatAccountNameWithoutCode(chartAcc)}`}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 max-w-[220px] truncate"
+                        >
+                          <Folder className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span className="truncate">{formatAccountNameWithoutCode(chartAcc)}</span>
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                          #{t.titleNumber}
+                        </span>
                       </div>
 
                       {/* Data de Vencimento com Ícone */}
@@ -2111,6 +2118,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   const isSelected = selectedIds.includes(t.id);
                   const balance = Number(t.balancePrincipal) || 0;
                   const titleDueDate = t.dueDate || today;
+                  const chartAcc = chartAccounts.find(a => a && (a.id === t.accountId || a.id === t.chartAccountId));
+                  const categoryName = formatAccountNameWithoutCode(chartAcc);
 
                   // Days diff for visual indicator safely
                   let diffDays = 0;
@@ -2158,20 +2167,29 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         />
                       </td>
 
-                      <td className="py-3 px-4 min-w-[240px] max-w-[420px]">
+                      <td className="py-3 px-4 min-w-[250px] max-w-[420px]">
                         {/* Descrição em Destaque: maior, legível e quebrando linha naturalmente */}
-                        <div className="text-[13px] sm:text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words whitespace-normal">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words whitespace-normal">
                           {t.description || 'Sem descrição'}
                         </div>
 
-                        {/* Código de Operação e Badges Minimizados (Menorzinhos e discretos) */}
+                        {/* Categoria do Plano de Contas (apenas o nome) e Código de Operação Minimizados */}
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
                           <span 
+                            title={`Categoria Contábil: ${categoryName}${chartAcc?.code ? ` (${chartAcc.code})` : ''}`}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/60"
+                          >
+                            <Folder className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>{categoryName}</span>
+                          </span>
+
+                          <span 
                             title={`Número do documento/título: ${t.titleNumber}`}
-                            className="font-mono text-[10px] text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/60"
+                            className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-800"
                           >
                             #{t.titleNumber}
                           </span>
+
                           {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                             <span 
                               title={`Origem: Contrato ${t.contractNumber || ''}`}
