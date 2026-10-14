@@ -2101,6 +2101,275 @@ export class FinancialEngine {
   }
 
   /**
+   * FATURAMENTO EM LOTE EXCLUSIVO DE TAXAS DE BALANÇO ANUAL
+   * Respeita estritamente o que está cadastrado no contrato:
+   * 1x Parcela Única, 2x Parcelas, 3x Parcelas ou Personalizado,
+   * calculando a competência, valor e vencimento de cada parcela cadastrada.
+   */
+  public static async generateAnnualBalanceFeesBatchAsync(
+    options: {
+      targetYear?: number;
+      targetCompetence?: string; // e.g. '2026-12' (se informado, fatura apenas parcelas deste mês)
+      contractIds?: string[];
+    } = {},
+    onProgress?: (progress: {
+      percent: number;
+      stage: string;
+      processed: number;
+      total: number;
+      generated: number;
+      amount: number;
+    }) => void
+  ): Promise<{
+    totalContractsWithFee: number;
+    totalTitlesGenerated: number;
+    totalAmountGenerated: number;
+    alreadyExistingCount: number;
+    generatedTitles: FinancialTitle[];
+    details: Array<{
+      contractId: string;
+      contractNumber: string;
+      clientName: string;
+      installmentIndex: number;
+      totalInstallments: number;
+      competence: string;
+      dueDate: string;
+      amount: number;
+      status: 'GERADO' | 'JA_EXISTE';
+    }>;
+  }> {
+    const allContracts = storage.getContracts();
+    const counterparties = storage.getCounterparties();
+    const currentTitles = storage.getTitles();
+    const currentSales = storage.getSales();
+    const currentUser = storage.getCurrentUser();
+
+    const targetContracts = allContracts.filter(c => {
+      if (c.status !== 'ATIVO') return false;
+      if (options.contractIds && options.contractIds.length > 0 && !options.contractIds.includes(c.id)) {
+        return false;
+      }
+      return (
+        c.annualBalanceFee &&
+        c.annualBalanceFee.enabled &&
+        c.annualBalanceFee.amount > 0 &&
+        Array.isArray(c.annualBalanceFee.billingMonths) &&
+        c.annualBalanceFee.billingMonths.length > 0
+      );
+    });
+
+    const targetYear = options.targetYear || (options.targetCompetence ? parseInt(options.targetCompetence.split('-')[0], 10) : new Date().getFullYear());
+    const todayYmd = new Date().toISOString().split('T')[0];
+    const nowIso = new Date().toISOString();
+
+    const newTitles: FinancialTitle[] = [];
+    const newSales: Sale[] = [];
+    const details: Array<{
+      contractId: string;
+      contractNumber: string;
+      clientName: string;
+      installmentIndex: number;
+      totalInstallments: number;
+      competence: string;
+      dueDate: string;
+      amount: number;
+      status: 'GERADO' | 'JA_EXISTE';
+    }> = [];
+
+    let totalTitlesGenerated = 0;
+    let totalAmountGenerated = 0;
+    let alreadyExistingCount = 0;
+
+    const totalContracts = targetContracts.length;
+
+    for (let i = 0; i < totalContracts; i++) {
+      const contract = targetContracts[i];
+      const client = counterparties.find(cp => cp.id === contract.customerId);
+      const clientName = client?.name || client?.tradeName || 'Cliente';
+      const balanceFee = contract.annualBalanceFee!;
+
+      const billingMonths = [...balanceFee.billingMonths].sort((a, b) => a - b);
+      const totalInstallments = billingMonths.length;
+      const baseInstallmentAmount = Math.round((balanceFee.amount / totalInstallments) * 100) / 100;
+
+      for (let mIdx = 0; mIdx < billingMonths.length; mIdx++) {
+        const bMonth = billingMonths[mIdx];
+        const installmentIndex = mIdx + 1;
+        const compStr = `${targetYear}-${String(bMonth).padStart(2, '0')}`;
+
+        // Se uma competência específica foi informada, pula outras competências
+        if (options.targetCompetence && options.targetCompetence !== compStr) {
+          continue;
+        }
+
+        // Valor da parcela (compensando centavos na última parcela)
+        const isLast = installmentIndex === totalInstallments;
+        const installmentAmount = isLast
+          ? Math.round((balanceFee.amount - baseInstallmentAmount * (totalInstallments - 1)) * 100) / 100
+          : baseInstallmentAmount;
+
+        // Vencimento calculado respeitando a regra cadastrada
+        const feeDueDate = calculateBalanceFeeDueDate(
+          balanceFee,
+          contract.dueDay || 10,
+          contract.dueRule || 'SAME_MONTH',
+          compStr
+        );
+
+        const tbTitleNumber = `TB-${compStr}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+        // Verifica se já existe título para esta competência e contrato
+        const existing = currentTitles.find(t => 
+          (t.originType === 'CONTRATO' || t.originId === contract.id || t.contractId === contract.id) &&
+          t.competence === compStr &&
+          (t.titleNumber === tbTitleNumber || t.titleNumber.startsWith(`TB-${compStr}`) || isBalanceFeeTitle(t)) &&
+          t.documentState !== 'CANCELADO'
+        );
+
+        if (existing) {
+          alreadyExistingCount++;
+          details.push({
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            clientName,
+            installmentIndex,
+            totalInstallments,
+            competence: compStr,
+            dueDate: existing.dueDate || feeDueDate,
+            amount: existing.originalAmount || installmentAmount,
+            status: 'JA_EXISTE'
+          });
+        } else {
+          const rawAcc = contract.items?.[0]?.accountId;
+          const mainAccountId = (rawAcc === 'acc-rec-01' || !rawAcc) ? 'acc-1.1.01' : rawAcc;
+          const titleId = `tit-tb-${Date.now()}-${contract.id}-${installmentIndex}-${Math.random().toString(36).substr(2, 4)}`;
+          const saleId = `sale-tb-${Date.now()}-${contract.id}-${installmentIndex}-${Math.random().toString(36).substr(2, 4)}`;
+          const saleNumber = `VEN-TB-${compStr}-${contract.contractNumber.replace('CTR-', '').replace('CT-', '')}`;
+
+          const newTitle: FinancialTitle = {
+            id: titleId,
+            companyId: 'comp-1',
+            type: 'RECEBER',
+            titleNumber: tbTitleNumber,
+            counterpartyId: contract.customerId,
+            description: `Taxa de Balanço Anual (${installmentIndex}/${totalInstallments}) - Contrato ${contract.contractNumber}`,
+            accountId: mainAccountId,
+            launchDate: todayYmd,
+            competence: compStr,
+            issueDate: todayYmd,
+            dueDate: feeDueDate,
+            expectedCashDate: feeDueDate,
+            originalAmount: installmentAmount,
+            settledPrincipal: 0,
+            balancePrincipal: installmentAmount,
+            accruedInterest: 0,
+            accruedFine: 0,
+            documentState: 'CONFIRMADO',
+            settlementState: 'ABERTO',
+            originType: 'CONTRATO',
+            originId: contract.id,
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            saleId: saleId,
+            saleNumber: saleNumber,
+            installmentIndex,
+            totalInstallments,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            notes: `Faturamento em lote de Taxa de Balanço Anual (${installmentIndex}ª de ${totalInstallments} parcelas cadastradas no Contrato ${contract.contractNumber}).`
+          };
+
+          const newSale: Sale = {
+            id: saleId,
+            saleNumber,
+            customerId: contract.customerId,
+            competence: compStr,
+            date: todayYmd,
+            items: [
+              {
+                id: `item-${titleId}`,
+                serviceId: 'srv-taxa-balanco',
+                description: `Taxa de Balanço Anual (${installmentIndex}/${totalInstallments})`,
+                quantity: 1,
+                unitPrice: installmentAmount,
+                discount: 0,
+                total: installmentAmount,
+                accountId: mainAccountId
+              }
+            ],
+            grossTotal: installmentAmount,
+            discountTotal: 0,
+            netTotal: installmentAmount,
+            installmentsCount: 1,
+            notes: `Faturamento da Taxa de Balanço Anual do Contrato ${contract.contractNumber}`,
+            createdAt: nowIso,
+            originType: 'CONTRATO',
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            status: 'CONFIRMADA',
+            titleIds: [titleId]
+          };
+
+          newTitles.push(newTitle);
+          newSales.push(newSale);
+          currentTitles.push(newTitle);
+          totalTitlesGenerated++;
+          totalAmountGenerated += installmentAmount;
+
+          details.push({
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            clientName,
+            installmentIndex,
+            totalInstallments,
+            competence: compStr,
+            dueDate: feeDueDate,
+            amount: installmentAmount,
+            status: 'GERADO'
+          });
+        }
+      }
+
+      const percent = Math.min(100, Math.round(((i + 1) / totalContracts) * 100));
+      onProgress?.({
+        percent,
+        stage: `Processando contrato ${contract.contractNumber} (${clientName})...`,
+        processed: i + 1,
+        total: totalContracts,
+        generated: totalTitlesGenerated,
+        amount: totalAmountGenerated
+      });
+
+      if (i % 3 === 0) {
+        await new Promise(r => setTimeout(r, 10));
+      }
+    }
+
+    if (newTitles.length > 0) {
+      storage.saveTitles(currentTitles);
+      storage.saveSales([...currentSales, ...newSales]);
+
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'FATURAMENTO_TAXA_BALANCO_LOTE',
+        module: 'Comercial/Financeiro',
+        recordId: `batch-tb-${Date.now()}`,
+        details: `Faturamento em lote de Taxas de Balanço: ${totalTitlesGenerated} títulos gerados no total de ${formatBRL(totalAmountGenerated)} (${alreadyExistingCount} já existiam).`
+      });
+    }
+
+    return {
+      totalContractsWithFee: totalContracts,
+      totalTitlesGenerated,
+      totalAmountGenerated,
+      alreadyExistingCount,
+      generatedTitles: newTitles,
+      details
+    };
+  }
+
+  /**
    * CALCULATE INADIMPLÊNCIA (DELINQUENCY RATE)
    * Formula in Prompt Item 16:
    * "saldo vencido / saldo total em aberto na data de referência", excluding drafts and canceled.
@@ -2879,6 +3148,26 @@ export const getAccountBadgeColorClasses = (account?: ChartAccount | null): {
 };
 
 /**
+ * Identifica com precisão se o título é referente a Taxa de Balanço Anual / 13º Honorário
+ */
+export const isBalanceFeeTitle = (title?: FinancialTitle | null): boolean => {
+  if (!title) return false;
+  const num = (title.titleNumber || '').toUpperCase();
+  const desc = (title.description || '').toLowerCase();
+  const notes = (title.notes || '').toLowerCase();
+  return (
+    num.startsWith('TB-') || 
+    num.startsWith('FAT-TB-') || 
+    desc.includes('taxa de balanço') || 
+    desc.includes('taxa de balanco') ||
+    desc.includes('13º honorário') ||
+    desc.includes('13o honorario') ||
+    notes.includes('taxa de balanço') ||
+    notes.includes('taxa de balanco')
+  );
+};
+
+/**
  * Monta mensagem padronizada de WhatsApp para aviso de vencimento / cobrança preventiva
  */
 export const buildWhatsAppMessageForTitle = (
@@ -2889,8 +3178,13 @@ export const buildWhatsAppMessageForTitle = (
   const val = formatBRL(title.balancePrincipal || title.originalAmount);
   const due = formatDateBR(title.dueDate);
   const desc = title.description || 'Lançamento financeiro';
+  const isTB = isBalanceFeeTitle(title);
 
   if (title.type === 'RECEBER') {
+    if (isTB) {
+      return `Olá, ${party}! Tudo bem?\n\nPassando para lembrar sobre a *Taxa de Balanço Anual / Encerramento do Exercício* (*${desc}*).\n\n📌 *Valor:* ${val}\n📅 *Vencimento:* ${due}\n\nEsta cobrança refere-se aos trabalhos de fechamento das demonstrações contábeis, conciliações anuais e encerramento do Balanço Patrimonial do exercício.\n\nCaso já tenha efetuado o pagamento ou precise de 2ª via ou chave PIX, estamos à total disposição!\n\nAtenciosamente,\n*Equipe Financeira Contaju*`;
+    }
+
     return `Olá, ${party}! Tudo bem?\n\nPassando para lembrar sobre a sua fatura/honorário referente a *${desc}* no valor de *${val}*, com vencimento em *${due}*.\n\nCaso já tenha efetuado o pagamento, por gentileza desconsidere este aviso. Estamos à disposição!`;
   } else {
     return `Olá, ${party}! Tudo bem?\n\nReferente ao compromisso financeiro de *${desc}* no valor de *${val}*, com vencimento programado para *${due}*.\n\nFavor confirmar a chave PIX ou dados bancários para liquidação tempestiva. Muito obrigado!`;

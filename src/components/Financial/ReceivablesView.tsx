@@ -35,11 +35,22 @@ import {
   Printer,
   FileCheck,
   Folder,
+  Scale,
   X
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts, formatAccountNameWithoutCode, getAccountBadgeColorClasses, triggerWhatsAppForTitle } from '../../services/financialEngine';
+import { 
+  FinancialEngine, 
+  formatBRL, 
+  formatDateBR, 
+  getTemporalStatus, 
+  getFilteredChartAccounts, 
+  formatAccountNameWithoutCode, 
+  getAccountBadgeColorClasses, 
+  triggerWhatsAppForTitle,
+  isBalanceFeeTitle
+} from '../../services/financialEngine';
 import { CreditRiskService, CustomerRiskProfile, RiskLevel } from '../../services/creditRiskService';
 import { matchesSearch } from '../../utils/searchUtils';
 import { SettlementModal } from '../Modals/SettlementModal';
@@ -80,7 +91,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const [quickDateFilter, setQuickDateFilter] = useState<'ALL' | 'HOJE' | 'ESTA_SEMANA' | 'VENCIDO' | 'LIQUIDADO' | 'ESTE_MES'>('ALL');
   const [isPredictiveExpandedMobile, setIsPredictiveExpandedMobile] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
-  const [originFilter, setOriginFilter] = useState<'ALL' | 'CONTRATO' | 'VENDA' | 'MANUAL'>('ALL');
+  const [originFilter, setOriginFilter] = useState<'ALL' | 'CONTRATO' | 'TAXA_BALANCO' | 'VENDA' | 'MANUAL'>('ALL');
   const [counterpartyFilter, setCounterpartyFilter] = useState<string>('ALL');
   const [bankFilter, setBankFilter] = useState<string>('ALL');
   const [riskFilter, setRiskFilter] = useState<'ALL' | 'BAIXO' | 'MODERADO' | 'ALTO'>('ALL');
@@ -420,14 +431,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           }
         }
 
-        // Origin filter (Contrato Recorrente vs Venda Avulsa/Parcelada vs Manual)
+        // Origin filter (Contrato Recorrente vs Taxa de Balanço vs Venda Avulsa/Parcelada vs Manual)
         if (originFilter !== 'ALL') {
-          const isContract = t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || Boolean(t.contractNumber);
+          const isTB = isBalanceFeeTitle(t);
+          const isContract = (t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || Boolean(t.contractNumber)) && !isTB;
           const isSale = t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || Boolean(t.saleNumber);
 
-          if (originFilter === 'CONTRATO' && !isContract) return false;
+          if (originFilter === 'TAXA_BALANCO' && !isTB) return false;
+          if (originFilter === 'CONTRATO' && (!isContract || isTB)) return false;
           if (originFilter === 'VENDA' && !isSale) return false;
-          if (originFilter === 'MANUAL' && (isContract || isSale)) return false;
+          if (originFilter === 'MANUAL' && (isContract || isSale || isTB)) return false;
         }
 
         // Counterparty filter
@@ -1429,7 +1442,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             >
               <option value="ALL">Todas as Origens</option>
-              <option value="CONTRATO">🏷️ Contratos Recorrentes</option>
+              <option value="CONTRATO">🏷️ Contratos Recorrentes (Mensalidades)</option>
+              <option value="TAXA_BALANCO">⚖️ Taxas de Balanço Anual (13º)</option>
               <option value="VENDA">🏷️ Vendas Avulsas / Parceladas</option>
               <option value="MANUAL">🏷️ Lançamentos Diretos / Manuais</option>
             </select>
@@ -1822,11 +1836,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             Parcial
                           </span>
                         )}
-                        {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                        {isBalanceFeeTitle(t) ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 flex items-center gap-0.5">
+                            <Scale className="w-2.5 h-2.5" />
+                            <span>Taxa Balanço {t.installmentIndex && t.totalInstallments ? `(${t.installmentIndex}/${t.totalInstallments})` : ''}</span>
+                          </span>
+                        ) : (t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) ? (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                             🏷️ Contrato {t.contractNumber || ''}
                           </span>
-                        )}
+                        ) : null}
                         {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
                             🏷️ Venda {t.saleNumber || ''}
@@ -2400,14 +2419,22 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                                 #{t.titleNumber}
                               </span>
 
-                              {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                              {isBalanceFeeTitle(t) ? (
+                                <span 
+                                  title={`Taxa de Balanço Anual / 13º Honorário Contábil (${t.installmentIndex || 1}ª de ${t.totalInstallments || 1} parcelas)`}
+                                  className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
+                                >
+                                  <Scale className="w-2.5 h-2.5" />
+                                  <span>Taxa de Balanço {t.installmentIndex && t.totalInstallments ? `(${t.installmentIndex}/${t.totalInstallments})` : ''}</span>
+                                </span>
+                              ) : (t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) ? (
                                 <span 
                                   title={`Título originado de Contrato Recorrente${t.contractNumber ? `: ${t.contractNumber}` : ''}`}
                                   className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
                                 >
                                   🏷️ Contrato {t.contractNumber || ''}
                                 </span>
-                              )}
+                              ) : null}
                               {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
                                 <span 
                                   title={`Título originado de Venda Avulsa / Parcelada${t.saleNumber ? `: ${t.saleNumber}` : ''}`}

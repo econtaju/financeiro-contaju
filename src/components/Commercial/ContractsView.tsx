@@ -57,6 +57,7 @@ import { CancelContractModal } from '../Modals/CancelContractModal';
 import { DeleteContractModal } from '../Modals/DeleteContractModal';
 import { CompleteCounterpartyModal } from '../Modals/CompleteCounterpartyModal';
 import { ContractAdjustmentNotificationModal } from '../Modals/ContractAdjustmentNotificationModal';
+import { BalanceFeeBatchBillingModal } from '../Modals/BalanceFeeBatchBillingModal';
 import { matchesSearch } from '../../utils/searchUtils';
 
 interface ContractsViewProps {
@@ -82,6 +83,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   const [statusTab, setStatusTab] = useState<'ALL' | 'ATIVO' | 'CANCELADO' | 'INATIVO' | 'SUSPENSO_ENCERRADO'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isBalanceFeeBatchModalOpen, setIsBalanceFeeBatchModalOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [successToast, setSuccessToast] = useState<string>('');
 
@@ -802,10 +804,18 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           </button>
           <button
             onClick={onOpenBillingModal}
-            className="h-9 px-3.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap"
+            className="h-9 px-3.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap cursor-pointer"
           >
             <CalendarClock className="w-4 h-4 mr-1.5 shrink-0 text-amber-500" />
             Processar Faturamento Mensal
+          </button>
+          <button
+            onClick={() => setIsBalanceFeeBatchModalOpen(true)}
+            className="h-9 px-3.5 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 rounded-lg text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors shadow-2xs flex items-center shrink-0 whitespace-nowrap cursor-pointer"
+            title="Faturar Taxas de Balanço Anual (13º Honorário) em lote conforme parcelamento cadastrado nos contratos"
+          >
+            <Scale className="w-4 h-4 mr-1.5 shrink-0 text-purple-600 dark:text-purple-400" />
+            Faturar Taxa de Balanço (13º)
           </button>
           <button
             onClick={handleOpenNew}
@@ -3327,6 +3337,16 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
           onClose={() => setNotifyAdjustmentModal({ isOpen: false, adjustment: null })}
         />
       )}
+
+      {/* Modal de Faturamento em Lote de Taxa de Balanço Anual (13º Honorário) */}
+      <BalanceFeeBatchBillingModal
+        isOpen={isBalanceFeeBatchModalOpen}
+        onClose={() => setIsBalanceFeeBatchModalOpen(false)}
+        onGenerated={(res) => {
+          setSuccessToast(`Faturamento de Taxas de Balanço concluído: ${res.totalTitlesGenerated} títulos gerados (${formatBRL(res.totalAmountGenerated)})`);
+          setTimeout(() => setSuccessToast(''), 6000);
+        }}
+      />
     </div>
   );
 };
