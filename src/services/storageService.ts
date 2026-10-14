@@ -2047,6 +2047,9 @@ class StorageService {
     counterpartyId: string;
     counterpartyName: string;
     competence: string;
+    dueDate: string;
+    description: string;
+    titleNumber: string;
     amount: number;
     titles: FinancialTitle[];
   }> {
@@ -2055,12 +2058,19 @@ class StorageService {
     const counterparties = this.getCounterparties();
     const cpMap = new Map(counterparties.map(c => [c.id, c.name]));
 
-    // Agrupar por (counterpartyId + competence + amount.toFixed(2) + type)
+    // Agrupar estritamente por mesma data de vencimento + mesma competência + mesmo valor + mesma descrição + contraparte
+    // Impedindo categoricamente que vencimentos diferentes (ex: 30/09 e 30/10) sejam considerados duplicatas
     const groups = new Map<string, FinancialTitle[]>();
     for (const t of filteredTitles) {
-      if (!t.counterpartyId || !t.competence) continue;
-      const amountVal = (Number(t.balancePrincipal) || Number(t.originalAmount) || 0).toFixed(2);
-      const key = `${t.type}_${t.counterpartyId}_${t.competence}_${amountVal}`;
+      if (!t.dueDate) continue;
+      const amountVal = (Number(t.originalAmount) || Number(t.balancePrincipal) || 0).toFixed(2);
+      const normDueDate = (t.dueDate || '').trim();
+      const normCompetence = (t.competence || '').trim();
+      const normDesc = (t.description || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const normCounterparty = (t.counterpartyId || '').trim();
+
+      // Duplicidade estrita: mesmo tipo, mesma contraparte, mesma data de vencimento, mesma competência, mesmo valor e mesma descrição
+      const key = `${t.type}_${normCounterparty}_${normCompetence}_${normDueDate}_${amountVal}_${normDesc}`;
       const existing = groups.get(key) || [];
       existing.push(t);
       groups.set(key, existing);
@@ -2071,6 +2081,9 @@ class StorageService {
       counterpartyId: string;
       counterpartyName: string;
       competence: string;
+      dueDate: string;
+      description: string;
+      titleNumber: string;
       amount: number;
       titles: FinancialTitle[];
     }> = [];
@@ -2083,6 +2096,9 @@ class StorageService {
           counterpartyId: first.counterpartyId,
           counterpartyName: cpMap.get(first.counterpartyId) || 'Não identificado',
           competence: first.competence,
+          dueDate: first.dueDate,
+          description: first.description,
+          titleNumber: first.titleNumber,
           amount: Number(first.originalAmount) || Number(first.balancePrincipal) || 0,
           titles: groupTitles
         });

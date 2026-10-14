@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts, formatAccountNameWithoutCode } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus, getFilteredChartAccounts, formatAccountNameWithoutCode, getAccountBadgeColorClasses, triggerWhatsAppForTitle } from '../../services/financialEngine';
 import { CreditRiskService, CustomerRiskProfile, RiskLevel } from '../../services/creditRiskService';
 import { matchesSearch } from '../../utils/searchUtils';
 import { SettlementModal } from '../Modals/SettlementModal';
@@ -101,6 +101,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const [expandedMobileIds, setExpandedMobileIds] = useState<Record<string, boolean>>({});
   const [historyTitle, setHistoryTitle] = useState<FinancialTitle | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const duplicateCandidates = useMemo(() => {
+    try {
+      return storage.findDuplicateTitleCandidates('RECEBER');
+    } catch {
+      return [];
+    }
+  }, [refreshKey]);
 
   const toggleExpandMobile = (id: string) => {
     setExpandedMobileIds(prev => ({ ...prev, [id]: !prev[id] }));
@@ -578,6 +586,25 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     }
   };
 
+  // WhatsApp reminder/collection notification
+  const handleTriggerWhatsApp = (t: FinancialTitle, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const client = counterparties.find(c => c && c.id === t.counterpartyId);
+    const clientPhone = client?.phone || (client as any)?.mobilePhone || (client as any)?.whatsapp;
+    const res = triggerWhatsAppForTitle(t, clientPhone, client?.name || client?.tradeName);
+    if (res.copied) {
+      setToastMessage({
+        type: 'success',
+        text: 'Mensagem de cobrança WhatsApp copiada e conversa aberta!'
+      });
+    } else {
+      setToastMessage({
+        type: 'success',
+        text: 'Conversa de WhatsApp aberta com sucesso!'
+      });
+    }
+  };
+
   // Batch operations
   const handleBatchDuplicate = (advanceMonth = false) => {
     if (selectedIds.length === 0) return;
@@ -797,11 +824,20 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
           </button>
           <button
             onClick={() => setIsDedupModalOpen(true)}
-            className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors flex items-center shadow-2xs shrink-0 cursor-pointer"
-            title="Assistente de conciliação e limpeza de títulos duplicados"
+            className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center shadow-2xs shrink-0 cursor-pointer ${
+              duplicateCandidates.length > 0
+                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 font-bold ring-2 ring-amber-400/50'
+                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30'
+            }`}
+            title="Assistente de conciliação e limpeza de títulos a receber duplicados (mesmo vencimento, valor e descrição)"
           >
             <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
-            Limpeza de Duplicidades
+            <span>Limpeza de Duplicidades</span>
+            {duplicateCandidates.length > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-slate-950 text-amber-400">
+                {duplicateCandidates.length}
+              </span>
+            )}
           </button>
           <button
             onClick={handleExportExcel}
@@ -1813,19 +1849,24 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         {t.description || 'Sem descrição informada'}
                       </div>
 
-                      {/* Categoria do Plano de Contas (apenas nome) e Código do Documento */}
-                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                        <span 
-                          title={`Categoria Contábil: ${formatAccountNameWithoutCode(chartAcc)}`}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 max-w-[220px] truncate"
-                        >
-                          <Folder className="w-3 h-3 text-amber-500 shrink-0" />
-                          <span className="truncate">{formatAccountNameWithoutCode(chartAcc)}</span>
-                        </span>
-                        <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800">
-                          #{t.titleNumber}
-                        </span>
-                      </div>
+                      {/* Categoria do Plano de Contas (apenas nome com cor temática) e Código do Documento */}
+                      {(() => {
+                        const catColors = getAccountBadgeColorClasses(chartAcc);
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            <span 
+                              title={`Categoria Contábil: ${formatAccountNameWithoutCode(chartAcc)}`}
+                              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border max-w-[220px] truncate ${catColors.container}`}
+                            >
+                              <Folder className={`w-3 h-3 ${catColors.icon} shrink-0`} />
+                              <span className="truncate">{formatAccountNameWithoutCode(chartAcc)}</span>
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                              #{t.titleNumber}
+                            </span>
+                          </div>
+                        );
+                      })()}
 
                       {/* Data de Vencimento com Ícone */}
                       <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
@@ -2055,6 +2096,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         <span>Duplicar</span>
                       </button>
+
+                      {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleTriggerWhatsApp(t, e)}
+                          className="min-h-[40px] min-w-[40px] p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
+                          title="Enviar aviso/cobrança via WhatsApp"
+                        >
+                          <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -2328,40 +2380,45 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                           {t.description || 'Sem descrição'}
                         </div>
 
-                        {/* Categoria do Plano de Contas (apenas o nome) e Código de Operação Minimizados */}
-                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                          <span 
-                            title={`Categoria Contábil: ${categoryName}${chartAcc?.code ? ` (${chartAcc.code})` : ''}`}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/60"
-                          >
-                            <Folder className="w-3 h-3 text-amber-500 shrink-0" />
-                            <span>{categoryName}</span>
-                          </span>
+                        {/* Categoria do Plano de Contas (com cores temáticas) e Código de Operação Minimizados */}
+                        {(() => {
+                          const catColors = getAccountBadgeColorClasses(chartAcc);
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              <span 
+                                title={`Categoria Contábil: ${categoryName}${chartAcc?.code ? ` (${chartAcc.code})` : ''}`}
+                                className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border ${catColors.container}`}
+                              >
+                                <Folder className={`w-3 h-3 ${catColors.icon} shrink-0`} />
+                                <span>{categoryName}</span>
+                              </span>
 
-                          <span 
-                            title={`Número do título: ${t.titleNumber}`}
-                            className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-800"
-                          >
-                            #{t.titleNumber}
-                          </span>
+                              <span 
+                                title={`Número do título: ${t.titleNumber}`}
+                                className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-800"
+                              >
+                                #{t.titleNumber}
+                              </span>
 
-                          {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
-                            <span 
-                              title={`Título originado de Contrato Recorrente${t.contractNumber ? `: ${t.contractNumber}` : ''}`}
-                              className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
-                            >
-                              🏷️ Contrato {t.contractNumber || ''}
-                            </span>
-                          )}
-                          {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
-                            <span 
-                              title={`Título originado de Venda Avulsa / Parcelada${t.saleNumber ? `: ${t.saleNumber}` : ''}`}
-                              className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30"
-                            >
-                              🏷️ Venda {t.saleNumber || ''}
-                            </span>
-                          )}
-                        </div>
+                              {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
+                                <span 
+                                  title={`Título originado de Contrato Recorrente${t.contractNumber ? `: ${t.contractNumber}` : ''}`}
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                                >
+                                  🏷️ Contrato {t.contractNumber || ''}
+                                </span>
+                              )}
+                              {(t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-')) || t.saleNumber) && (
+                                <span 
+                                  title={`Título originado de Venda Avulsa / Parcelada${t.saleNumber ? `: ${t.saleNumber}` : ''}`}
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30"
+                                >
+                                  🏷️ Venda {t.saleNumber || ''}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       <td className="py-3 px-4">
@@ -2459,15 +2516,25 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
                         <button
                           onClick={(e) => handleDuplicateOne(t, e)}
-                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
+                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
                           title="Duplicar este lançamento"
                         >
                           <Copy className="w-4 h-4" />
                         </button>
 
+                        {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                          <button
+                            onClick={(e) => handleTriggerWhatsApp(t, e)}
+                            className="p-1 text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors cursor-pointer"
+                            title="Enviar aviso de cobrança via WhatsApp"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </button>
+                        )}
+
                         <button
                           onClick={() => setHistoryTitle(t)}
-                          className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+                          className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded cursor-pointer"
                           title="Ver detalhes e histórico de liquidações"
                         >
                           <Eye className="w-4 h-4" />

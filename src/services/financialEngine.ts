@@ -2727,4 +2727,160 @@ export const formatAccountNameWithoutCode = (account?: ChartAccount | null): str
   return cleaned || account.name;
 };
 
+/**
+ * Retorna classes CSS de cores harmoniosas (fundo, texto, borda) para badges de categoria
+ * baseadas na taxonomia e natureza contábil da conta, com excelente legibilidade em modo claro e escuro.
+ */
+export const getAccountBadgeColorClasses = (account?: ChartAccount | null): {
+  container: string;
+  icon: string;
+} => {
+  if (!account) {
+    return {
+      container: 'bg-slate-100 text-slate-700 dark:bg-slate-800/90 dark:text-slate-300 border-slate-200 dark:border-slate-700/60',
+      icon: 'text-slate-500 dark:text-slate-400'
+    };
+  }
+
+  const tax = getAccountTaxonomyInfo(account);
+  const code = account.code || '';
+  const nature = account.nature || '';
+
+  // 1. Receitas de Serviços / Operacionais
+  if (tax.categoryType === 'RECEITA') {
+    return {
+      container: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/70',
+      icon: 'text-emerald-600 dark:text-emerald-400'
+    };
+  }
+
+  // 2. Custos da Operação / Serviços Prestados (CSP/CPV)
+  if (tax.categoryType === 'CUSTO') {
+    return {
+      container: 'bg-cyan-50 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/70',
+      icon: 'text-cyan-600 dark:text-cyan-400'
+    };
+  }
+
+  // 3. Deduções da Receita (Impostos / Abatimentos)
+  if (tax.categoryType === 'DEDUCAO') {
+    return {
+      container: 'bg-orange-50 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border-orange-200 dark:border-orange-800/70',
+      icon: 'text-orange-600 dark:text-orange-400'
+    };
+  }
+
+  // 4. Despesas Operacionais específicas
+  if (code.startsWith('3.1') || nature === 'DESPESA_PESSOAL') {
+    // Despesas com Pessoal / Folha / Benefícios
+    return {
+      container: 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/70',
+      icon: 'text-indigo-600 dark:text-indigo-400'
+    };
+  }
+
+  if (code.startsWith('3.2') || nature === 'DESPESA_ADMINISTRATIVA') {
+    // Despesas Administrativas & TI
+    return {
+      container: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800/70',
+      icon: 'text-amber-600 dark:text-amber-400'
+    };
+  }
+
+  if (code.startsWith('3.3') || nature === 'DESPESA_COMERCIAL') {
+    // Despesas Comerciais & Marketing
+    return {
+      container: 'bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800/70',
+      icon: 'text-purple-600 dark:text-purple-400'
+    };
+  }
+
+  if (code.startsWith('4.2') || nature.includes('FINANCEIR')) {
+    // Despesas Financeiras & Bancárias
+    return {
+      container: 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800/70',
+      icon: 'text-rose-600 dark:text-rose-400'
+    };
+  }
+
+  // 5. Investimentos & Ativos
+  if (tax.categoryType === 'INVESTIMENTO' || code.startsWith('6.')) {
+    return {
+      container: 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800/70',
+      icon: 'text-blue-600 dark:text-blue-400'
+    };
+  }
+
+  // Padrão para despesas gerais
+  if (tax.categoryType === 'DESPESA') {
+    return {
+      container: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800/70',
+      icon: 'text-amber-600 dark:text-amber-400'
+    };
+  }
+
+  return {
+    container: 'bg-slate-100 text-slate-700 dark:bg-slate-800/90 dark:text-slate-300 border-slate-200 dark:border-slate-700/60',
+    icon: 'text-slate-500 dark:text-slate-400'
+  };
+};
+
+/**
+ * Monta mensagem padronizada de WhatsApp para aviso de vencimento / cobrança preventiva
+ */
+export const buildWhatsAppMessageForTitle = (
+  title: FinancialTitle,
+  counterpartyName?: string
+): string => {
+  const party = (counterpartyName || 'Prezado(a)').trim();
+  const val = formatBRL(title.balancePrincipal || title.originalAmount);
+  const due = formatDateBR(title.dueDate);
+  const desc = title.description || 'Lançamento financeiro';
+
+  if (title.type === 'RECEBER') {
+    return `Olá, ${party}! Tudo bem?\n\nPassando para lembrar sobre a sua fatura/honorário referente a *${desc}* no valor de *${val}*, com vencimento em *${due}*.\n\nCaso já tenha efetuado o pagamento, por gentileza desconsidere este aviso. Estamos à disposição!`;
+  } else {
+    return `Olá, ${party}! Tudo bem?\n\nReferente ao compromisso financeiro de *${desc}* no valor de *${val}*, com vencimento programado para *${due}*.\n\nFavor confirmar a chave PIX ou dados bancários para liquidação tempestiva. Muito obrigado!`;
+  }
+};
+
+/**
+ * Dispara notificação via WhatsApp Web / App e copia a mensagem para a área de transferência
+ */
+export const triggerWhatsAppForTitle = (
+  title: FinancialTitle,
+  phone?: string,
+  counterpartyName?: string
+): { success: boolean; message: string; copied: boolean } => {
+  const msg = buildWhatsAppMessageForTitle(title, counterpartyName);
+  let copied = false;
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(msg);
+      copied = true;
+    }
+  } catch (err) {
+    console.warn('Não foi possível copiar automaticamente para a área de transferência', err);
+  }
+
+  let cleanPhone = (phone || '').replace(/\D/g, '');
+  if (cleanPhone.length >= 10 && cleanPhone.length <= 11 && !cleanPhone.startsWith('55')) {
+    cleanPhone = `55${cleanPhone}`;
+  }
+
+  const encodedMsg = encodeURIComponent(msg);
+  const waUrl = cleanPhone.length >= 12
+    ? `https://wa.me/${cleanPhone}?text=${encodedMsg}`
+    : `https://wa.me/?text=${encodedMsg}`;
+
+  window.open(waUrl, '_blank', 'noopener,noreferrer');
+
+  return {
+    success: true,
+    message: msg,
+    copied
+  };
+};
+
 

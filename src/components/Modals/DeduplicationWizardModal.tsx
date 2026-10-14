@@ -11,11 +11,13 @@ import {
   Check,
   Building,
   Calendar,
-  DollarSign
+  DollarSign,
+  Folder,
+  ShieldCheck
 } from 'lucide-react';
 import { FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
-import { formatBRL, formatDateBR, formatCompetence } from '../../services/financialEngine';
+import { formatBRL, formatDateBR, formatCompetence, getAccountBadgeColorClasses, formatAccountNameWithoutCode } from '../../services/financialEngine';
 
 interface DeduplicationWizardModalProps {
   isOpen: boolean;
@@ -31,6 +33,8 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
   onResolved
 }) => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const chartAccounts = useMemo(() => storage.getChartAccounts(), [refreshTrigger]);
 
   // Buscar grupos candidatos a duplicidade
   const duplicateGroups = useMemo(() => {
@@ -170,22 +174,20 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
                 Nenhuma duplicidade encontrada!
               </h3>
               <p className="text-[var(--text-secondary)] max-w-md mx-auto text-xs">
-                Sua carteira de títulos a {type.toLowerCase()} está consistente e saudável. Não há lançamentos sobrepostos com mesmo credor/devedor, competência e valor.
+                Sua carteira de títulos a {type.toLowerCase()} está consistente e saudável. Não há lançamentos sobrepostos com mesmo credor/devedor, mesma data de vencimento, mesma descrição e mesmo valor.
               </p>
             </div>
           ) : (
             <>
-              {/* Alert notice */}
-              <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
-                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <span className="font-bold text-amber-900 dark:text-amber-300 block">
-                    Foram identificados {totalGroups} grupo(s) com potenciais duplicidades:
-                  </span>
-                  <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                    Selecione qual lançamento deseja <strong>MANTER (preservar)</strong> em cada grupo. Os demais títulos duplicados serão removidos permanentemente. Se algum título já estiver quitado/baixado, suas baixas vinculadas serão tratadas com segurança.
-                  </p>
+              {/* Alert notice com Regra Estrita */}
+              <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold text-xs">
+                  <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span>Regra Estrita de Validação de Duplicidades</span>
                 </div>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                  Para máxima segurança contábil, um lançamento só é agrupado como duplicidade quando possuir <strong>exatamente a mesma data de vencimento</strong>, <strong>mesma competência</strong>, <strong>mesma descrição</strong>, <strong>mesma contraparte</strong> e <strong>mesmo valor</strong>. Títulos com vencimentos em meses ou dias diferentes (recorrências ou parcelamentos) <strong>não são duplicidades</strong> e estão preservados.
+                </p>
               </div>
 
               {/* Group list */}
@@ -197,37 +199,44 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
                   return (
                     <div 
                       key={g.groupKey}
-                      className={`rounded-xl border transition-all ${
+                      className={`rounded-xl border transition-all overflow-hidden ${
                         isChecked 
-                          ? 'border-[var(--border-subtle)] bg-[var(--surface-elevated)]/40' 
+                          ? 'border-[var(--border-subtle)] bg-[var(--surface-elevated)]/40 shadow-xs' 
                           : 'opacity-50 border-[var(--border-subtle)] bg-slate-500/5'
                       }`}
                     >
                       {/* Group Header */}
-                      <div className="p-3.5 bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
+                      <div className="p-3.5 bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+                        <div className="flex items-start gap-3">
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleGroup(g.groupKey)}
-                            className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer w-4 h-4"
+                            className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer w-4 h-4 mt-1"
                             title="Processar este grupo"
                           />
-                          <div>
-                            <div className="font-bold text-[var(--text-primary)] text-sm flex items-center gap-2">
-                              <span>{g.counterpartyName}</span>
+                          <div className="space-y-1">
+                            <div className="font-bold text-[var(--text-primary)] text-sm flex items-center gap-2 flex-wrap">
+                              <span className="text-slate-900 dark:text-slate-100">{g.counterpartyName}</span>
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-                                {formatCompetence(g.competence)}
+                                Competência: {formatCompetence(g.competence)}
+                              </span>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-blue-500" />
+                                Vencimento: {formatDateBR(g.dueDate)}
                               </span>
                             </div>
-                            <span className="text-[11px] text-[var(--text-secondary)]">
-                              {g.titles.length} títulos idênticos de {formatBRL(g.amount)}
+                            <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+                              {g.description}
+                            </div>
+                            <span className="text-[11px] text-[var(--text-secondary)] block">
+                              {g.titles.length} títulos idênticos no valor de <strong>{formatBRL(g.amount)}</strong> cada
                             </span>
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-sm">
+                        <div className="text-right shrink-0 self-end sm:self-center">
+                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-base">
                             {formatBRL(g.amount)}
                           </span>
                           <span className="text-[10px] text-[var(--text-secondary)] block">por título</span>
@@ -240,6 +249,9 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
                           const isKeep = keepId === t.id;
                           const isContract = t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-'));
                           const isSale = t.originType === 'VENDA' || (t.titleNumber && t.titleNumber.startsWith('VEN-'));
+                          const chartAcc = chartAccounts.find(a => a && (a.id === t.accountId || a.id === t.chartAccountId));
+                          const categoryName = formatAccountNameWithoutCode(chartAcc);
+                          const catColors = getAccountBadgeColorClasses(chartAcc);
 
                           return (
                             <div 
@@ -251,17 +263,26 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
                                   : 'hover:bg-[var(--surface-elevated)] border border-transparent text-[var(--text-secondary)]'
                               }`}
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                                   isKeep ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-400 bg-white dark:bg-slate-800'
                                 }`}>
                                   {isKeep && <Check className="w-3 h-3" />}
                                 </div>
 
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-2">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-mono font-bold text-[var(--text-primary)]">
                                       {t.titleNumber}
+                                    </span>
+
+                                    {/* Categoria do Plano de Contas */}
+                                    <span 
+                                      className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${catColors.container}`}
+                                      title={`Categoria Contábil: ${categoryName}`}
+                                    >
+                                      <Folder className={`w-3 h-3 ${catColors.icon} shrink-0`} />
+                                      <span>{categoryName}</span>
                                     </span>
 
                                     {/* Tag de Origem */}
@@ -288,8 +309,14 @@ export const DeduplicationWizardModal: React.FC<DeduplicationWizardModalProps> =
                                     </span>
                                   </div>
 
-                                  <div className="text-[11px] truncate max-w-md">
-                                    {t.description} • Vencimento: {formatDateBR(t.dueDate)}
+                                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-normal break-words">
+                                    {t.description}
+                                  </div>
+
+                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                                    <span>Vencimento: <strong>{formatDateBR(t.dueDate)}</strong></span>
+                                    <span>•</span>
+                                    <span>Lançamento: {formatDateBR(t.launchDate || t.issueDate)}</span>
                                   </div>
                                 </div>
                               </div>
