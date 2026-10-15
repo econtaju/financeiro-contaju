@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -77,55 +77,112 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const effectiveMonthIdx = period.active && period.month > 0 ? period.month - 1 : currentMonthIdx;
   const currentCompetenceStr = `${effectiveYear}-${String(effectiveMonthIdx + 1).padStart(2, '0')}`;
 
-  // 1. DRE Data (Competence)
-  const dreData = ReportingEngine.generateDRE(effectiveYear);
-  const currentMonthGrossRevenue = dreData.lines[0]?.valuesByMonth[effectiveMonthIdx] || 0;
-  const currentMonthNetResult = dreData.netResults[effectiveMonthIdx] || 0;
-  
-  // Year-to-date DRE
-  const ytdGrossRevenue = dreData.lines[0]?.totalYear || 0;
-  const ytdNetResult = dreData.totalNetResult || 0;
-  const ytdMargin = ytdGrossRevenue > 0 ? (ytdNetResult / ytdGrossRevenue) * 100 : 0;
-  const monthMargin = currentMonthGrossRevenue > 0 ? (currentMonthNetResult / currentMonthGrossRevenue) * 100 : 0;
+  // 1. DRE Data (Competence) memoizado
+  const { dreData, currentMonthGrossRevenue, currentMonthNetResult, ytdGrossRevenue, ytdNetResult, ytdMargin, monthMargin } = useMemo(() => {
+    const dre = ReportingEngine.generateDRE(effectiveYear);
+    const grossRev = dre.lines[0]?.valuesByMonth[effectiveMonthIdx] || 0;
+    const netRes = dre.netResults[effectiveMonthIdx] || 0;
+    const ytdGross = dre.lines[0]?.totalYear || 0;
+    const ytdNet = dre.totalNetResult || 0;
+    const ytdMarg = ytdGross > 0 ? (ytdNet / ytdGross) * 100 : 0;
+    const monthMarg = grossRev > 0 ? (netRes / grossRev) * 100 : 0;
+    return {
+      dreData: dre,
+      currentMonthGrossRevenue: grossRev,
+      currentMonthNetResult: netRes,
+      ytdGrossRevenue: ytdGross,
+      ytdNetResult: ytdNet,
+      ytdMargin: ytdMarg,
+      monthMargin: monthMarg
+    };
+  }, [effectiveYear, effectiveMonthIdx]);
 
-  // 2. Cash Data (Realized Cash Flow)
-  const cashData = ReportingEngine.generateCashFlow(effectiveYear, 'REALIZADO');
-  const consolidatedCash = FinancialEngine.getConsolidatedCashBalance();
-  const currentMonthCashInflow = cashData.lines[2]?.valuesByMonth[effectiveMonthIdx] || 0;
-  const currentMonthCashOutflow = cashData.lines[3]?.valuesByMonth[effectiveMonthIdx] || 0;
-  const currentMonthNetCash = currentMonthCashInflow - currentMonthCashOutflow;
+  // 2. Cash Data (Realized Cash Flow) memoizado
+  const { cashData, consolidatedCash, currentMonthCashInflow, currentMonthCashOutflow, currentMonthNetCash } = useMemo(() => {
+    const cash = ReportingEngine.generateCashFlow(effectiveYear, 'REALIZADO');
+    const consolidated = FinancialEngine.getConsolidatedCashBalance();
+    const inflow = cash.lines[2]?.valuesByMonth[effectiveMonthIdx] || 0;
+    const outflow = cash.lines[3]?.valuesByMonth[effectiveMonthIdx] || 0;
+    return {
+      cashData: cash,
+      consolidatedCash: consolidated,
+      currentMonthCashInflow: inflow,
+      currentMonthCashOutflow: outflow,
+      currentMonthNetCash: inflow - outflow
+    };
+  }, [effectiveYear, effectiveMonthIdx]);
 
-  // 3. Bank Accounts Detailed
-  const bankAccounts = storage.getBankAccounts().filter(b => b.status === 'ATIVO');
-  const bankAccountsWithBalance = bankAccounts.map(b => ({
-    ...b,
-    calculatedBalance: FinancialEngine.getAccountBalance(b.id)
-  }));
+  // 3. Bank Accounts Detailed memoizado
+  const { bankAccounts, bankAccountsWithBalance } = useMemo(() => {
+    const accounts = storage.getBankAccounts().filter(b => b.status === 'ATIVO');
+    const withBal = accounts.map(b => ({
+      ...b,
+      calculatedBalance: FinancialEngine.getAccountBalance(b.id)
+    }));
+    return { bankAccounts: accounts, bankAccountsWithBalance: withBal };
+  }, []);
 
-  // 4. Portfolio, Contracts & Billing
-  const titles = storage.getTitles().filter(t => t.documentState === 'CONFIRMADO');
-  const counterparties = storage.getCounterparties();
-  const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+  // 4. Portfolio, Contracts & Billing memoizado
+  const { 
+    titles, 
+    counterparties, 
+    contracts, 
+    receivables, 
+    payables, 
+    openReceivables, 
+    openPayables, 
+    mrr, 
+    delinquency, 
+    activeContractsCount, 
+    averageTicket,
+    titlesThisCompetence,
+    contractsBilledCount,
+    contractsPendingCount,
+    totalBilledThisMonth
+  } = useMemo(() => {
+    const confirmedTitles = storage.getTitles().filter(t => t.documentState === 'CONFIRMADO');
+    const allCounterparties = storage.getCounterparties();
+    const activeContracts = storage.getContracts().filter(c => c.status === 'ATIVO');
 
-  const receivables = titles.filter(t => t.type === 'RECEBER');
-  const payables = titles.filter(t => t.type === 'PAGAR');
+    const rec = confirmedTitles.filter(t => t.type === 'RECEBER');
+    const pay = confirmedTitles.filter(t => t.type === 'PAGAR');
 
-  const openReceivables = receivables.reduce((acc, t) => acc + t.balancePrincipal, 0);
-  const openPayables = payables.reduce((acc, t) => acc + t.balancePrincipal, 0);
+    const openRec = rec.reduce((acc, t) => acc + t.balancePrincipal, 0);
+    const openPay = pay.reduce((acc, t) => acc + t.balancePrincipal, 0);
 
-  const mrr = FinancialEngine.calculateMRR();
-  const delinquency = FinancialEngine.calculateDelinquencyRate(today);
-  const activeContractsCount = contracts.length;
-  const averageTicket = activeContractsCount > 0 ? mrr / activeContractsCount : 0;
+    const calcMrr = FinancialEngine.calculateMRR();
+    const calcDelinquency = FinancialEngine.calculateDelinquencyRate(today);
+    const countActive = activeContracts.length;
+    const avgTicket = countActive > 0 ? calcMrr / countActive : 0;
 
-  // 5. Client KPIs & Metrics (Solicitado pelo usuário)
-  const clientMetrics = FinancialEngine.calculateClientMetrics(effectiveYear, effectiveMonthIdx);
+    const thisComp = confirmedTitles.filter(t => t.competence === currentCompetenceStr && t.originType === 'CONTRATO');
+    const billedCount = new Set(thisComp.map(t => t.originId)).size;
+    const pendingCount = Math.max(0, countActive - billedCount);
+    const billedMonth = thisComp.reduce((acc, t) => acc + t.originalAmount, 0);
 
-  // Monthly billing summary calculations
-  const titlesThisCompetence = titles.filter(t => t.competence === currentCompetenceStr && t.originType === 'CONTRATO');
-  const contractsBilledCount = new Set(titlesThisCompetence.map(t => t.originId)).size;
-  const contractsPendingCount = Math.max(0, activeContractsCount - contractsBilledCount);
-  const totalBilledThisMonth = titlesThisCompetence.reduce((acc, t) => acc + t.originalAmount, 0);
+    return {
+      titles: confirmedTitles,
+      counterparties: allCounterparties,
+      contracts: activeContracts,
+      receivables: rec,
+      payables: pay,
+      openReceivables: openRec,
+      openPayables: openPay,
+      mrr: calcMrr,
+      delinquency: calcDelinquency,
+      activeContractsCount: countActive,
+      averageTicket: avgTicket,
+      titlesThisCompetence: thisComp,
+      contractsBilledCount: billedCount,
+      contractsPendingCount: pendingCount,
+      totalBilledThisMonth: billedMonth
+    };
+  }, [today, currentCompetenceStr]);
+
+  // 5. Client KPIs & Metrics memoizado
+  const clientMetrics = useMemo(() => {
+    return FinancialEngine.calculateClientMetrics(effectiveYear, effectiveMonthIdx);
+  }, [effectiveYear, effectiveMonthIdx]);
 
   // Next dues in next 7 days
   const upcomingReceivables = receivables

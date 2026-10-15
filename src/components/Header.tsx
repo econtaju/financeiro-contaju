@@ -104,9 +104,9 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [currentScreen, payablesPeriod.period, receivablesPeriod.period, dashboardPeriod.period]);
 
-  const company = storage.getCompany();
-  const users = storage.getUsers();
-  const consolidatedCash = FinancialEngine.getConsolidatedCashBalance();
+  const company = useMemo(() => storage.getCompany(), []);
+  const users = useMemo(() => storage.getUsers(), []);
+  const consolidatedCash = useMemo(() => FinancialEngine.getConsolidatedCashBalance(), [currentScreen]);
 
   // Keyboard shortcut Ctrl+K / Cmd+K para abrir busca global
   useEffect(() => {
@@ -120,20 +120,28 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Contagem de notificações em tempo real
-  const titles = storage.getTitles();
-  const todayStr = new Date().toISOString().split('T')[0];
-  const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
-  const expiringContractsCount = contracts.filter(c => {
-    if (!c.endDate) return false;
-    const diffDays = Math.ceil((new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-    return diffDays >= 0 && diffDays <= 30;
-  }).length;
-  const payablesTodayCount = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === todayStr).length;
-  const pendingReconciliationCount = storage.getStatementEntries().filter(
-    s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO'
-  ).length;
-  const totalAlerts = expiringContractsCount + payablesTodayCount + pendingReconciliationCount;
+  // Contagem de notificações em tempo real memoizada
+  const { expiringContractsCount, payablesTodayCount, pendingReconciliationCount, totalAlerts } = useMemo(() => {
+    const titles = storage.getTitles();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    const nowTime = new Date().getTime();
+    const expiring = contracts.filter(c => {
+      if (!c.endDate) return false;
+      const diffDays = Math.ceil((new Date(c.endDate).getTime() - nowTime) / (1000 * 3600 * 24));
+      return diffDays >= 0 && diffDays <= 30;
+    }).length;
+    const payToday = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === todayStr).length;
+    const pendingReconcile = storage.getStatementEntries().filter(
+      s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO'
+    ).length;
+    return {
+      expiringContractsCount: expiring,
+      payablesTodayCount: payToday,
+      pendingReconciliationCount: pendingReconcile,
+      totalAlerts: expiring + payToday + pendingReconcile
+    };
+  }, [currentScreen]);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';

@@ -163,10 +163,39 @@ const DEFAULT_DASHBOARD_CONFIG = {
 class StorageService {
   private listeners: Set<() => void> = new Set();
   private debouncedSyncTimeout: any = null;
+  private inMemoryCache: Map<string, any> = new Map();
+  private normalizedTitlesCache: FinancialTitle[] | null = null;
 
   constructor() {
     this.freeUpLocalStorageSpace();
     this.initIfEmpty();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key) {
+          this.inMemoryCache.delete(e.key);
+          if (e.key === STORAGE_KEYS.TITLES) {
+            this.normalizedTitlesCache = null;
+          }
+        } else {
+          this.inMemoryCache.clear();
+          this.normalizedTitlesCache = null;
+        }
+        this.notify();
+      });
+    }
+  }
+
+  public invalidateCache(key?: string) {
+    if (key) {
+      this.inMemoryCache.delete(key);
+      if (key === STORAGE_KEYS.TITLES) {
+        this.normalizedTitlesCache = null;
+      }
+    } else {
+      this.inMemoryCache.clear();
+      this.normalizedTitlesCache = null;
+    }
   }
 
   public subscribe(listener: () => void) {
@@ -425,20 +454,31 @@ class StorageService {
     } catch {}
   }
 
-  // Generic getter/setter com proteção total contra QuotaExceededError
+  // Generic getter/setter com proteção total contra QuotaExceededError e cache em memória O(1)
   private get<T>(key: string, fallback: T): T {
+    if (this.inMemoryCache.has(key)) {
+      return this.inMemoryCache.get(key);
+    }
+
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
       const memData = this.inMemoryFallback[key];
-      return memData ? JSON.parse(memData) : fallback;
+      const parsed = memData ? JSON.parse(memData) : fallback;
+      this.inMemoryCache.set(key, parsed);
+      return parsed;
     }
     try {
       const data = localStorage.getItem(key);
       if (data) {
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        this.inMemoryCache.set(key, parsed);
+        return parsed;
       }
       if (this.inMemoryFallback[key]) {
-        return JSON.parse(this.inMemoryFallback[key]);
+        const parsed = JSON.parse(this.inMemoryFallback[key]);
+        this.inMemoryCache.set(key, parsed);
+        return parsed;
       }
+      this.inMemoryCache.set(key, fallback);
       return fallback;
     } catch {
       return fallback;
@@ -446,6 +486,11 @@ class StorageService {
   }
 
   private set<T>(key: string, value: T) {
+    this.inMemoryCache.set(key, value);
+    if (key === STORAGE_KEYS.TITLES) {
+      this.normalizedTitlesCache = null;
+    }
+
     const jsonStr = JSON.stringify(value);
     this.inMemoryFallback[key] = jsonStr;
 
@@ -1663,11 +1708,15 @@ class StorageService {
     return { success: true, message: `Contrato ${contract.contractNumber} excluído com sucesso!`, cancelledCount };
   }
 
-  // Titles (Receivables & Payables)
+  // Titles (Receivables & Payables) com cache O(1)
   public getTitles(): FinancialTitle[] {
+    if (this.normalizedTitlesCache) {
+      return this.normalizedTitlesCache;
+    }
+
     const raw = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, INITIAL_TITLES);
     if (!Array.isArray(raw)) return [];
-    return raw.filter(t => t && typeof t === 'object' && t.id).map(t => {
+    const normalized = raw.filter(t => t && typeof t === 'object' && t.id).map(t => {
       const orig = Number(t.originalAmount) || 0;
       const settled = Number(t.settledPrincipal) || 0;
       const bal = typeof t.balancePrincipal === 'number' && !isNaN(t.balancePrincipal)
@@ -1688,6 +1737,9 @@ class StorageService {
         competence: t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : new Date().toISOString().substring(0, 7))
       };
     });
+
+    this.normalizedTitlesCache = normalized;
+    return normalized;
   }
   public saveTitles(titles: FinancialTitle[]) {
     const seen = new Set<string>();

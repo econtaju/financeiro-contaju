@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -154,24 +154,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
   };
 
-  // Compute badges for alerts
-  const titles = storage.getTitles();
-  const today = new Date().toISOString().split('T')[0];
-  const overdueReceivables = titles.filter(t => t.type === 'RECEBER' && t.balancePrincipal > 0 && t.dueDate < today).length;
-  const overduePayables = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate < today).length;
-  
-  const stmts = storage.getStatementEntries();
-  const pendingReconciliation = stmts.filter(s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO').length;
+  // Compute badges for alerts memoizado
+  const { 
+    overdueReceivables, 
+    overduePayables, 
+    pendingReconciliation, 
+    expiringContractsCount, 
+    payablesTodayCount, 
+    totalNotificationAlerts 
+  } = useMemo(() => {
+    const titles = storage.getTitles();
+    const today = new Date().toISOString().split('T')[0];
+    const overdueRec = titles.filter(t => t.type === 'RECEBER' && t.balancePrincipal > 0 && t.dueDate < today).length;
+    const overduePay = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate < today).length;
+    
+    const stmts = storage.getStatementEntries();
+    const pendingReconcile = stmts.filter(s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO').length;
 
-  // Alertas de Notificação (Contratos a vencer em 30d + A pagar hoje + Conciliação)
-  const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
-  const expiringContractsCount = contracts.filter(c => {
-    if (!c.endDate) return false;
-    const diffDays = Math.ceil((new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-    return diffDays >= 0 && diffDays <= 30;
-  }).length;
-  const payablesTodayCount = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === today).length;
-  const totalNotificationAlerts = expiringContractsCount + payablesTodayCount + pendingReconciliation;
+    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+    const nowTime = new Date().getTime();
+    const expiring = contracts.filter(c => {
+      if (!c.endDate) return false;
+      const diffDays = Math.ceil((new Date(c.endDate).getTime() - nowTime) / (1000 * 3600 * 24));
+      return diffDays >= 0 && diffDays <= 30;
+    }).length;
+    const payToday = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === today).length;
+    return {
+      overdueReceivables: overdueRec,
+      overduePayables: overduePay,
+      pendingReconciliation: pendingReconcile,
+      expiringContractsCount: expiring,
+      payablesTodayCount: payToday,
+      totalNotificationAlerts: expiring + payToday + pendingReconcile
+    };
+  }, [currentScreen]);
 
   const groups: NavGroup[] = [
     {
