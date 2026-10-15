@@ -34,7 +34,8 @@ import {
   Scale, 
   Bot,
   RotateCcw,
-  Undo2
+  Undo2,
+  Landmark
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -47,6 +48,7 @@ import { ReconciliationDiagnosticsModal } from './ReconciliationDiagnosticsModal
 import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 import { ReconciliationFloatingModal } from './ReconciliationFloatingModal';
 import { AiReconciliationModal } from './AiReconciliationModal';
+import { QuickNewBankAccountModal } from './QuickNewBankAccountModal';
 import { applyReconciliationRules, learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
 import { BANCO_INTER_ACCOUNT, BANCO_INTER_OFX_TRANSACTIONS } from '../../data/interOfxTrainingData';
 
@@ -59,6 +61,7 @@ export const ReconciliationView: React.FC = () => {
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [isFloatingReconcileOpen, setIsFloatingReconcileOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isNewAccountModalOpen, setIsNewAccountModalOpen] = useState(false);
   const [rulesPresetPattern, setRulesPresetPattern] = useState<string>('');
 
   // Escuta alterações do storage de forma reativa
@@ -2071,24 +2074,40 @@ export const ReconciliationView: React.FC = () => {
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Bank Account Selector */}
-          <div className="flex items-center bg-slate-50 dark:bg-[#1B212D] border border-slate-300 dark:border-[#273040] rounded-xl px-3 py-1.5 text-xs">
-            <span className="font-semibold text-slate-600 dark:text-slate-400 mr-2">Conta:</span>
-            <select
-              value={selectedAccountId}
-              onChange={(e) => {
-                setSelectedAccountId(e.target.value);
-                setSelectedStmtIds([]);
-                setSelectedTitleIds([]);
-              }}
-              className="bg-transparent font-bold text-slate-900 dark:text-amber-400 focus:outline-none"
+          {/* Bank Account Selector & Nova Conta */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center bg-slate-50 dark:bg-[#1B212D] border border-slate-300 dark:border-[#273040] rounded-xl px-3 py-1.5 text-xs shadow-2xs">
+              <span className="font-semibold text-slate-600 dark:text-slate-400 mr-2 flex items-center gap-1">
+                <Landmark className="w-3.5 h-3.5 text-amber-500" />
+                Conta:
+              </span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => {
+                  setSelectedAccountId(e.target.value);
+                  setSelectedStmtIds([]);
+                  setSelectedTitleIds([]);
+                }}
+                className="bg-transparent font-bold text-slate-900 dark:text-amber-400 focus:outline-none cursor-pointer"
+              >
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id} className="bg-white dark:bg-[#131720] text-slate-900 dark:text-white">
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsNewAccountModalOpen(true)}
+              className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              title="Cadastrar Nova Conta Bancária para Importação e Conciliação"
             >
-              {accounts.map(a => (
-                <option key={a.id} value={a.id} className="bg-white dark:bg-[#131720] text-slate-900 dark:text-white">
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden sm:inline">+ Nova Conta</span>
+              <span className="sm:hidden">+ Conta</span>
+            </button>
           </div>
 
           <button
@@ -2209,39 +2228,55 @@ export const ReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* Barra de Conferência de Saldo Bancário & Fechamento */}
+      {/* Barra de Visualização da Conta Ativa & Conferência de Saldo Bancário */}
       {currentAccount && (
         <div className="bg-gradient-to-r from-amber-500/12 via-amber-500/6 to-transparent border border-amber-500/30 rounded-2xl p-3.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-500 shrink-0">
-              <Scale className="w-5 h-5" />
+            <div className="p-2.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-500 shrink-0">
+              <Landmark className="w-5 h-5" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-900 dark:text-white">
-                  Saldo Contábil no Sistema:
+                  Conta Ativa: <strong className="text-amber-500">{currentAccount.name}</strong>
+                  {currentAccount.agency && currentAccount.accountNumber && (
+                    <span className="text-[10px] text-slate-500 font-normal ml-1.5 font-mono">
+                      (Ag: {currentAccount.agency} / C/C: {currentAccount.accountNumber})
+                    </span>
+                  )}
                 </span>
-                <span className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
+                <span className="text-slate-400 hidden sm:inline">•</span>
+                <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Saldo Contábil:</span>
+                <span className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">
                   {formatBRL(FinancialEngine.calculateAccountBalance(currentAccount.id))}
-                </span>
-                <span className="text-[10px] text-slate-500 font-medium">
-                  ({currentAccount.name})
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                Confronte com o saldo que você tem no banco para apurar eventuais valores faltando ou sobrando e fazer o fechamento perfeito.
+                Confronte com o extrato real para garantir que todas as entradas e saídas estejam 100% conciliadas.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsClosingModalOpen(true)}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <Scale className="w-3.5 h-3.5 fill-current" />
-            <span>Conferir com Saldo Real</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={() => setIsNewAccountModalOpen(true)}
+              className="px-3 py-1.5 bg-white dark:bg-[#1B212D] border border-amber-500/30 hover:border-amber-500/60 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              title="Cadastrar Nova Conta Bancária para Conciliação"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>+ Nova Conta</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsClosingModalOpen(true)}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              title="Conferir saldo contábil com o extrato real do banco"
+            >
+              <Scale className="w-3.5 h-3.5 fill-current" />
+              <span>Conferir Saldos</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -2315,172 +2350,228 @@ export const ReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* BARRA SUPERIOR COMPACTA DE SELEÇÃO ATIVA (Abre a janela flutuante ao clicar em Conciliar) */}
-      {(selectedStmtIds.length > 0 || selectedTitleIds.length > 0) && (
-        <div className="bg-slate-900 text-white px-5 py-3 rounded-2xl border border-amber-500/40 shadow-xl flex flex-col md:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
-          <div className="flex items-center space-x-3 w-full md:w-auto min-w-0">
-            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 shrink-0">
-              <Link2 className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  Itens Selecionados para Conciliação
-                </span>
-                <button
-                  type="button"
-                  onClick={handleClearSelection}
-                  className="text-[10px] text-slate-400 hover:text-amber-400 flex items-center gap-1 transition-colors ml-1 cursor-pointer"
-                  title="Desmarcar seleções ativas"
-                >
-                  <X className="w-3 h-3" />
-                  <span>Limpar ({selectedStmtIds.length + selectedTitleIds.length})</span>
-                </button>
-              </div>
+      {/* ======================================================== */}
+      {/* PAINEL DE CONFRONTO LADO A LADO PREMIUM OU SELEÇÃO ATIVA */}
+      {/* ======================================================== */}
 
-              {isMultiSelection ? (
-                <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2 mt-0.5">
-                  <span className="text-amber-300">
-                    {selectedStmtIds.length} Extrato(s) [{formatBRL(totalStmtsAmount)}]
+      {/* CASO 1: DOIS CAMPOS SELECIONADOS (1 EXTRATO E 1 TÍTULO) -> CONFRONTO DIRETO LADO A LADO COM ELEMENTO CIRCULAR CENTRAL */}
+      {selectedStmt && selectedTitle && (
+        <div className="sticky top-20 z-40 mb-6 bg-slate-900/98 dark:bg-[#131720]/98 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 shadow-2xl p-4 sm:p-5 text-white transition-all animate-in fade-in slide-in-from-top-3 duration-200">
+          {/* Topo do Painel: Título e Botão de Desmarcar */}
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Confronto Direto em Paridade (Lado a Lado)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition-colors px-2.5 py-1 rounded-lg hover:bg-white/10 cursor-pointer"
+              title="Desmarcar ambos os campos"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Desmarcar Ambos</span>
+            </button>
+          </div>
+
+          {/* Grid dos 2 Cards Alinhados Lado a Lado com o Círculo Central */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+            {/* CARD ESQUERDO: EXTRATO BANCÁRIO OFICIAL (lg:col-span-5) */}
+            <div className="lg:col-span-5 bg-slate-950/70 dark:bg-[#0B0E14]/80 rounded-xl p-3.5 border border-sky-500/30 hover:border-sky-500/50 transition-all relative group flex flex-col justify-between min-h-[145px] shadow-inner">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 flex items-center gap-1">
+                    <Landmark className="w-3 h-3 text-sky-400" />
+                    Extrato Oficial ({accounts.find(a => a.id === selectedAccountId)?.name || 'Banco'})
                   </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="text-amber-300">
-                    {selectedTitleIds.length} Título(s) [{formatBRL(totalTitlesAmount)}]
-                  </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
-                    isMultiExact
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                  }`}>
-                    {isMultiExact ? '✓ 100% Equalizado' : `Diferença: ${formatBRL(multiDifference)}`}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStmtIds([])}
+                    className="text-slate-400 hover:text-rose-400 transition-colors p-1"
+                    title="Desmarcar este extrato"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              ) : (
-                <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2 mt-0.5">
-                  <span className={selectedStmt ? 'text-amber-300 font-semibold' : 'text-slate-400 italic'}>
-                    {selectedStmt ? `${selectedStmt.description} (${formatBRL(selectedStmt.amount)})` : 'Nenhum extrato marcado'}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className={selectedTitle ? 'text-amber-300 font-semibold' : 'text-slate-400 italic'}>
-                    {selectedTitle ? `${selectedTitle.titleNumber} (${formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)})` : 'Nenhum título marcado'}
-                  </span>
-                  {selectedStmt && selectedTitle && (
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
-                      isValues100PercentExact
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                    }`}>
-                      {isValues100PercentExact ? '✓ 100% Exato' : `Diferença: ${formatBRL(differenceToStatement)}`}
+                <h4 className="text-sm font-bold text-white line-clamp-2" title={selectedStmt.description}>
+                  {selectedStmt.description}
+                </h4>
+                <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                  <span>📅 {formatDateBR(selectedStmt.date)}</span>
+                  {selectedStmt.fitId && (
+                    <span className="font-mono text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-300 truncate max-w-[150px]">
+                      ID: {selectedStmt.fitId}
                     </span>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 w-full md:w-auto justify-end shrink-0">
-            <button
-              type="button"
-              onClick={() => handleOpenReconcileModal(selectedStmt, selectedTitle)}
-              className="px-5 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center gap-2 cursor-pointer active:scale-95"
-              title="Abrir Janela Flutuante de Conciliação e Ajuste de Valores"
-            >
-              <Zap className="w-4 h-4 fill-slate-950" />
-              <span>CONCILIAR NA JANELA FLUTUANTE</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* TWO-COLUMN GRID */}
-      {/* Botão de conciliar e equalizar simples e clean entre as colunas do extrato e dos pagamentos */}
-      {selectedStmt && selectedTitle && (
-        <div className="sticky top-20 z-30 -mb-2 flex items-center justify-center pointer-events-auto">
-          <div className="bg-slate-900/95 dark:bg-[#1B212D]/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-xl border border-amber-500/50 flex flex-col gap-2 max-w-3xl w-full transition-all animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-              <div className="flex items-center gap-2 text-xs truncate min-w-0">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
-                <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedStmt.description}</span>
-                <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedStmt.amount)}</span>
-                <span className="text-slate-400 mx-1 shrink-0">⇄</span>
-                <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedTitle.titleNumber}</span>
-                <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)}</span>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getScoreAssertivenessColor(currentPairScore).badgeClass}`}>
-                  {currentPairScore}% Assertividade
+              <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-slate-400">
+                  {selectedStmt.amount >= 0 ? 'Entrada / Crédito' : 'Saída / Débito'}
                 </span>
+                <span className={`text-xl sm:text-2xl font-black font-mono ${
+                  selectedStmt.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {formatBRL(selectedStmt.amount)}
+                </span>
+              </div>
+            </div>
 
+            {/* ELEMENTO CENTRAL CIRCULAR DE DESTAQUE PREMIUM (lg:col-span-2) */}
+            <div className="lg:col-span-2 flex flex-col items-center justify-center py-2 relative">
+              {/* Linhas Conectoras Luminosas Horizontais */}
+              <div className="hidden lg:block absolute left-0 top-1/2 -translate-y-1/2 w-5 h-[2px] bg-gradient-to-r from-sky-500/50 via-amber-400 to-amber-500" />
+              <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 w-5 h-[2px] bg-gradient-to-l from-amber-500/50 via-amber-400 to-amber-500" />
+
+              {/* CÍRCULO CENTRAL PREMIUM COM DUPLO ANEL E GLOW */}
+              <div className={`w-20 h-20 rounded-full relative flex flex-col items-center justify-center p-1.5 transition-all duration-300 ${
+                isValues100PercentExact
+                  ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-emerald-950 border-2 border-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.35)] ring-4 ring-emerald-500/20'
+                  : 'bg-gradient-to-br from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)] ring-4 ring-amber-500/20'
+              }`}>
+                {/* Efeito sutil de anel rotativo */}
+                <div className="absolute inset-0 rounded-full border border-dashed border-white/15 animate-spin-slow pointer-events-none" />
+                
+                <div className="flex items-center justify-center">
+                  {isValues100PercentExact ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                </div>
+                <span className={`text-base font-black font-mono leading-none my-0.5 ${
+                  isValues100PercentExact ? 'text-emerald-300' : 'text-amber-300'
+                }`}>
+                  {currentPairScore}%
+                </span>
+                <span className="text-[8px] font-black tracking-widest uppercase text-slate-300 leading-none">
+                  {isValues100PercentExact ? 'EXATO' : 'PARIDADE'}
+                </span>
+              </div>
+
+              {/* Status de Assertividade / Diferença */}
+              <div className="mt-2 text-center w-full">
                 {isValues100PercentExact ? (
-                  <>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      ✓ 100% Exato
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleDirectExpressReconcile(selectedStmt, selectedTitle)}
-                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
-                      title="Conciliação Expressa em 1 Clique (Valores 100% conferidos)"
-                    >
-                      <Zap className="w-3.5 h-3.5 fill-white" />
-                      <span>⚡ 1-Clique</span>
-                    </button>
-                  </>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
-                    Diferença: {formatBRL(differenceToStatement)}
+                  <span className="inline-block text-[10px] font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                    ✓ 100% Exato
                   </span>
+                ) : (
+                  <span className="inline-block text-[10px] font-bold text-rose-300 bg-rose-500/20 border border-rose-500/40 px-2 py-0.5 rounded-full font-mono">
+                    Dif: {formatBRL(differenceToStatement)}
+                  </span>
+                )}
+              </div>
+
+              {/* Botão de Ação Primária Central */}
+              <div className="mt-2 w-full flex flex-col gap-1 items-center">
+                {isValues100PercentExact ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDirectExpressReconcile(selectedStmt, selectedTitle)}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:brightness-110 text-slate-950 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                    title="Conciliar Imediatamente em 1 Clique (Valores 100% Conferidos)"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                    <span>⚡ 1-CLIQUE</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReconcileModal(selectedStmt, selectedTitle)}
+                    className="w-full px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all"
+                    title="Equalizar e Conciliar na Janela Completa"
+                  >
+                    <Sliders className="w-3 h-3" />
+                    <span>Equalizar</span>
+                  </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => handleOpenReconcileModal(selectedStmt, selectedTitle)}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
-                  title="Abrir Janela Flutuante de Conciliação"
+                  className="text-[10px] text-slate-400 hover:text-amber-300 underline cursor-pointer"
                 >
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>Janela Completa</span>
+                  Janela Detalhada
                 </button>
               </div>
             </div>
 
-            {/* Sugestões Automáticas de Juros / Multa / Desconto de Centavos (Opção 3) */}
-            {!isValues100PercentExact && (
-              <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="text-amber-400 font-semibold flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  Equalizar divergência na hora:
-                </span>
+            {/* CARD DIREITO: LANÇAMENTO DO ERP (lg:col-span-5) */}
+            <div className="lg:col-span-5 bg-slate-950/70 dark:bg-[#0B0E14]/80 rounded-xl p-3.5 border border-amber-500/30 hover:border-amber-500/50 transition-all relative group flex flex-col justify-between min-h-[145px] shadow-inner">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-amber-400" />
+                    Título ERP #{selectedTitle.titleNumber}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTitleIds([])}
+                    className="text-slate-400 hover:text-rose-400 transition-colors p-1"
+                    title="Desmarcar este título"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <h4 className="text-sm font-bold text-white line-clamp-2" title={selectedTitle.description}>
+                  {selectedTitle.description || selectedTitle.entityName || 'Título Financeiro'}
+                </h4>
+                <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                  <span>📅 Venc: {formatDateBR(selectedTitle.dueDate)}</span>
+                  {selectedTitle.entityName && (
+                    <span className="truncate max-w-[160px] text-slate-300">
+                      👤 {selectedTitle.entityName}
+                    </span>
+                  )}
+                </div>
+              </div>
 
+              <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-slate-400">
+                  {selectedTitle.type === 'RECEBER' ? 'A Receber' : 'A Pagar'}
+                  {selectedTitle.balancePrincipal > 0 && selectedTitle.balancePrincipal !== selectedTitle.originalAmount && ' (Saldo)'}
+                </span>
+                <span className="text-xl sm:text-2xl font-black font-mono text-amber-400">
+                  {formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Equalização Rápida de Centavos quando houver divergência */}
+          {!isValues100PercentExact && (
+            <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Equalizar centavos na hora:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 {differenceToStatement > 0 ? (
                   <>
                     <button
                       type="button"
                       onClick={handleApplyDiffAsInterest}
-                      className="px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Equaliza lançando a diferença como Juros"
+                      className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[11px] font-bold cursor-pointer"
                     >
-                      <Plus className="w-2.5 h-2.5" />
-                      <span>+ Juros ({formatBRL(differenceToStatement)})</span>
+                      + Juros ({formatBRL(differenceToStatement)})
                     </button>
                     <button
                       type="button"
                       onClick={handleApplyDiffAsFine}
-                      className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Equaliza lançando a diferença como Multa"
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold cursor-pointer"
                     >
-                      <Plus className="w-2.5 h-2.5" />
-                      <span>+ Multa ({formatBRL(differenceToStatement)})</span>
+                      + Multa ({formatBRL(differenceToStatement)})
                     </button>
                     <button
                       type="button"
                       onClick={handleApplyStatementAsPrincipal}
-                      className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Ajusta o principal do título para o valor do extrato"
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] font-bold cursor-pointer"
                     >
-                      <Check className="w-2.5 h-2.5" />
-                      <span>Ajustar Principal</span>
+                      Ajustar Principal
                     </button>
                   </>
                 ) : (
@@ -2488,26 +2579,103 @@ export const ReconciliationView: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleApplyDiffAsDiscount}
-                      className="px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Equaliza lançando a diferença como Desconto"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold cursor-pointer"
                     >
-                      <Zap className="w-2.5 h-2.5 fill-emerald-400" />
-                      <span>- Desconto ({formatBRL(Math.abs(differenceToStatement))})</span>
+                      - Desconto ({formatBRL(Math.abs(differenceToStatement))})
                     </button>
                     <button
                       type="button"
                       onClick={handleApplyStatementAsPrincipal}
-                      className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Ajusta o principal do título para o valor do extrato"
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] font-bold cursor-pointer"
                     >
-                      <Check className="w-2.5 h-2.5" />
-                      <span>Ajustar Principal</span>
+                      Ajustar Principal
                     </button>
                   </>
                 )}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CASO 2: MULTI-SELEÇÃO (MAIS DE 1 EXTRATO OU MAIS DE 1 TÍTULO) */}
+      {isMultiSelection && (
+        <div className="sticky top-20 z-40 mb-6 bg-slate-900/98 dark:bg-[#131720]/98 backdrop-blur-md text-white px-5 py-3 rounded-2xl border border-amber-500/40 shadow-xl flex flex-col md:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center space-x-3 w-full md:w-auto min-w-0">
+            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  Conciliação em Lote (Multi-Seleção)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="text-[10px] text-slate-400 hover:text-amber-400 flex items-center gap-1 transition-colors ml-1 cursor-pointer"
+                  title="Desmarcar seleções"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Limpar ({selectedStmtIds.length + selectedTitleIds.length})</span>
+                </button>
+              </div>
+
+              <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2 mt-0.5">
+                <span className="text-amber-300">
+                  {selectedStmtIds.length} Extrato(s) [{formatBRL(totalStmtsAmount)}]
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="text-amber-300">
+                  {selectedTitleIds.length} Título(s) [{formatBRL(totalTitlesAmount)}]
+                </span>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                  isMultiExact
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                }`}>
+                  {isMultiExact ? '✓ 100% Equalizado' : `Diferença: ${formatBRL(multiDifference)}`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full md:w-auto justify-end shrink-0">
+            <button
+              type="button"
+              onClick={handleConfirmPairing}
+              className="px-5 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center gap-2 cursor-pointer active:scale-95"
+              title="Conciliar múltiplos itens em lote"
+            >
+              <Zap className="w-4 h-4 fill-slate-950" />
+              <span>CONCILIAR LOTE ({selectedStmtIds.length + selectedTitleIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CASO 3: APENAS 1 ITEM SELECIONADO (SÓ EXTRATO OU SÓ TÍTULO) -> GUIA AMIGÁVEL PARA COMPLETAR O PAR */}
+      {!isMultiSelection && !(selectedStmt && selectedTitle) && (selectedStmt || selectedTitle) && (
+        <div className="mb-4 bg-slate-900/90 dark:bg-[#1B212D]/90 backdrop-blur-xs text-white px-4 py-2.5 rounded-xl border border-amber-500/30 shadow-md flex items-center justify-between gap-3 text-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            {selectedStmt ? (
+              <span className="truncate">
+                <strong className="text-amber-300">1 Extrato Selecionado:</strong> "{selectedStmt.description}" ({formatBRL(selectedStmt.amount)}) &mdash; <span className="text-slate-300">Selecione o título correspondente à direita para ativar o confronto lado a lado.</span>
+              </span>
+            ) : (
+              <span className="truncate">
+                <strong className="text-amber-300">1 Título Selecionado:</strong> #{selectedTitle?.titleNumber} - {selectedTitle?.description || selectedTitle?.entityName} ({formatBRL(selectedTitle ? (selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount) : 0)}) &mdash; <span className="text-slate-300">Selecione o extrato correspondente à esquerda para confrontar lado a lado.</span>
+              </span>
             )}
           </div>
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="text-[10px] text-slate-400 hover:text-white shrink-0 px-2 py-0.5 rounded hover:bg-white/10"
+          >
+            Limpar
+          </button>
         </div>
       )}
 
@@ -2550,8 +2718,13 @@ export const ReconciliationView: React.FC = () => {
             <div>
               <div className="flex items-center space-x-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   1. Extrato Bancário / OFX ({filteredStatements.length})
+                  {currentAccount && (
+                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md truncate max-w-[160px]" title={currentAccount.name}>
+                      {currentAccount.name}
+                    </span>
+                  )}
                 </h2>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -3753,6 +3926,18 @@ export const ReconciliationView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Criação Rápida de Nova Conta Bancária */}
+      <QuickNewBankAccountModal
+        isOpen={isNewAccountModalOpen}
+        onClose={() => setIsNewAccountModalOpen(false)}
+        onAccountCreated={(newAcc) => {
+          setSelectedAccountId(newAcc.id);
+          setIsNewAccountModalOpen(false);
+          setSuccessMsg(`Conta bancária "${newAcc.name}" criada com sucesso e selecionada para conciliação!`);
+          setRefreshKey(k => k + 1);
+        }}
+      />
 
     </div>
   );
