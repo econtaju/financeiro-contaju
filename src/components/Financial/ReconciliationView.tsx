@@ -981,9 +981,103 @@ export const ReconciliationView: React.FC = () => {
     setRefreshKey(k => k + 1);
   };
 
+  // Marca um título como conciliado via banco diretamente
+  const handleMarkTitleAsReconciled = (title: FinancialTitle) => {
+    const allTitles = storage.getTitles().map(t => {
+      if (t.id === title.id) {
+        return {
+          ...t,
+          reconciliationStatus: 'CONCILIADO' as const,
+          reconciledViaBank: true,
+          reconciledAt: new Date().toISOString(),
+          reconciliationNote: 'Marcado como conciliado via banco',
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(allTitles);
+    setSuccessMsg(`✓ Título #${title.titleNumber} marcado como conciliado via banco!`);
+    setRefreshKey(k => k + 1);
+  };
+
+  // Desmarca a conciliação bancária de um título
+  const handleUnmarkTitleReconciled = (title: FinancialTitle) => {
+    const allTitles = storage.getTitles().map(t => {
+      if (t.id === title.id) {
+        return {
+          ...t,
+          reconciliationStatus: 'PENDENTE' as const,
+          reconciledViaBank: false,
+          reconciledAt: undefined,
+          reconciliationNote: undefined,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(allTitles);
+    setSuccessMsg(`Título #${title.titleNumber} desmarcado de conciliado.`);
+    setRefreshKey(k => k + 1);
+  };
+
   // Equaliza e concilia imediatamente com resolução automática de diferenças (juros, multas ou descontos)
   const handleEqualizeAndReconcile = () => {
     if (selectedStmts.length === 0 || selectedTitles.length === 0) return;
+
+    // 1. Caso especial fundamental: se todos os títulos selecionados já estiverem baixados/liquidados previamente,
+    // vincula exclusivamente para registro de auditoria e conciliação bancária SEM duplicar lançamentos no caixa!
+    const allSelectedTitlesAlreadyLiquidated = selectedTitles.every(t => t.settlementState === 'LIQUIDADO' || (t.balancePrincipal !== undefined && t.balancePrincipal <= 0.005));
+    if (allSelectedTitlesAlreadyLiquidated) {
+      const allStmts = storage.getStatementEntries().map(s => {
+        if (selectedStmtIds.includes(s.id)) {
+          return {
+            ...s,
+            reconciliationStatus: 'CONCILIADO' as const,
+            matchedTitleId: selectedTitles[0]?.id,
+            reconciliationNote: selectedTitles.length === 1 
+              ? `Conciliado com título já baixado previamente #${selectedTitles[0].titleNumber}`
+              : `Conciliado com ${selectedTitles.length} títulos já baixados: ${selectedTitles.map(t => `#${t.titleNumber}`).join(', ')}`
+          };
+        }
+        return s;
+      });
+      storage.saveStatementEntries(allStmts);
+
+      const allTitles = storage.getTitles().map(t => {
+        if (selectedTitleIds.includes(t.id)) {
+          return {
+            ...t,
+            reconciliationStatus: 'CONCILIADO' as const,
+            reconciledViaBank: true,
+            reconciledAt: new Date().toISOString(),
+            reconciliationNote: `Conciliado com extrato (${formatBRL(totalStmtsAmount)})`,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return t;
+      });
+      storage.saveTitles(allTitles);
+
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'CONCILIACAO_VINCULO_MANUAL',
+        module: 'Conciliação Bancária',
+        recordId: selectedTitleIds.join(','),
+        details: `Conciliação vinculada: ${selectedTitles.length} título(s) já baixado(s) manualmente vinculado(s) a ${selectedStmts.length} extrato(s) sem duplicar movimentação de caixa.`
+      });
+
+      setSuccessMsg(selectedTitles.length === 1
+        ? `✓ Sucesso! O título #${selectedTitles[0].titleNumber} (já liquidado) foi vinculado e marcado como conciliado via banco sem duplicar o lançamento no caixa!`
+        : `✓ Sucesso! Os ${selectedTitles.length} títulos (já liquidados) foram vinculados e marcados como conciliados via banco sem duplicar lançamentos no caixa!`
+      );
+      setSelectedStmtIds([]);
+      setSelectedTitleIds([]);
+      setRefreshKey(k => k + 1);
+      return;
+    }
 
     // Se os valores já forem 100% iguais ou lote padrão, executa diretamente
     if (isMultiExact) {
@@ -3236,6 +3330,33 @@ export const ReconciliationView: React.FC = () => {
                                 <span>Conciliar</span>
                               </button>
                             ) : null}
+
+                            {t.reconciliationStatus === 'CONCILIADO' ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUnmarkTitleReconciled(t);
+                                }}
+                                className="px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-slate-700/80 transition-colors cursor-pointer"
+                                title="Desmarcar conciliação bancária deste título"
+                              >
+                                Desconciliar
+                              </button>
+                            ) : isLiquidado && !selectedStmt ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMarkTitleAsReconciled(t);
+                                }}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400 hover:bg-emerald-500/15 border border-emerald-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Marcar este título já liquidado como conciliado via banco"
+                              >
+                                <CheckCheck className="w-3 h-3 text-emerald-400" />
+                                <span>Marcar Conciliado</span>
+                              </button>
+                            ) : null}
                           </div>
 
                           <div className="flex-1 min-w-0">
@@ -3255,11 +3376,22 @@ export const ReconciliationView: React.FC = () => {
                                 {t.type === 'PAGAR' ? 'A PAGAR' : 'A RECEBER'}
                               </span>
 
-                              {/* Status de Baixa/Quitação */}
-                              {isLiquidado ? (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                                  <Check className="w-2.5 h-2.5" />
-                                  JÁ BAIXADO / PAGO
+                              {/* Status de Conciliação Bancária e Baixa com Dois Vistinhos */}
+                              {t.reconciliationStatus === 'CONCILIADO' ? (
+                                <span 
+                                  className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 shadow-2xs"
+                                  title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''}`}
+                                >
+                                  <CheckCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 stroke-[2.5]" />
+                                  <span>CONCILIADO VIA BANCO</span>
+                                </span>
+                              ) : isLiquidado ? (
+                                <span 
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+                                  title="Título já baixado/pago manualmente no ERP. Pronto para vincular à linha de extrato bancário sem duplicar caixa."
+                                >
+                                  <Check className="w-2.5 h-2.5 text-amber-400" />
+                                  <span>JÁ BAIXADO (PENDENTE BANCO)</span>
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">

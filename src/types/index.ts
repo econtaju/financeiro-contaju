@@ -301,6 +301,9 @@ export interface FinancialTitle {
   categoryName?: string; // Categoria original da planilha
   customFields?: Record<string, any>; // Colunas extras importadas não nativas
   reconciliationStatus?: 'PENDENTE' | 'CONCILIADO' | 'SUGESTAO';
+  reconciledViaBank?: boolean; // Se foi conciliado via extrato bancário
+  reconciledAt?: string; // Data/hora ISO da conciliação bancária
+  reconciliationNote?: string; // Detalhes da conciliação ou extrato vinculado
   notes?: string;
   createdAt: string;
   updatedAt: string;

@@ -30,7 +30,8 @@ import {
   Lock,
   Folder,
   MessageCircle,
-  X
+  X,
+  CheckCheck
 } from 'lucide-react';
 import { FinancialTitle, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -61,7 +62,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
   const today = new Date().toISOString().split('T')[0];
   const { period } = useModulePeriod('PAYABLES');
   const [searchTerm, setSearchTerm] = useState(initialSearch);
-  const [statusFilter, setStatusFilter] = useState<'TODOS' | 'ABERTO' | 'VENCIDO' | 'LIQUIDADO' | 'CANCELADO'>(
+  const [statusFilter, setStatusFilter] = useState<'TODOS' | 'ABERTO' | 'VENCIDO' | 'LIQUIDADO' | 'CANCELADO' | 'CONCILIADO'>(
     initialSearch ? 'TODOS' : 'ABERTO'
   );
 
@@ -255,6 +256,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         return d && d < today;
       });
       const liquidados = notCancelled.filter(t => t.settlementState === 'LIQUIDADO');
+      const conciliados = notCancelled.filter(t => t.reconciliationStatus === 'CONCILIADO');
 
       return {
         openTotal: open.reduce((acc, t) => acc + (Number(t.balancePrincipal) || 0), 0),
@@ -267,6 +269,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         vencidosCount: vencidos.length,
         liquidadosTotal: liquidados.reduce((acc, t) => acc + (Number(t.originalAmount) || 0), 0),
         liquidadosCount: liquidados.length,
+        conciliadosTotal: conciliados.reduce((acc, t) => acc + (Number(t.originalAmount) || 0), 0),
+        conciliadosCount: conciliados.length,
         canceladosCount: periodTitles.filter(t => t && t.documentState === 'CANCELADO').length,
         todosCount: periodTitles.length
       };
@@ -278,6 +282,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         semanaTotal: 0, semanaCount: 0,
         vencidosTotal: 0, vencidosCount: 0,
         liquidadosTotal: 0, liquidadosCount: 0,
+        conciliadosTotal: 0, conciliadosCount: 0,
         canceladosCount: 0,
         todosCount: 0
       };
@@ -449,6 +454,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           if (statusFilter === 'ABERTO') return balance > 0;
           if (statusFilter === 'VENCIDO') return balance > 0 && due < today;
           if (statusFilter === 'LIQUIDADO') return t.settlementState === 'LIQUIDADO';
+          if (statusFilter === 'CONCILIADO') return t.reconciliationStatus === 'CONCILIADO';
         }
 
         return true;
@@ -670,6 +676,63 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
     });
   };
 
+  // Alterna o status de conciliação bancária do título
+  const handleToggleSingleReconciled = (title: FinancialTitle, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const isCurrentlyReconciled = title.reconciliationStatus === 'CONCILIADO';
+    const allTitles = storage.getTitles().map(t => {
+      if (t.id === title.id) {
+        return {
+          ...t,
+          reconciliationStatus: (isCurrentlyReconciled ? 'PENDENTE' : 'CONCILIADO') as any,
+          reconciledViaBank: !isCurrentlyReconciled,
+          reconciledAt: !isCurrentlyReconciled ? new Date().toISOString() : undefined,
+          reconciliationNote: !isCurrentlyReconciled ? 'Conciliado manualmente no Contas a Pagar' : undefined,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(allTitles);
+    setToastMessage({
+      type: 'success',
+      text: isCurrentlyReconciled
+        ? `Título #${title.titleNumber} desmarcado de conciliado.`
+        : `✓ Título #${title.titleNumber} marcado como conciliado via banco!`
+    });
+  };
+
+  // Alterna conciliação bancária em lote para os títulos selecionados
+  const handleBatchToggleReconciled = () => {
+    if (selectedIds.length === 0) return;
+    const allTitles = storage.getTitles();
+    const selectedTitles = allTitles.filter(t => selectedIds.includes(t.id));
+    const allAreReconciled = selectedTitles.every(t => t.reconciliationStatus === 'CONCILIADO');
+    const newStatus = allAreReconciled ? 'PENDENTE' : 'CONCILIADO';
+
+    const updated = allTitles.map(t => {
+      if (selectedIds.includes(t.id)) {
+        return {
+          ...t,
+          reconciliationStatus: newStatus as any,
+          reconciledViaBank: newStatus === 'CONCILIADO',
+          reconciledAt: newStatus === 'CONCILIADO' ? new Date().toISOString() : undefined,
+          reconciliationNote: newStatus === 'CONCILIADO' ? 'Conciliado em lote no Contas a Pagar' : undefined,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(updated);
+    setToastMessage({
+      type: 'success',
+      text: newStatus === 'CONCILIADO'
+        ? `✓ ${selectedIds.length} obrigação(ões) marcada(s) como conciliada(s) via banco!`
+        : `${selectedIds.length} obrigação(ões) desmarcada(s) de conciliado.`
+    });
+    setSelectedIds([]);
+  };
+
   // Execução após confirmação no modal
   const handleExecuteConfirmedAction = () => {
     const { mode, titles: targetTitles } = confirmModalState;
@@ -862,6 +925,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
             { id: 'ABERTO', label: 'Em Aberto', count: stats.openCount },
             { id: 'VENCIDO', label: 'Vencidos', count: stats.vencidosCount },
             { id: 'LIQUIDADO', label: 'Liquidados', count: stats.liquidadosCount },
+            { id: 'CONCILIADO', label: '✓✓ Conciliados', count: stats.conciliadosCount },
             { id: 'TODOS', label: 'Todos', count: stats.todosCount },
             { id: 'CANCELADO', label: 'Cancelados', count: stats.canceladosCount }
           ].map(tab => (
@@ -1157,6 +1221,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
               { id: 'ABERTO', label: 'Em Aberto', count: stats.openCount },
               { id: 'VENCIDO', label: 'Vencidos', count: stats.vencidosCount },
               { id: 'LIQUIDADO', label: 'Liquidados', count: stats.liquidadosCount },
+              { id: 'CONCILIADO', label: '✓✓ Conciliados', count: stats.conciliadosCount },
               { id: 'TODOS', label: 'Todos', count: stats.todosCount },
               { id: 'CANCELADO', label: 'Cancelados', count: stats.canceladosCount }
             ].map(tab => (
@@ -1484,6 +1549,17 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                 </button>
               )}
 
+              {/* Conciliar Banco em Lote */}
+              <button
+                type="button"
+                onClick={handleBatchToggleReconciled}
+                className="min-h-[44px] px-3.5 py-2 bg-teal-700 hover:bg-teal-600 active:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center cursor-pointer shrink-0"
+                title="Marcar ou desmarcar conciliação bancária dos títulos selecionados"
+              >
+                <CheckCheck className="w-4 h-4 mr-1.5 text-teal-300" />
+                Conciliar Banco
+              </button>
+
               {/* Prorrogar Vencimento em Lote */}
               <button
                 type="button"
@@ -1701,6 +1777,28 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                             Pago
                           </span>
                         )}
+                        {/* Ícone de Conciliação Bancária com Dois Vistinhos */}
+                        {t.reconciliationStatus === 'CONCILIADO' ? (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleSingleReconciled(t, e)}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1 shadow-2xs cursor-pointer"
+                            title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''}`}
+                          >
+                            <CheckCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0 stroke-[2.5]" />
+                            <span>Conciliado</span>
+                          </button>
+                        ) : t.settlementState === 'LIQUIDADO' ? (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleSingleReconciled(t, e)}
+                            className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer"
+                            title="Baixado no ERP, aguardando conciliação bancária. Clique para conciliar."
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+                            <span>Pendente Banco</span>
+                          </button>
+                        ) : null}
                         {t.settlementState === 'PARCIAL' && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                             Parcial
@@ -2327,17 +2425,40 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                          t.documentState === 'CANCELADO'
-                            ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                            : t.settlementState === 'LIQUIDADO'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/60'
-                            : t.settlementState === 'PARCIAL'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 dark:border dark:border-amber-800/60'
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/60'
-                        }`}>
-                          {t.documentState === 'CANCELADO' ? 'CANCELADO' : t.settlementState}
-                        </span>
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                            t.documentState === 'CANCELADO'
+                              ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              : t.settlementState === 'LIQUIDADO'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/60'
+                              : t.settlementState === 'PARCIAL'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 dark:border dark:border-amber-800/60'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/60'
+                          }`}>
+                            {t.documentState === 'CANCELADO' ? 'CANCELADO' : t.settlementState}
+                          </span>
+                          {t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleSingleReconciled(t, e)}
+                              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all shadow-2xs cursor-pointer"
+                              title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''} (Clique para alternar)`}
+                            >
+                              <CheckCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0 stroke-[2.5]" />
+                              <span>Conciliado</span>
+                            </button>
+                          ) : t.settlementState === 'LIQUIDADO' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleSingleReconciled(t, e)}
+                              className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 transition-colors cursor-pointer"
+                              title="Baixado no ERP, mas ainda não conciliado com o extrato bancário. Clique para marcar como conciliado sem gerar nova movimentação."
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+                              <span>Pendente Banco</span>
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
 
                       <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
