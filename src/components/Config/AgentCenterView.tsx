@@ -17,18 +17,21 @@ import {
   Activity, 
   Layers, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { 
   AgentDefinition, 
   AgentApprovalItem, 
   AgentRunRecord, 
   AgentRoleType,
-  AiProviderConfig 
+  AiProviderConfig,
+  AiModelChainItem
 } from '../../types';
 import { storage } from '../../services/storageService';
 import { AgentOrchestratorService } from '../../services/agentOrchestratorService';
-import { AiService, KNOWN_OPENCODE_MODELS } from '../../services/aiService';
+import { AiService } from '../../services/aiService';
+import { AiModelCatalogService } from '../../services/aiModelCatalogService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 
 export const AgentCenterView: React.FC = () => {
@@ -37,6 +40,8 @@ export const AgentCenterView: React.FC = () => {
   const [approvals, setApprovals] = useState<AgentApprovalItem[]>(() => AgentOrchestratorService.getAllApprovals());
   const [runs, setRuns] = useState<AgentRunRecord[]>(() => storage.getAgentRuns());
   const [aiConfig, setAiConfig] = useState<AiProviderConfig>(() => AiService.getConfig());
+  const [catalogModels, setCatalogModels] = useState<AiModelChainItem[]>(() => AiModelCatalogService.getCachedCatalog());
+  const [isSyncingModels, setIsSyncingModels] = useState(false);
 
   // Estado de execução de teste do CFO
   const [isRunningCfo, setIsRunningCfo] = useState(false);
@@ -493,20 +498,45 @@ export const AgentCenterView: React.FC = () => {
       {activeTab === 'GATEWAY' && (
         <div className="space-y-6">
           <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4">
-            <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--border-subtle)]">
-              <Server className="w-5 h-5 text-indigo-400" />
-              <div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  Cadeia de Contingência de Modelos de IA (Failover)
-                </h3>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Se o modelo primário estiver temporariamente indisponível ou retornar Rate Limit (HTTP 429), o gateway comuta instantaneamente para o próximo especialista.
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
+              <div className="flex items-center gap-2.5">
+                <Server className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                    Cadeia de Contingência Dinâmica de Modelos de IA (Failover)
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Se o modelo primário estiver temporariamente indisponível ou retornar Rate Limit (HTTP 429), o gateway comuta instantaneamente para o próximo especialista.
+                  </p>
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSyncingModels(true);
+                  try {
+                    const res = await AiModelCatalogService.fetchCatalog(true);
+                    setCatalogModels(res.models);
+                    setActionSuccessMsg(`Catálogo atualizado: ${res.models.length} modelos descobertos.`);
+                    setTimeout(() => setActionSuccessMsg(''), 4000);
+                  } catch (e: any) {
+                    setActionErrorMsg(`Falha na atualização: ${e.message}`);
+                    setTimeout(() => setActionErrorMsg(''), 4000);
+                  } finally {
+                    setIsSyncingModels(false);
+                  }
+                }}
+                disabled={isSyncingModels}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] border border-[var(--border-subtle)] transition-colors flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isSyncingModels ? 'animate-spin' : ''}`} />
+                <span>{isSyncingModels ? 'Sincronizando...' : 'Atualizar Catálogo'}</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {KNOWN_OPENCODE_MODELS.map((item, idx) => {
+              {catalogModels.slice(0, 16).map((item) => {
                 const isPrimary = aiConfig.primaryModel === item.id;
                 const isFallback = aiConfig.fallbackModels?.includes(item.id);
 
@@ -521,9 +551,12 @@ export const AgentCenterView: React.FC = () => {
                         : 'bg-[var(--surface-elevated)]/50 border-[var(--border-subtle)] text-[var(--text-secondary)] opacity-75'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs">{item.name}</span>
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-xs truncate">{item.name}</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-[var(--surface-elevated)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
+                          {item.id}
+                        </span>
                         {isPrimary && (
                           <span className="px-2 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500 text-slate-950">
                             Primário
@@ -535,7 +568,7 @@ export const AgentCenterView: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">{item.description}</p>
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate">{item.description}</p>
                     </div>
 
                     <button

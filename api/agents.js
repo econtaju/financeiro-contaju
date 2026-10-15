@@ -1,7 +1,8 @@
 // ==============================================================================
 // VERCEL SERVERLESS FUNCTION: GATEWAY DA CENTRAL DE AGENTES CONTAJU
 // Rota: /api/agents
-// Segurança: Secrets server-side, redator de PII, anti-injection e failover
+// Segurança: Secrets server-side, redator de PII, anti-injection e failover dinâmico
+// Adaptadores: OpenAI Chat Completions, Anthropic Messages e OpenAI Responses
 // ==============================================================================
 
 // Redator de PII (Personally Identifiable Information) para proteção de dados fiscais/pessoais
@@ -16,8 +17,122 @@ function redactPII(text) {
   return clean;
 }
 
+/**
+ * Detecta o protocolo exigido pelo modelo
+ */
+function resolveModelProtocol(modelId, customProtocol) {
+  if (customProtocol) return customProtocol;
+  const lower = (modelId || '').toLowerCase();
+  if (lower.includes('responses') || lower.includes('realtime')) {
+    return 'openai_responses';
+  }
+  if (lower.startsWith('claude-direct') || lower.includes('anthropic-native')) {
+    return 'anthropic_messages';
+  }
+  return 'openai_chat'; // Padrão suportado pela OpenCode e OpenAI
+}
+
+/**
+ * Adaptadores de protocolo para despacho HTTP resiliente
+ */
+const ProtocolAdapters = {
+  // 1. OpenAI Chat Completions (padrão OpenCode / OpenAI / DeepSeek / Qwen / GLM / Minimax)
+  openai_chat: {
+    buildRequest: (endpoint, model, messages, options, apiKey) => {
+      const url = `${endpoint}/chat/completions`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      const body = {
+        model,
+        messages,
+        temperature: options.temperature ?? 0.2,
+        max_tokens: options.maxTokens ?? 2000
+      };
+      if (options.jsonMode) {
+        body.response_format = { type: 'json_object' };
+      }
+      return { url, headers, body: JSON.stringify(body) };
+    },
+    parseResponse: async (response) => {
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || '';
+    }
+  },
+
+  // 2. Anthropic Messages (/v1/messages)
+  anthropic_messages: {
+    buildRequest: (endpoint, model, messages, options, apiKey) => {
+      const url = `${endpoint}/v1/messages`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      };
+
+      // Separa prompt do sistema do histórico do usuário
+      const systemMsg = messages.find(m => m.role === 'system');
+      const nonSystemMessages = messages
+        .filter(m => m.role !== 'system')
+        .map(m => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        }));
+
+      const body = {
+        model,
+        messages: nonSystemMessages.length > 0 ? nonSystemMessages : [{ role: 'user', content: 'Executar consulta.' }],
+        max_tokens: options.maxTokens ?? 2000,
+        temperature: options.temperature ?? 0.2
+      };
+
+      if (systemMsg) {
+        body.system = systemMsg.content;
+      }
+
+      return { url, headers, body: JSON.stringify(body) };
+    },
+    parseResponse: async (response) => {
+      const data = await response.json();
+      if (Array.isArray(data.content)) {
+        return data.content
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n');
+      }
+      return data.content || '';
+    }
+  },
+
+  // 3. OpenAI Responses API (/v1/responses)
+  openai_responses: {
+    buildRequest: (endpoint, model, messages, options, apiKey) => {
+      const url = `${endpoint}/responses`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      const body = {
+        model,
+        input: messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
+        temperature: options.temperature ?? 0.2,
+        max_output_tokens: options.maxTokens ?? 2000
+      };
+      return { url, headers, body: JSON.stringify(body) };
+    },
+    parseResponse: async (response) => {
+      const data = await response.json();
+      if (data.output && Array.isArray(data.output)) {
+        return data.output.map(o => o.content?.[0]?.text || '').join('\n');
+      }
+      return data.output_text || data.text || '';
+    }
+  }
+};
+
 export default async function handler(req, res) {
-  // Configuração segura de cabeçalhos CORS
+  // Configuração de cabeçalhos CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
@@ -41,13 +156,14 @@ export default async function handler(req, res) {
     payload = {},
     customApiKey,
     preferredModel,
+    fallbackModels = [],
     temperature = 0.2,
     maxTokens = 2000,
     jsonMode = false,
     companyId = 'comp-1'
   } = req.body || {};
 
-  // Chave do provedor server-side (prioridade absoluta para variável de ambiente)
+  // Chave do provedor server-side
   const serverApiKey = process.env.OPENCODE_API_KEY || 
                        process.env.AI_GATEWAY_KEY || 
                        process.env.GEMINI_API_KEY || 
@@ -63,7 +179,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // Definição dos prompts de sistema e guardrails dos Especialistas
+  // Definição dos prompts de sistema e guardrails dos Especialistas Financeiros
   const ROLE_SYSTEM_PROMPTS = {
     CFO_EXECUTIVO: `Você é o CFO Executivo Virtual do sistema de gestão financeira Contaju.
 Sua missão é projetar liquidez de caixa, apontar descasamentos entre Contas a Pagar e Receber e sugerir medidas preventivas com precisão matemática.
@@ -99,14 +215,23 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
     ? [{ role: 'system', content: systemPrompt }, ...sanitizedMessages]
     : [{ role: 'system', content: systemPrompt }, { role: 'user', content: redactPII(JSON.stringify(payload)) }];
 
-  // Cadeia de contingência com modelos da OpenCode / parceiros
-  const modelsChain = [
-    preferredModel || 'claude-3-5-sonnet',
-    'gpt-4o',
-    'deepseek-reasoner',
-    'gemini-1.5-pro',
-    'deepseek-chat'
-  ].filter((m, idx, self) => self.indexOf(m) === idx);
+  // Monta cadeia dinâmica respeitando o modelo preferido e os modelos secundários configurados
+  const userChain = [
+    preferredModel,
+    ...(Array.isArray(fallbackModels) ? fallbackModels : [])
+  ].filter(Boolean);
+
+  const defaultChain = [
+    'deepseek-v4-pro',
+    'gpt-5.6-luna',
+    'claude-haiku-5-5',
+    'qwen3.8-max',
+    'deepseek-chat',
+    'gpt-4o'
+  ];
+
+  const modelsChain = [...userChain, ...defaultChain]
+    .filter((m, idx, self) => self.indexOf(m) === idx);
 
   const attempts = [];
   let successfulContent = '';
@@ -120,25 +245,22 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 14000);
 
+    const protocolType = resolveModelProtocol(currentModel);
+    const adapter = ProtocolAdapters[protocolType] || ProtocolAdapters.openai_chat;
+
     try {
-      const requestPayload = {
-        model: currentModel,
-        messages: finalMessages,
-        temperature,
-        max_tokens: maxTokens
-      };
+      const { url, headers, body } = adapter.buildRequest(
+        endpoint,
+        currentModel,
+        finalMessages,
+        { temperature, maxTokens, jsonMode },
+        serverApiKey
+      );
 
-      if (jsonMode) {
-        requestPayload.response_format = { type: 'json_object' };
-      }
-
-      const response = await fetch(`${endpoint}/chat/completions`, {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${serverApiKey}`
-        },
-        body: JSON.stringify(requestPayload),
+        headers,
+        body,
         signal: controller.signal
       });
 
@@ -156,6 +278,7 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
 
         attempts.push({
           model: currentModel,
+          protocol: protocolType,
           durationMs,
           success: false,
           statusCode: response.status,
@@ -164,22 +287,26 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
 
         if (i + 1 < modelsChain.length) {
           failoverOccurred = true;
+          // Pequena pausa protetiva em caso de Rate Limit (HTTP 429)
+          if (response.status === 429) {
+            await new Promise(r => setTimeout(r, 400));
+          }
         }
-        continue; // Tenta o próximo modelo
+        continue;
       }
 
-      const data = await response.json();
-      successfulContent = data.choices?.[0]?.message?.content || '';
+      successfulContent = await adapter.parseResponse(response);
       winningModel = currentModel;
 
       attempts.push({
         model: currentModel,
+        protocol: protocolType,
         durationMs,
         success: true,
         statusCode: 200
       });
 
-      break; // Concluído com sucesso
+      break; // Sucesso obtido! Interrompe a cadeia de failover
     } catch (err) {
       clearTimeout(timeout);
       const durationMs = Date.now() - attemptStart;
@@ -187,6 +314,7 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
 
       attempts.push({
         model: currentModel,
+        protocol: protocolType,
         durationMs,
         success: false,
         errorMessage: isTimeout ? 'Tempo limite esgotado (timeout 14s)' : (err.message || 'Falha de comunicação')

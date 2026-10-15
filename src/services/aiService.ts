@@ -12,65 +12,9 @@ import {
   AgentRoleType
 } from '../types';
 import { storage } from './storageService';
+import { AiModelCatalogService, DEFAULT_DYNAMIC_CATALOG } from './aiModelCatalogService';
 
-export const KNOWN_OPENCODE_MODELS: AiModelChainItem[] = [
-  {
-    id: 'claude-3-5-sonnet',
-    name: 'Anthropic Claude 3.5 Sonnet',
-    provider: 'anthropic',
-    description: 'Máxima precisão contábil, raciocínio lógico e análise de demonstrativos',
-    isEnabled: true
-  },
-  {
-    id: 'gpt-4o',
-    name: 'OpenAI GPT-4o (Omni)',
-    provider: 'openai',
-    description: 'Flagship multimodal de alta performance e rapidez',
-    isEnabled: true
-  },
-  {
-    id: 'gpt-4o-mini',
-    name: 'OpenAI GPT-4o Mini',
-    provider: 'openai',
-    description: 'Ultra-rápido e econômico para classificações rotineiras',
-    isEnabled: true
-  },
-  {
-    id: 'deepseek-chat',
-    name: 'DeepSeek-V3 Chat',
-    provider: 'deepseek',
-    description: 'Excelente custo-benefício e alta capacidade analítica',
-    isEnabled: true
-  },
-  {
-    id: 'deepseek-reasoner',
-    name: 'DeepSeek-R1 (Reasoner)',
-    provider: 'deepseek',
-    description: 'Especialista em cálculos e validações matemáticas complexas',
-    isEnabled: true
-  },
-  {
-    id: 'gemini-1.5-pro',
-    name: 'Google Gemini 1.5 Pro',
-    provider: 'google',
-    description: 'Janela de contexto expansiva para análise de múltiplos períodos',
-    isEnabled: true
-  },
-  {
-    id: 'qwen-2.5-72b',
-    name: 'Alibaba Qwen 2.5 (72B)',
-    provider: 'custom',
-    description: 'Modelo de código aberto veloz e versátil',
-    isEnabled: true
-  },
-  {
-    id: 'llama-3.1-70b',
-    name: 'Meta Llama 3.1 (70B Instruct)',
-    provider: 'meta',
-    description: 'Alta aderência a instruções e extração estruturada de dados',
-    isEnabled: true
-  }
-];
+export const KNOWN_OPENCODE_MODELS: AiModelChainItem[] = DEFAULT_DYNAMIC_CATALOG;
 
 export class AiService {
   /**
@@ -100,7 +44,41 @@ export class AiService {
     const endpoint = (customEndpoint || config.endpointUrl || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
 
     if (!apiKey) {
-      return { success: false, latencyMs: 0, message: 'Chave de API não informada.' };
+      // Tenta testar via Serverless Gateway (usando credencial do servidor sem expor ao client)
+      try {
+        const startTime = Date.now();
+        const serverlessRes = await fetch('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentRole: 'CFO_EXECUTIVO',
+            action: 'ping_test',
+            messages: [{ role: 'user', content: 'Ping' }],
+            preferredModel: modelId,
+            temperature: 0.1,
+            maxTokens: 5
+          })
+        });
+        const latencyMs = Date.now() - startTime;
+        if (serverlessRes.ok) {
+          const data = await serverlessRes.json();
+          return {
+            success: true,
+            latencyMs,
+            statusCode: 200,
+            message: `Conexão bem-sucedida via Gateway Seguro com ${data.modelUsed || modelId} (${latencyMs}ms)`
+          };
+        } else {
+          return {
+            success: false,
+            latencyMs,
+            statusCode: serverlessRes.status,
+            message: `Gateway HTTP ${serverlessRes.status}. Configure OPENCODE_API_KEY no servidor ou informe uma chave.`
+          };
+        }
+      } catch {
+        return { success: false, latencyMs: 0, message: 'Chave de API não informada e Gateway offline.' };
+      }
     }
 
     const startTime = Date.now();
@@ -192,6 +170,7 @@ export class AiService {
           maxTokens: options.maxTokens ?? config.maxTokens ?? 2000,
           jsonMode: options.jsonMode,
           preferredModel: config.primaryModel,
+          fallbackModels: config.fallbackModels || [],
           customApiKey: config.apiKey || undefined
         })
       });

@@ -810,12 +810,35 @@ export interface SavedCashSimulationScenario {
 // TIPOS DO MÓDULO DE INTELIGÊNCIA ARTIFICIAL (OPENCODE & MULTI-MODEL FAILOVER)
 // =========================================================================
 
+export type AiProviderName = 
+  | 'anthropic' 
+  | 'openai' 
+  | 'deepseek' 
+  | 'google' 
+  | 'meta' 
+  | 'qwen' 
+  | 'glm' 
+  | 'grok' 
+  | 'minimax' 
+  | 'kimi' 
+  | 'mimo' 
+  | 'custom';
+
+export type AiModelProtocol = 'openai_chat' | 'anthropic_messages' | 'openai_responses';
+
+export type AiModelCategory = 'financeiro' | 'raciocinio' | 'rapido' | 'codigo' | 'geral';
+
 export interface AiModelChainItem {
-  id: string; // ex: 'claude-3-5-sonnet'
-  name: string; // ex: 'Anthropic Claude 3.5 Sonnet'
-  provider: 'anthropic' | 'openai' | 'deepseek' | 'google' | 'meta' | 'custom';
+  id: string; // ex: 'deepseek-v4-pro', 'claude-haiku-5-5'
+  name: string; // ex: 'DeepSeek V4 Pro'
+  provider: AiProviderName;
   description?: string;
   isEnabled: boolean;
+  category?: AiModelCategory;
+  protocol?: AiModelProtocol;
+  recommendedForApp?: boolean;
+  isDevAgentOnly?: boolean;
+  status?: 'active' | 'preview' | 'deprecated';
 }
 
 export interface AiProviderConfig {
@@ -830,6 +853,8 @@ export interface AiProviderConfig {
   enableAutoReconciliation: boolean; // Sugestão automática de De-Para no extrato
   enableDailyBriefing: boolean; // Insights executivos no Dashboard
   enableAnomalyDetection: boolean; // Alertas preditivos de despesas atípicas
+  lastDiscoveredAt?: string; // Data/Hora da última descoberta de catálogo de IA
+  discoveredModels?: AiModelChainItem[]; // Catálogo sincronizado com a OpenCode
   lastFailoverEvent?: {
     timestamp: string;
     fromModel: string;

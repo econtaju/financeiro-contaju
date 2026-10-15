@@ -33,6 +33,7 @@ import {
   ReconciliationRule,
   BankBalanceClosingRecord,
   AiProviderConfig,
+  AiModelChainItem,
   AgentDefinition,
   AgentRunRecord,
   AgentApprovalItem,
@@ -106,7 +107,8 @@ const STORAGE_KEYS = {
   BANK_CLOSINGS: 'contaju_bank_closings',
   AUTH_SESSION: 'contaju_auth_session',
   REMEMBERED_USERS: 'contaju_remembered_users',
-  AI_CONFIG: 'contaju_ai_config'
+  AI_CONFIG: 'contaju_ai_config',
+  DISCOVERED_AI_MODELS: 'contaju_discovered_ai_models'
 };
 
 export const DEFAULT_AI_CONFIG: AiProviderConfig = {
@@ -1883,6 +1885,14 @@ class StorageService {
 
   public saveAiConfig(config: AiProviderConfig) {
     this.set(STORAGE_KEYS.AI_CONFIG, config);
+  }
+
+  public getDiscoveredAiModels(): AiModelChainItem[] {
+    return this.get(STORAGE_KEYS.DISCOVERED_AI_MODELS, []);
+  }
+
+  public saveDiscoveredAiModels(models: AiModelChainItem[]) {
+    this.set(STORAGE_KEYS.DISCOVERED_AI_MODELS, models);
   }
 
   // Fast add counterparty
