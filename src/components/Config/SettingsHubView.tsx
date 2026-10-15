@@ -12,7 +12,8 @@ import {
   History,
   Database,
   SlidersHorizontal,
-  ChevronRight
+  ChevronRight,
+  Bot
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { NavigationScreen } from '../Sidebar';
@@ -29,6 +30,7 @@ import { ImprovementsView } from './ImprovementsView';
 import { AuditView } from './AuditView';
 import { BackupView } from './BackupView';
 import { SupabaseConfigView } from './SupabaseConfigView';
+import { AiConfigView } from './AiConfigView';
 
 export type ConfigSubTab =
   | 'EMPRESA'
@@ -39,6 +41,7 @@ export type ConfigSubTab =
   | 'FECHAMENTO_PERIODO'
   | 'MODULOS_INTEGRACOES'
   | 'SUPABASE'
+  | 'IA'
   | 'NOTIFICACOES'
   | 'MELHORIAS'
   | 'AUDITORIA'
@@ -150,6 +153,13 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
       shortLabel: 'Supabase DB',
       description: 'Conexão PostgreSQL na nuvem, migrações SQL e sincronização',
       icon: Database
+    },
+    {
+      id: 'IA',
+      label: 'Inteligência Artificial (OpenCode)',
+      shortLabel: 'IA OpenCode',
+      description: 'Modelos, chave de API OpenCode, failover automático e assistente',
+      icon: Bot
     },
     {
       id: 'NOTIFICACOES',
@@ -273,6 +283,7 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
         )}
         {activeTab === 'MODULOS_INTEGRACOES' && <IntegrationsView />}
         {activeTab === 'SUPABASE' && <SupabaseConfigView />}
+        {activeTab === 'IA' && <AiConfigView />}
         {activeTab === 'NOTIFICACOES' && (
           <NotificationsConfigView onNavigate={handleInternalNavigate} />
         )}

@@ -31,9 +31,10 @@ import {
   Wallet,
   Zap,
   BookmarkPlus,
-  Scale
+  Scale,
+  Bot
 } from 'lucide-react';
-import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult } from '../../types';
+import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { parseOFX } from '../../utils/ofxParser';
@@ -43,16 +44,18 @@ import { ReconciliationRulesModal } from './ReconciliationRulesModal';
 import { ReconciliationDiagnosticsModal } from './ReconciliationDiagnosticsModal';
 import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 import { ReconciliationFloatingModal } from './ReconciliationFloatingModal';
+import { AiReconciliationModal } from './AiReconciliationModal';
 import { applyReconciliationRules, learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
 
 export const ReconciliationView: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Modais de Regras De-Para, Diagnóstico de Logs e Conferência de Fechamento de Saldos
+  // Modais de Regras De-Para, Diagnóstico de Logs, Conferência de Fechamento de Saldos e Assistente IA
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [isFloatingReconcileOpen, setIsFloatingReconcileOpen] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [rulesPresetPattern, setRulesPresetPattern] = useState<string>('');
 
   // Escuta alterações do storage de forma reativa
@@ -1200,42 +1203,207 @@ export const ReconciliationView: React.FC = () => {
     setRefreshKey(k => k + 1);
   };
 
-  // Upload and parse real OFX file
+  // Criação e quitação inteligente a partir da sugestão da IA
+  const handleCreateTitleFromAiSuggestion = (stmt: BankStatementEntry, sug: AiReconciliationSuggestion) => {
+    const isDebit = stmt.amount < 0;
+    const targetType = isDebit ? 'PAGAR' : 'RECEBER';
+    const absAmount = Math.abs(stmt.amount);
+    const today = new Date().toISOString().split('T')[0];
+    const safeDate = stmt.date > today ? today : stmt.date;
+
+    const matchedCat = chartAccounts.find(
+      c => c.name.toLowerCase() === (sug.suggestedCategory || '').toLowerCase() || c.code === sug.suggestedCategory
+    );
+    const accountId = matchedCat?.id || (targetType === 'PAGAR' ? 'acc-4.1.01' : 'acc-3.1.01');
+    const defaultCounterpartyId = persons[0]?.id || (targetType === 'PAGAR' ? 'cli-1' : 'cli-2');
+
+    const titleNumber = `TIT-${targetType === 'PAGAR' ? 'PAG' : 'REC'}-${Date.now().toString().slice(-6)}`;
+    const newTitle: FinancialTitle = {
+      id: `title-ai-${Date.now()}`,
+      companyId: 'comp-1',
+      titleNumber,
+      type: targetType,
+      counterpartyId: defaultCounterpartyId,
+      expectedBankAccountId: stmt.bankAccountId || selectedAccountId,
+      accountId,
+      description: `[IA] ${stmt.description}`,
+      launchDate: safeDate,
+      competence: safeDate.substring(0, 7),
+      issueDate: safeDate,
+      dueDate: safeDate,
+      expectedCashDate: safeDate,
+      originalAmount: absAmount,
+      settledPrincipal: 0,
+      balancePrincipal: absAmount,
+      accruedInterest: 0,
+      accruedFine: 0,
+      documentState: 'CONFIRMADO',
+      settlementState: 'ABERTO',
+      originType: 'MANUAL',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const currentTitles = storage.getTitles();
+    storage.saveTitles([newTitle, ...currentTitles]);
+
+    FinancialEngine.postSettlement({
+      titleId: newTitle.id,
+      settlementDate: safeDate,
+      bankAccountId: stmt.bankAccountId || selectedAccountId,
+      principalSettled: absAmount,
+      discount: 0,
+      interest: 0,
+      fine: 0,
+      bankFee: 0,
+      notes: `Título gerado e quitado via Assistente IA OpenCode (${stmt.description})`,
+      voucherRef: stmt.fitId
+    });
+
+    const allUpdatedTitles = storage.getTitles().map(t => t.id === newTitle.id ? {
+      ...t,
+      reconciliationStatus: 'CONCILIADO' as const,
+      updatedAt: new Date().toISOString()
+    } : t);
+    storage.saveTitles(allUpdatedTitles);
+
+    const allStmts = storage.getStatementEntries().map(s => s.id === stmt.id ? {
+      ...s,
+      reconciliationStatus: 'CONCILIADO' as const,
+      matchedTitleId: newTitle.id
+    } : s);
+    storage.saveStatementEntries(allStmts);
+
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CONCILIACAO_IA_CRIACAO',
+      module: 'Conciliação Bancária',
+      recordId: newTitle.id,
+      details: `Lançamento criado e conciliado via IA OpenCode com base no extrato "${stmt.description}" (${formatBRL(stmt.amount)}).`
+    });
+
+    setSuccessMsg(`Sucesso! Título ${titleNumber} criado e conciliado com base na recomendação da IA.`);
+    setSelectedStmtIds([]);
+    setSelectedTitleIds([]);
+    setRefreshKey(k => k + 1);
+  };
+
+  // Upload and parse real OFX file com leitura segura de ArrayBuffer, TextDecoder e deduplicação
+  const [isImportingOfx, setIsImportingOfx] = useState(false);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsImportingOfx(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const parsed = parseOFX(content);
+      try {
+        const buffer = event.target?.result as ArrayBuffer;
+        if (!buffer || buffer.byteLength === 0) {
+          setErrorMsg('O arquivo selecionado está vazio.');
+          setIsImportingOfx(false);
+          return;
+        }
 
-      if (parsed.length === 0) {
-        setErrorMsg('Nenhuma transação financeira reconhecida no arquivo selecionado. Certifique-se de enviar um arquivo OFX válido.');
-        return;
+        // Tenta decodificar inicialmente como UTF-8
+        let content = '';
+        try {
+          const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+          content = utf8Decoder.decode(buffer);
+        } catch {
+          content = '';
+        }
+
+        // Se o arquivo contiver cabeçalho declarando CHARSET:1252 ou se tiver caracteres de substituição
+        if (!content || content.includes('CHARSET:1252') || content.includes('CHARSET:CSISO88591') || content.includes('\uFFFD')) {
+          try {
+            const win1252Decoder = new TextDecoder('windows-1252');
+            content = win1252Decoder.decode(buffer);
+          } catch {
+            // Continua com UTF-8 se windows-1252 não for suportado
+          }
+        }
+
+        const parsed = parseOFX(content);
+
+        if (parsed.length === 0) {
+          setErrorMsg(`Nenhuma transação financeira reconhecida em "${file.name}". Certifique-se de que o arquivo é um extrato bancário OFX ou CSV válido.`);
+          setIsImportingOfx(false);
+          return;
+        }
+
+        const targetAccountId = selectedAccountId || accounts[0]?.id || 'acc-1';
+        const currentStatements = storage.getStatementEntries();
+        const batchId = `batch-ofx-${Date.now()}`;
+
+        // Deduplicação inteligente por fitId na mesma conta bancária
+        const existingFitIds = new Set(
+          currentStatements
+            .filter(s => s.bankAccountId === targetAccountId && s.fitId)
+            .map(s => s.fitId)
+        );
+
+        let alreadyExistingCount = 0;
+        const newEntries: BankStatementEntry[] = [];
+
+        parsed.forEach((p, idx) => {
+          if (p.fitId && existingFitIds.has(p.fitId)) {
+            alreadyExistingCount++;
+          } else {
+            newEntries.push({
+              id: `stmt-ofx-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+              importBatchId: batchId,
+              bankAccountId: targetAccountId,
+              fitId: p.fitId,
+              date: p.date,
+              amount: p.amount,
+              description: p.description,
+              reconciliationStatus: 'PENDENTE'
+            });
+            if (p.fitId) {
+              existingFitIds.add(p.fitId);
+            }
+          }
+        });
+
+        if (newEntries.length === 0 && alreadyExistingCount > 0) {
+          setErrorMsg(`Todas as ${alreadyExistingCount} transações deste arquivo OFX já foram importadas anteriormente nesta conta bancária.`);
+          setIsImportingOfx(false);
+          return;
+        }
+
+        storage.saveStatementEntries([...newEntries, ...currentStatements]);
+
+        // Feedback enriquecido
+        if (alreadyExistingCount > 0) {
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} novas transações adicionadas (${alreadyExistingCount} já existiam e foram preservadas sem duplicidade).`);
+        } else {
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} transações adicionadas à conta bancária.`);
+        }
+
+        setRefreshKey(k => k + 1);
+      } catch (err: any) {
+        console.error('Erro ao processar arquivo OFX:', err);
+        setErrorMsg(`Falha ao ler o arquivo OFX: ${err?.message || 'Formato inválido ou corrompido'}`);
+      } finally {
+        setIsImportingOfx(false);
+        if (e.target) e.target.value = '';
       }
-
-      const currentStatements = storage.getStatementEntries();
-      const batchId = `batch-ofx-${Date.now()}`;
-
-      const newEntries: BankStatementEntry[] = parsed.map((p, idx) => ({
-        id: `stmt-ofx-${Date.now()}-${idx}`,
-        importBatchId: batchId,
-        bankAccountId: selectedAccountId,
-        fitId: p.fitId,
-        date: p.date,
-        amount: p.amount,
-        description: p.description,
-        reconciliationStatus: 'PENDENTE'
-      }));
-
-      storage.saveStatementEntries([...newEntries, ...currentStatements]);
-      setSuccessMsg(`Arquivo OFX "${file.name}" importado com sucesso! ${newEntries.length} transações adicionadas à conta.`);
-      setRefreshKey(k => k + 1);
     };
 
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    reader.onerror = () => {
+      setErrorMsg('Erro de leitura física do arquivo no navegador.');
+      setIsImportingOfx(false);
+      if (e.target) e.target.value = '';
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
   // Quick simulation sample OFX
@@ -1566,12 +1734,22 @@ export const ReconciliationView: React.FC = () => {
           </div>
 
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3.5 py-2 bg-white dark:bg-[#1B212D] border border-slate-300 dark:border-[#273040] text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-semibold transition-colors flex items-center shadow-2xs cursor-pointer"
+            onClick={() => !isImportingOfx && fileInputRef.current?.click()}
+            disabled={isImportingOfx}
+            className="px-3.5 py-2 bg-white dark:bg-[#1B212D] border border-slate-300 dark:border-[#273040] text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-semibold transition-colors flex items-center shadow-2xs cursor-pointer disabled:opacity-50"
             title="Importar extrato OFX ou CSV do banco"
           >
-            <Upload className="w-4 h-4 mr-1.5 text-amber-500" />
-            Importar OFX
+            {isImportingOfx ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-1.5 text-amber-500 animate-spin" />
+                <span>Processando OFX...</span>
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-1.5 text-amber-500" />
+                <span>Importar OFX</span>
+              </>
+            )}
           </button>
 
           <button
@@ -1640,6 +1818,17 @@ export const ReconciliationView: React.FC = () => {
               <option value={100} className="bg-white dark:bg-[#131720]">100% (Exato)</option>
             </select>
           </div>
+
+          {/* Botão Assistente IA OpenCode (Multi-Model Failover) */}
+          <button
+            type="button"
+            onClick={() => setIsAiModalOpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-purple-600/15 via-indigo-600/15 to-purple-500/10 border border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-500/25 rounded-xl text-xs font-bold transition-all flex items-center shadow-2xs cursor-pointer gap-1.5"
+            title="Abrir Assistente de Conciliação com IA OpenCode (Redundância Multi-Modelo)"
+          >
+            <Bot className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <span>Assistente IA</span>
+          </button>
 
           <button
             onClick={handleRunAutoMatch}
@@ -2824,6 +3013,22 @@ export const ReconciliationView: React.FC = () => {
         onClose={() => setIsClosingModalOpen(false)}
         defaultAccountId={selectedAccountId}
         onSuccess={() => setRefreshKey(k => k + 1)}
+      />
+
+      {/* Modal do Assistente de Conciliação com IA OpenCode (Multi-Model Failover) */}
+      <AiReconciliationModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        selectedStatement={selectedStmt}
+        allStatements={filteredStatements}
+        candidateTitles={titles}
+        chartAccounts={chartAccounts}
+        onApplyMatch={(stmt, title) => {
+          executeDirectReconciliation(stmt, title, { autoEqualize: true });
+        }}
+        onCreateTitleFromAi={(stmt, sug) => {
+          handleCreateTitleFromAiSuggestion(stmt, sug);
+        }}
       />
 
     </div>

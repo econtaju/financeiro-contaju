@@ -805,3 +805,77 @@ export interface SavedCashSimulationScenario {
   createdAt: string;
   updatedAt: string;
 }
+
+// =========================================================================
+// TIPOS DO MÓDULO DE INTELIGÊNCIA ARTIFICIAL (OPENCODE & MULTI-MODEL FAILOVER)
+// =========================================================================
+
+export interface AiModelChainItem {
+  id: string; // ex: 'claude-3-5-sonnet'
+  name: string; // ex: 'Anthropic Claude 3.5 Sonnet'
+  provider: 'anthropic' | 'openai' | 'deepseek' | 'google' | 'meta' | 'custom';
+  description?: string;
+  isEnabled: boolean;
+}
+
+export interface AiProviderConfig {
+  enabled: boolean;
+  apiKey: string; // API Key da OpenCode (ou OpenAI compatível)
+  endpointUrl: string; // Default: 'https://api.opencode.ai/v1' ou endpoint customizado
+  primaryModel: string; // Modelo prioritário
+  fallbackModels: string[]; // Lista ordenada de contingência quando o primário falhar
+  timeoutMs: number; // Timeout por requisição (ex: 12000ms)
+  temperature: number; // 0.0 a 1.0 (default 0.2 para tarefas financeiras determinísticas)
+  maxTokens: number;
+  enableAutoReconciliation: boolean; // Sugestão automática de De-Para no extrato
+  enableDailyBriefing: boolean; // Insights executivos no Dashboard
+  enableAnomalyDetection: boolean; // Alertas preditivos de despesas atípicas
+  lastFailoverEvent?: {
+    timestamp: string;
+    fromModel: string;
+    toModel: string;
+    reason: string;
+    feature: string;
+  };
+}
+
+export interface AiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface AiExecutionAttempt {
+  model: string;
+  durationMs: number;
+  success: boolean;
+  statusCode?: number;
+  errorMessage?: string;
+}
+
+export interface AiExecutionResult {
+  success: boolean;
+  content: string;
+  modelUsed: string;
+  failoverOccurred: boolean;
+  attempts: AiExecutionAttempt[];
+  totalDurationMs: number;
+  parsedJson?: any;
+}
+
+export interface AiReconciliationSuggestion {
+  statementId: string;
+  suggestedTitleId?: string;
+  suggestedAccountCategory?: string; // id da conta analítica
+  suggestedCategory?: string; // nome ou código da categoria
+  suggestedCounterpartyName?: string;
+  confidenceScore: number; // 0 a 100
+  confidence: number; // percentual de assertividade (0 a 100)
+  reasoning: string;
+  isNewTitleRecommended: boolean;
+  action: 'CONCILIAR_EXISTENTE' | 'CRIAR_NOVO_TITULO' | 'IGNORAR_TARIFA';
+  suggestedDescription?: string;
+  modelUsed?: string;
+  attempts?: AiExecutionAttempt[];
+  hadFailover?: boolean;
+}
+

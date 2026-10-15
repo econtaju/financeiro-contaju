@@ -31,7 +31,8 @@ import {
   SavedCashSimulationScenario,
   ClientDelinquencySetting,
   ReconciliationRule,
-  BankBalanceClosingRecord
+  BankBalanceClosingRecord,
+  AiProviderConfig
 } from '../types';
 import { 
   INITIAL_COMPANY, 
@@ -95,7 +96,22 @@ const STORAGE_KEYS = {
   DELETED_SALE_IDS: 'contaju_deleted_sale_ids',
   BANK_CLOSINGS: 'contaju_bank_closings',
   AUTH_SESSION: 'contaju_auth_session',
-  REMEMBERED_USERS: 'contaju_remembered_users'
+  REMEMBERED_USERS: 'contaju_remembered_users',
+  AI_CONFIG: 'contaju_ai_config'
+};
+
+export const DEFAULT_AI_CONFIG: AiProviderConfig = {
+  enabled: false,
+  apiKey: '',
+  endpointUrl: 'https://api.opencode.ai/v1',
+  primaryModel: 'claude-3-5-sonnet',
+  fallbackModels: ['gpt-4o', 'gpt-4o-mini', 'deepseek-chat', 'gemini-1.5-pro'],
+  timeoutMs: 12000,
+  temperature: 0.2,
+  maxTokens: 2048,
+  enableAutoReconciliation: true,
+  enableDailyBriefing: true,
+  enableAnomalyDetection: true
 };
 
 const DEFAULT_GLOBAL_PERIOD_FILTER = {
@@ -1826,6 +1842,15 @@ class StorageService {
 
   public saveDashboardConfig(config: DashboardConfig) {
     this.set(STORAGE_KEYS.DASHBOARD_CONFIG, config);
+  }
+
+  // AI & OpenCode Multi-Model Config
+  public getAiConfig(): AiProviderConfig {
+    return this.get(STORAGE_KEYS.AI_CONFIG, DEFAULT_AI_CONFIG);
+  }
+
+  public saveAiConfig(config: AiProviderConfig) {
+    this.set(STORAGE_KEYS.AI_CONFIG, config);
   }
 
   // Fast add counterparty
