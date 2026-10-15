@@ -30,7 +30,9 @@ import {
   X,
   Send,
   MessageSquare,
-  HelpCircle
+  HelpCircle,
+  Columns,
+  Trophy
 } from 'lucide-react';
 import { 
   AgentDefinition, 
@@ -75,8 +77,10 @@ export const AgentCenterView: React.FC = () => {
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
   const [actionErrorMsg, setActionErrorMsg] = useState('');
 
-  // Estados do Playground de Testes Práticos de IA
+  // Estados do Playground de Testes Práticos de IA (com Modo de Comparação Lado a Lado)
   const [testPlaygroundModel, setTestPlaygroundModel] = useState<string>('');
+  const [testPlaygroundModelB, setTestPlaygroundModelB] = useState<string>('gpt-5.6-luna');
+  const [isComparisonMode, setIsComparisonMode] = useState(false);
   const [testPlaygroundPrompt, setTestPlaygroundPrompt] = useState<string>(
     'Analise rapidamente a saúde do caixa da ContaJu e dê uma recomendação financeira executiva.'
   );
@@ -88,27 +92,63 @@ export const AgentCenterView: React.FC = () => {
     success: boolean;
     error?: string;
   } | null>(null);
+  const [playgroundResultB, setPlaygroundResultB] = useState<{
+    content: string;
+    modelUsed: string;
+    latencyMs: number;
+    success: boolean;
+    error?: string;
+  } | null>(null);
 
   const handleRunPlaygroundTest = async () => {
     if (!testPlaygroundPrompt.trim()) return;
     setIsRunningPlaygroundTest(true);
     setPlaygroundResult(null);
+    setPlaygroundResultB(null);
+
+    const targetModelA = testPlaygroundModel || aiConfig.primaryModel || 'deepseek-v4-pro';
+    const targetModelB = testPlaygroundModelB || (catalogModels.find(m => m.id !== targetModelA)?.id || 'gpt-5.6-luna');
+
     try {
-      const targetModel = testPlaygroundModel || aiConfig.primaryModel || 'deepseek-v4-pro';
-      const res = await AiService.testPrompt(testPlaygroundPrompt.trim(), targetModel);
-      setPlaygroundResult(res);
-      if (res.success) {
-        setActionSuccessMsg(`Resposta recebida com sucesso via ${res.modelUsed} (${res.latencyMs}ms)!`);
-        setTimeout(() => setActionSuccessMsg(''), 4000);
+      if (isComparisonMode) {
+        // Execução Concorrente Lado a Lado
+        const [resA, resB] = await Promise.all([
+          AiService.testPrompt(testPlaygroundPrompt.trim(), targetModelA),
+          AiService.testPrompt(testPlaygroundPrompt.trim(), targetModelB)
+        ]);
+
+        setPlaygroundResult(resA);
+        setPlaygroundResultB(resB);
+
+        if (resA.success && resB.success) {
+          const diff = Math.abs(resA.latencyMs - resB.latencyMs);
+          const faster = resA.latencyMs <= resB.latencyMs ? resA.modelUsed : resB.modelUsed;
+          setActionSuccessMsg(`Comparação concluída! ${faster} respondeu ${diff}ms mais rápido.`);
+          setTimeout(() => setActionSuccessMsg(''), 5000);
+        } else if (resA.success || resB.success) {
+          setActionSuccessMsg('Comparação parcial executada.');
+          setTimeout(() => setActionSuccessMsg(''), 4000);
+        } else {
+          setActionErrorMsg(resA.error || resB.error || 'Falha ao executar comparação.');
+          setTimeout(() => setActionErrorMsg(''), 5000);
+        }
       } else {
-        setActionErrorMsg(res.error || 'Falha ao executar teste.');
-        setTimeout(() => setActionErrorMsg(''), 5000);
+        // Execução Individual
+        const res = await AiService.testPrompt(testPlaygroundPrompt.trim(), targetModelA);
+        setPlaygroundResult(res);
+        if (res.success) {
+          setActionSuccessMsg(`Resposta recebida com sucesso via ${res.modelUsed} (${res.latencyMs}ms)!`);
+          setTimeout(() => setActionSuccessMsg(''), 4000);
+        } else {
+          setActionErrorMsg(res.error || 'Falha ao executar teste.');
+          setTimeout(() => setActionErrorMsg(''), 5000);
+        }
       }
     } catch (err: any) {
       setPlaygroundResult({
         success: false,
         content: '',
-        modelUsed: testPlaygroundModel || 'NONE',
+        modelUsed: targetModelA,
         latencyMs: 0,
         error: err.message || 'Erro inesperado na execução do teste.'
       });
@@ -831,35 +871,102 @@ export const AgentCenterView: React.FC = () => {
                 </p>
               </div>
 
-              {/* Seletor de Modelo para Teste */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap">Modelo do Teste:</span>
-                <select
-                  value={testPlaygroundModel || aiConfig.primaryModel}
-                  onChange={(e) => setTestPlaygroundModel(e.target.value)}
-                  className="bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  {catalogModels.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.id}) {m.id === aiConfig.primaryModel ? '⭐ Primário' : ''}
-                    </option>
-                  ))}
-                </select>
-                {testPlaygroundModel && testPlaygroundModel !== aiConfig.primaryModel && (
+              {/* Controles de Modo e Seletores de Modelos */}
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Toggle Modo Individual vs Comparação */}
+                <div className="flex items-center p-0.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs">
                   <button
                     type="button"
-                    onClick={() => {
-                      const updated = { ...aiConfig, primaryModel: testPlaygroundModel };
-                      AiService.saveConfig(updated);
-                      setAiConfig(updated);
-                      setActionSuccessMsg(`Modelo primário definido para ${testPlaygroundModel}`);
-                      setTimeout(() => setActionSuccessMsg(''), 4000);
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors cursor-pointer shrink-0"
-                    title="Definir este modelo como padrão para todo o sistema"
+                    onClick={() => setIsComparisonMode(false)}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      !isComparisonMode
+                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
                   >
-                    Usar Como Primário
+                    Teste Único
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsComparisonMode(true)}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isComparisonMode
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <Columns className="w-3.5 h-3.5" />
+                    <span>Comparar 2 Modelos</span>
+                  </button>
+                </div>
+
+                {!isComparisonMode ? (
+                  /* Seletor de Modelo Individual */
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap">Modelo:</span>
+                    <select
+                      value={testPlaygroundModel || aiConfig.primaryModel}
+                      onChange={(e) => setTestPlaygroundModel(e.target.value)}
+                      className="bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {catalogModels.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.id}) {m.id === aiConfig.primaryModel ? '⭐ Primário' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {testPlaygroundModel && testPlaygroundModel !== aiConfig.primaryModel && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...aiConfig, primaryModel: testPlaygroundModel };
+                          AiService.saveConfig(updated);
+                          setAiConfig(updated);
+                          setActionSuccessMsg(`Modelo primário definido para ${testPlaygroundModel}`);
+                          setTimeout(() => setActionSuccessMsg(''), 4000);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors cursor-pointer shrink-0"
+                        title="Definir este modelo como padrão para todo o sistema"
+                      >
+                        Usar Como Primário
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* Seletores de Modelos A e B para Comparação */
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-amber-400">Modelo A:</span>
+                      <select
+                        value={testPlaygroundModel || aiConfig.primaryModel}
+                        onChange={(e) => setTestPlaygroundModel(e.target.value)}
+                        className="bg-[var(--surface-elevated)] border border-amber-500/40 rounded-xl px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        {catalogModels.map(m => (
+                          <option key={`a-${m.id}`} value={m.id}>
+                            {m.name} {m.id === aiConfig.primaryModel ? '⭐' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <span className="text-xs text-[var(--text-secondary)] font-bold">vs</span>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-purple-400">Modelo B:</span>
+                      <select
+                        value={testPlaygroundModelB}
+                        onChange={(e) => setTestPlaygroundModelB(e.target.value)}
+                        className="bg-[var(--surface-elevated)] border border-purple-500/40 rounded-xl px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      >
+                        {catalogModels.map(m => (
+                          <option key={`b-${m.id}`} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -913,19 +1020,19 @@ export const AgentCenterView: React.FC = () => {
                 {isRunningPlaygroundTest ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Executando IA...</span>
+                    <span>{isComparisonMode ? 'Comparando Modelos...' : 'Executando IA...'}</span>
                   </>
                 ) : (
                   <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Executar Teste Agora</span>
+                    {isComparisonMode ? <Columns className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>{isComparisonMode ? 'Comparar Lado a Lado' : 'Executar Teste Agora'}</span>
                   </>
                 )}
               </button>
             </div>
 
-            {/* Exibição da Resposta do Playground */}
-            {playgroundResult && (
+            {/* Exibição da Resposta: Modo Individual */}
+            {!isComparisonMode && playgroundResult && (
               <div className={`p-4 rounded-xl border text-xs space-y-2 animate-in fade-in ${
                 playgroundResult.success 
                   ? 'bg-[var(--surface-elevated)] border-emerald-500/30' 
@@ -951,6 +1058,138 @@ export const AgentCenterView: React.FC = () => {
 
                 <div className="text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap font-sans text-xs pt-1">
                   {playgroundResult.success ? playgroundResult.content : playgroundResult.error}
+                </div>
+              </div>
+            )}
+
+            {/* Exibição da Resposta: Modo Comparação Lado a Lado */}
+            {isComparisonMode && (playgroundResult || playgroundResultB) && (
+              <div className="space-y-3 animate-in fade-in">
+                {/* Banner de Latência e Vencedor */}
+                {playgroundResult?.success && playgroundResultB?.success && (
+                  <div className="p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-between text-xs text-purple-200">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        <strong>Diferença de Performance: </strong>
+                        {playgroundResult.latencyMs < playgroundResultB.latencyMs ? (
+                          <>
+                            <strong className="text-amber-400">{playgroundResult.modelUsed}</strong> foi{' '}
+                            <span className="font-mono font-bold text-emerald-400">
+                              {playgroundResultB.latencyMs - playgroundResult.latencyMs}ms mais rápido
+                            </span>{' '}
+                            que {playgroundResultB.modelUsed}.
+                          </>
+                        ) : playgroundResultB.latencyMs < playgroundResult.latencyMs ? (
+                          <>
+                            <strong className="text-purple-400">{playgroundResultB.modelUsed}</strong> foi{' '}
+                            <span className="font-mono font-bold text-emerald-400">
+                              {playgroundResult.latencyMs - playgroundResultB.latencyMs}ms mais rápido
+                            </span>{' '}
+                            que {playgroundResult.modelUsed}.
+                          </>
+                        ) : (
+                          'Empate técnico em velocidade!'
+                        )}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] opacity-75 shrink-0 hidden sm:inline">
+                      {playgroundResult.latencyMs}ms vs {playgroundResultB.latencyMs}ms
+                    </span>
+                  </div>
+                )}
+
+                {/* Grid Duplo Lado a Lado */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Painel do Modelo A */}
+                  <div className="p-4 rounded-xl border border-amber-500/30 bg-[var(--surface-elevated)] space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2 text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                            Modelo A: {playgroundResult?.modelUsed || testPlaygroundModel || aiConfig.primaryModel}
+                          </span>
+                          {playgroundResult?.success && playgroundResultB?.success && playgroundResult.latencyMs <= playgroundResultB.latencyMs && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
+                              <Trophy className="w-3 h-3 text-emerald-400" /> Mais Rápido
+                            </span>
+                          )}
+                        </div>
+                        {playgroundResult?.success && (
+                          <span className="font-mono text-emerald-400 font-bold">
+                            ⚡ {playgroundResult.latencyMs}ms
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap font-sans text-xs max-h-[320px] overflow-y-auto pr-1">
+                        {playgroundResult?.success ? playgroundResult.content : (playgroundResult?.error || 'Aguardando execução...')}
+                      </div>
+                    </div>
+
+                    {playgroundResult?.success && playgroundResult.modelUsed !== aiConfig.primaryModel && (
+                      <div className="pt-2 border-t border-[var(--border-subtle)] flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = { ...aiConfig, primaryModel: playgroundResult.modelUsed };
+                            AiService.saveConfig(updated);
+                            setAiConfig(updated);
+                            setActionSuccessMsg(`Modelo primário alterado para ${playgroundResult.modelUsed}`);
+                            setTimeout(() => setActionSuccessMsg(''), 4000);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors cursor-pointer"
+                        >
+                          Definir como Primário ⭐
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Painel do Modelo B */}
+                  <div className="p-4 rounded-xl border border-purple-500/30 bg-[var(--surface-elevated)] space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2 text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-full font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                            Modelo B: {playgroundResultB?.modelUsed || testPlaygroundModelB}
+                          </span>
+                          {playgroundResult?.success && playgroundResultB?.success && playgroundResultB.latencyMs < playgroundResult.latencyMs && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
+                              <Trophy className="w-3 h-3 text-emerald-400" /> Mais Rápido
+                            </span>
+                          )}
+                        </div>
+                        {playgroundResultB?.success && (
+                          <span className="font-mono text-emerald-400 font-bold">
+                            ⚡ {playgroundResultB.latencyMs}ms
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap font-sans text-xs max-h-[320px] overflow-y-auto pr-1">
+                        {playgroundResultB?.success ? playgroundResultB.content : (playgroundResultB?.error || 'Aguardando execução...')}
+                      </div>
+                    </div>
+
+                    {playgroundResultB?.success && playgroundResultB.modelUsed !== aiConfig.primaryModel && (
+                      <div className="pt-2 border-t border-[var(--border-subtle)] flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = { ...aiConfig, primaryModel: playgroundResultB.modelUsed };
+                            AiService.saveConfig(updated);
+                            setAiConfig(updated);
+                            setActionSuccessMsg(`Modelo primário alterado para ${playgroundResultB.modelUsed}`);
+                            setTimeout(() => setActionSuccessMsg(''), 4000);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white transition-colors cursor-pointer"
+                        >
+                          Definir como Primário ⭐
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
