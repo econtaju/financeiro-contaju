@@ -170,10 +170,11 @@ export default async function handler(req, res) {
   } = req.body || {};
 
   // Chave do provedor server-side
-  const serverApiKey = process.env.OPENCODE_API_KEY || 
-                       process.env.AI_GATEWAY_KEY || 
-                       process.env.GEMINI_API_KEY || 
-                       customApiKey;
+  const rawApiKey = process.env.OPENCODE_API_KEY || 
+                    process.env.AI_GATEWAY_KEY || 
+                    process.env.GEMINI_API_KEY || 
+                    customApiKey;
+  const serverApiKey = typeof rawApiKey === 'string' ? rawApiKey.trim() : rawApiKey;
 
   let rawEndpoint = (process.env.AI_ENDPOINT_URL || req.body?.customEndpoint || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
   // Migra endpoint legado se informado
@@ -234,15 +235,18 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
 
   const defaultChain = [
     'deepseek-v4-pro',
+    'deepseek-v4.1-flash',
     'gpt-5.6-luna',
     'claude-haiku-5-5',
     'qwen3.8-max',
-    'deepseek-chat',
-    'gpt-4o'
+    'minimax-m3',
+    'glm-5.3'
   ];
 
-  const modelsChain = [...userChain, ...defaultChain]
-    .filter((m, idx, self) => self.indexOf(m) === idx);
+  // Em ping_test de um modelo específico, testa unicamente o modelo requisitado
+  const modelsChain = (action === 'ping_test' && preferredModel)
+    ? [preferredModel]
+    : [...userChain, ...defaultChain].filter((m, idx, self) => self.indexOf(m) === idx);
 
   const attempts = [];
   let successfulContent = '';
@@ -340,9 +344,19 @@ Sua função é verificar consistência entre Regime de Competência e Regime de
   const totalDurationMs = Date.now() - startTimeTotal;
 
   if (!winningModel) {
-    return res.status(502).json({
+    const lastAttempt = attempts[attempts.length - 1];
+    let detailedError = lastAttempt?.errorMessage || 'Todos os modelos da cadeia de contingência falharam ou estão sobrecarregados.';
+    let finalStatus = lastAttempt?.statusCode || 502;
+    if (lastAttempt?.statusCode === 401 || (detailedError && (detailedError.toLowerCase().includes('credential') || detailedError.toLowerCase().includes('unauthorized')))) {
+      detailedError = `Credencial Inválida (HTTP 401): Verifique se a sua Chave da OpenCode Go está correta nas Configurações de IA.`;
+      finalStatus = 401;
+    } else if (lastAttempt?.statusCode === 429) {
+      detailedError = `Limite de Requisições Excedido (HTTP 429): Quota ou taxa de requisições excedida na OpenCode.`;
+      finalStatus = 429;
+    }
+    return res.status(finalStatus).json({
       success: false,
-      error: 'Todos os modelos da cadeia de contingência falharam ou estão sobrecarregados.',
+      error: detailedError,
       modelUsed: 'NONE',
       attempts,
       totalDurationMs

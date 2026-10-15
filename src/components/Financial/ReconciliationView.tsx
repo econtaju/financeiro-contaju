@@ -226,11 +226,13 @@ export const ReconciliationView: React.FC = () => {
   // Helper para destacar os cards com degradê verde lateral conforme a porcentagem de correspondência
   // Requisito: Quanto maior a %, mais em destaque de verde fica o card.
   // Sempre com degradê de cores com verde pequeno começando na lateral esquerda sem atrapalhar a visualização do texto.
-  const getMatchHighlightStyle = (score: number, isSelected: boolean) => {
+  const getMatchHighlightStyle = (score: number, isSelected: boolean, isStatement: boolean = false) => {
     if (isSelected) {
       return {
-        borderClass: 'border-l-[5px] border-l-emerald-500 ring-2 ring-emerald-500/30 dark:ring-emerald-400/40',
-        bgClass: 'bg-emerald-500/10 dark:bg-emerald-500/15'
+        borderClass: 'border-2 border-amber-500 ring-4 ring-amber-500/25 shadow-xl shadow-amber-500/15 rounded-xl z-10 transition-all scale-[1.008]',
+        bgClass: isStatement 
+          ? 'bg-gradient-to-r from-slate-950 via-[#0e1628] to-slate-900 text-white' 
+          : 'bg-gradient-to-r from-slate-950 via-[#1b1428] to-slate-900 text-white'
       };
     }
 
@@ -2534,63 +2536,9 @@ export const ReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* GRID PRINCIPAL: 2 COLUNAS COM EQUALIZADOR INTEGRADO NO MEIO */}
+      {/* GRID PRINCIPAL: 2 COLUNAS DE CONCILIAÇÃO BANCÁRIA */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start relative">
         
-        {/* BOTÃO E MEDALHÃO CENTRAL DE EQUALIZAÇÃO ENTRE AS COLUNAS (DESKTOP) */}
-        {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
-          <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 top-48 z-30 flex-col items-center pointer-events-auto">
-            {/* Linhas Conectoras e Medalhão Central Circular */}
-            <div className="flex items-center justify-center">
-              <div className="w-8 h-1 bg-gradient-to-r from-sky-500 to-amber-500 shadow-md rounded-full" />
-              
-              <div 
-                className={`w-16 h-16 rounded-full flex flex-col items-center justify-center shadow-2xl border-2 transition-all backdrop-blur-md ${
-                  isMultiExact
-                    ? 'bg-slate-950/95 border-emerald-500 ring-4 ring-emerald-500/25 text-emerald-400 shadow-emerald-500/20'
-                    : 'bg-slate-950/95 border-amber-500 ring-4 ring-amber-500/30 text-amber-400 shadow-amber-500/30'
-                }`}
-              >
-                {isMultiExact ? (
-                  <>
-                    <Check className="w-6 h-6 text-emerald-400 stroke-[2.5]" />
-                    <span className="text-[8px] font-black uppercase tracking-wider text-emerald-400">100%</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-5 h-5 text-amber-400 animate-pulse stroke-[2.5]" />
-                    <span className="text-[8px] font-black uppercase tracking-wider text-amber-300">
-                      {multiDifference > 0 ? '+JUROS' : '-DESC'}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              <div className="w-8 h-1 bg-gradient-to-r from-amber-500 to-purple-500 shadow-md rounded-full" />
-            </div>
-
-            {/* Botão de Equalizar & Conciliar */}
-            <div className="mt-2.5 flex flex-col items-center">
-              <button
-                type="button"
-                onClick={handleEqualizeAndReconcile}
-                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-2xl hover:shadow-amber-500/50 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-amber-200"
-                title="Equalizar e conciliar as operações selecionadas com apuração automática de juros/descontos"
-              >
-                <Zap className="w-4 h-4 fill-current text-slate-950" />
-                <span>⚡ Equalizar & Conciliar</span>
-              </button>
-
-              <span className="mt-1 px-3 py-0.5 rounded-full text-[10px] font-bold bg-slate-950/95 border border-slate-700 text-slate-200 shadow-lg">
-                {isMultiExact 
-                  ? 'Diferença: R$ 0,00' 
-                  : `Diferença: ${multiDifference > 0 ? '+' : ''}${formatBRL(multiDifference)}`
-                }
-              </span>
-            </div>
-          </div>
-        )}
-
         {/* ======================================================== */}
         {/* COLUNA ESQUERDA: EXTRATO BANCÁRIO / OFX                  */}
         {/* ======================================================== */}
@@ -2772,72 +2720,7 @@ export const ReconciliationView: React.FC = () => {
             </div>
           )}
 
-          {/* PAINEL PREMIUM DE SELEÇÃO INTEGRADA DO EXTRATO BANCÁRIO */}
-          {selectedStmtIds.length > 0 && (
-            <div className="p-3.5 bg-gradient-to-br from-slate-950 via-slate-900 to-[#0c162c] border-b-2 border-sky-500/50 text-slate-100 shadow-md">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center gap-1.5 shadow-xs">
-                    <Landmark className="w-3 h-3 text-sky-400" />
-                    <span>Extrato Selecionado ({selectedStmtIds.length})</span>
-                  </span>
-                  <span className="text-[11px] font-medium text-slate-400">
-                    {selectedStmts.some(s => s.amount < 0) ? 'Débito / Saída' : 'Crédito / Entrada'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStmtIds([])}
-                  className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer px-2 py-0.5 rounded hover:bg-slate-800"
-                  title="Desmarcar todos os extratos"
-                >
-                  <X className="w-3 h-3" />
-                  <span>Limpar Seleção</span>
-                </button>
-              </div>
 
-              {/* Destaque do Valor Total */}
-              <div className="mt-2.5 flex items-baseline justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Total do Extrato:</span>
-                <span className={`text-xl font-black font-mono tracking-tight ${selectedStmts.some(s => s.amount < 0) ? 'text-sky-300' : 'text-emerald-300'}`}>
-                  {formatBRL(totalStmtsAmount)}
-                </span>
-              </div>
-
-              {/* Lista compacta com chips/cards dos itens selecionados */}
-              <div className="mt-2 max-h-28 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                {selectedStmts.map(stmt => (
-                  <div
-                    key={stmt.id}
-                    className="flex items-center justify-between text-[11px] bg-slate-900/90 border border-slate-800 hover:border-sky-500/40 px-2.5 py-1.5 rounded-lg transition-colors group"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 pr-2">
-                      <span className="text-[10px] text-slate-400 font-mono shrink-0">{formatDateBR(stmt.date)}</span>
-                      <span className="font-semibold text-slate-200 truncate" title={stmt.description}>
-                        {stmt.description}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-bold font-mono text-sky-300">
-                        {formatBRL(Math.abs(stmt.amount))}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedStmtIds(prev => prev.filter(id => id !== stmt.id));
-                        }}
-                        className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
-                        title="Remover este lançamento"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Statement List */}
           <div className="divide-y divide-slate-100 dark:divide-[#273040] max-h-[580px] overflow-y-auto">
@@ -2852,7 +2735,7 @@ export const ReconciliationView: React.FC = () => {
                 const suggestedTitle = titles.find(t => t.id === stmt.suggestedTitleId);
                 const matchedTitle = titles.find(t => t.id === stmt.matchedTitleId);
                 const score = match?.score || 0;
-                const highlight = getMatchHighlightStyle(score, isSelected);
+                const highlight = getMatchHighlightStyle(score, isSelected, true);
 
                 return (
                   <div
@@ -2860,6 +2743,19 @@ export const ReconciliationView: React.FC = () => {
                     onClick={(e) => handleCardClickStatement(stmt, e)}
                     className={`p-4 transition-all cursor-pointer ${highlight.borderClass} ${highlight.bgClass}`}
                   >
+                    {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
+                    {isSelected && (
+                      <div className="mb-2.5 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                          <span>Extrato Selecionado para Conciliação</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-200">
+                          {stmt.amount < 0 ? 'Saída / Débito' : 'Entrada / Crédito'}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-start justify-between gap-3">
                       {/* Checkbox de Seleção Múltipla */}
                       <div className="pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -2910,13 +2806,13 @@ export const ReconciliationView: React.FC = () => {
                           )}
                         </div>
 
-                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100 mt-1">
+                        <div className={`text-xs mt-1 ${isSelected ? 'font-black text-white text-[13px] tracking-wide' : 'font-bold text-slate-900 dark:text-slate-100'}`}>
                           {stmt.description}
                         </div>
 
                         {/* Resumo de similaridade caso haja match */}
                         {match && match.summaryBadge && (
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          <div className={`text-[11px] mt-0.5 ${isSelected ? 'text-amber-200' : 'text-slate-500 dark:text-slate-400'}`}>
                             {match.summaryBadge}
                           </div>
                         )}
@@ -2989,8 +2885,10 @@ export const ReconciliationView: React.FC = () => {
                           </button>
                         )}
 
-                        <div className={`text-right font-extrabold text-sm whitespace-nowrap ${
-                          isCredit ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'
+                        <div className={`text-right whitespace-nowrap ${
+                          isSelected 
+                            ? 'font-black text-base text-amber-400 font-mono drop-shadow-xs' 
+                            : isCredit ? 'font-extrabold text-sm text-amber-600 dark:text-amber-400' : 'font-extrabold text-sm text-slate-700 dark:text-slate-200'
                         }`}>
                           {isCredit ? '+' : ''} {formatBRL(stmt.amount)}
                         </div>
@@ -3071,36 +2969,6 @@ export const ReconciliationView: React.FC = () => {
             )}
           </div>
         </div>
-
-        {/* CONECTOR RESPONSIVO MOBILE ENTRE AS COLUNAS (TELAS MENORES) */}
-        {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
-          <div className="lg:hidden p-3.5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 rounded-2xl shadow-xl flex flex-col items-center gap-2.5">
-            <div className="flex items-center justify-between w-full text-xs">
-              <span className="font-bold text-sky-300">Extrato: {formatBRL(totalStmtsAmount)}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                isMultiExact ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-              }`}>
-                {isMultiExact ? '100% Equalizado' : (multiDifference > 0 ? '+Juros' : '-Desconto')}
-              </span>
-              <span className="font-bold text-amber-300">ERP: {formatBRL(totalTitlesAmount)}</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleEqualizeAndReconcile}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer border border-amber-200"
-            >
-              <Zap className="w-4 h-4 fill-current text-slate-950" />
-              <span>⚡ Equalizar & Conciliar Agora</span>
-            </button>
-
-            {!isMultiExact && (
-              <span className="text-[10px] text-slate-400 font-medium">
-                Divergência de {multiDifference > 0 ? `+${formatBRL(multiDifference)} em juros/multa` : `-${formatBRL(Math.abs(multiDifference))} em desconto comercial`} será apurada automaticamente.
-              </span>
-            )}
-          </div>
-        )}
 
         {/* ======================================================== */}
         {/* COLUNA DIREITA: TÍTULOS DO ERP OU CRIAR NOVO LANÇAMENTO  */}
@@ -3245,82 +3113,7 @@ export const ReconciliationView: React.FC = () => {
                 )}
               </div>
 
-              {/* PAINEL PREMIUM DE SELEÇÃO INTEGRADA DE TÍTULOS DO ERP */}
-              {selectedTitleIds.length > 0 && (
-                <div className="p-3.5 bg-gradient-to-br from-slate-950 via-slate-900 to-[#1f152b] border-b-2 border-amber-500/50 text-slate-100 shadow-md">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-xs">
-                        <FileText className="w-3 h-3 text-amber-400" />
-                        <span>Títulos ERP Selecionados ({selectedTitleIds.length})</span>
-                      </span>
-                      <span className="text-[11px] font-medium text-slate-400">
-                        {selectedTitles.some(t => t.type === 'PAGAR') ? 'Contas a Pagar' : 'Contas a Receber'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTitleIds([])}
-                      className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer px-2 py-0.5 rounded hover:bg-slate-800"
-                      title="Desmarcar todos os títulos"
-                    >
-                      <X className="w-3 h-3" />
-                      <span>Limpar Seleção</span>
-                    </button>
-                  </div>
 
-                  {/* Destaque do Valor Total */}
-                  <div className="mt-2.5 flex items-baseline justify-between">
-                    <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Total do ERP:</span>
-                    <span className="text-xl font-black font-mono tracking-tight text-amber-300">
-                      {formatBRL(totalTitlesAmount)}
-                    </span>
-                  </div>
-
-                  {/* Lista compacta com chips/cards dos títulos selecionados */}
-                  <div className="mt-2 max-h-28 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                    {selectedTitles.map(title => {
-                      const val = title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount;
-                      const person = counterpartyMap.get(title.counterpartyId);
-                      const entityName = person?.name || 'Sem favorecido';
-                      return (
-                        <div
-                          key={title.id}
-                          className="flex items-center justify-between text-[11px] bg-slate-900/90 border border-slate-800 hover:border-amber-500/40 px-2.5 py-1.5 rounded-lg transition-colors group"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 pr-2">
-                            <span className="text-[10px] font-bold text-amber-400 font-mono shrink-0">#{title.titleNumber}</span>
-                            <span className="font-semibold text-slate-200 truncate" title={entityName}>
-                              {entityName}
-                            </span>
-                            {title.category && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 truncate hidden sm:inline">
-                                {title.category}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-bold font-mono text-amber-300">
-                              {formatBRL(val)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTitleIds(prev => prev.filter(id => id !== title.id));
-                              }}
-                              className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
-                              title="Remover este título"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Banner Informativo de Filtro e Ordenação Ativa */}
               {selectedStmt && (
@@ -3365,7 +3158,7 @@ export const ReconciliationView: React.FC = () => {
                     const isExpanded = expandedScoreTitleId === t.id;
                     const score = match?.score || 0;
                     const isLiquidado = t.settlementState === 'LIQUIDADO';
-                    const highlight = getMatchHighlightStyle(score, isSelected);
+                    const highlight = getMatchHighlightStyle(score, isSelected, false);
 
                     return (
                       <div
@@ -3373,6 +3166,19 @@ export const ReconciliationView: React.FC = () => {
                         onClick={(e) => handleCardClickTitle(t.id, e)}
                         className={`p-4 transition-all cursor-pointer ${highlight.borderClass} ${highlight.bgClass}`}
                       >
+                        {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
+                        {isSelected && (
+                          <div className="mb-2.5 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                              <span>Título ERP Selecionado para Conciliação</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-200">
+                              #{t.titleNumber} • {t.type === 'PAGAR' ? 'Contas a Pagar' : 'Contas a Receber'}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="flex items-start justify-between gap-3">
                           {/* Checkbox de Seleção Múltipla */}
                           <div className="pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -3498,17 +3304,17 @@ export const ReconciliationView: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">
+                            <div className={`text-xs mt-1 ${isSelected ? 'font-black text-white text-[13px] tracking-wide' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
                               {t.description}
                             </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <div className={`text-[11px] ${isSelected ? 'text-amber-200 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
                               Favorecido: {person?.name || 'Não informado'} {person?.tradeName ? `(${person.tradeName})` : ''}
                             </div>
 
                             {/* Resumo de similaridade */}
                             {match && (
-                              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-                                <span className="font-medium text-slate-700 dark:text-slate-300">
+                              <div className={`mt-1.5 flex items-center justify-between gap-2 text-[11px] ${isSelected ? 'text-amber-200' : 'text-slate-600 dark:text-slate-300'}`}>
+                                <span className={`font-medium ${isSelected ? 'text-amber-300 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
                                   {match.summaryBadge}
                                 </span>
 
@@ -3519,7 +3325,7 @@ export const ReconciliationView: React.FC = () => {
                                     e.stopPropagation();
                                     setExpandedScoreTitleId(isExpanded ? null : t.id);
                                   }}
-                                  className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                  className="text-[10px] font-semibold text-amber-500 hover:underline flex items-center gap-0.5 cursor-pointer"
                                 >
                                   <span>Fatores</span>
                                   {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -3547,10 +3353,14 @@ export const ReconciliationView: React.FC = () => {
                           </div>
 
                           <div className="text-right flex-shrink-0">
-                            <div className="font-bold text-sm text-slate-900 dark:text-white">
+                            <div className={`whitespace-nowrap ${
+                              isSelected 
+                                ? 'font-black text-base text-amber-400 font-mono drop-shadow-xs' 
+                                : 'font-bold text-sm text-slate-900 dark:text-white'
+                            }`}>
                               {formatBRL(t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)}
                             </div>
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                            <span className={`text-[10px] block mt-0.5 ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
                               Original: {formatBRL(t.originalAmount)}
                             </span>
                           </div>

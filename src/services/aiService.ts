@@ -40,15 +40,24 @@ export class AiService {
     customEndpoint?: string
   ): Promise<{ success: boolean; latencyMs: number; message: string; statusCode?: number }> {
     const config = this.getConfig();
-    const apiKey = customApiKey || config.apiKey;
+    const rawKey = customApiKey !== undefined ? customApiKey : config.apiKey;
+    const apiKey = typeof rawKey === 'string' ? rawKey.trim() : rawKey;
     let endpoint = (customEndpoint || config.endpointUrl || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
     if (endpoint.includes('api.opencode.ai/v1')) {
       endpoint = 'https://opencode.ai/zen/go/v1';
     }
 
-    // 1. Tenta testar prioritariamente via Serverless Gateway (evita bloqueio de CORS do navegador)
+    if (!apiKey) {
+      return { 
+        success: false, 
+        latencyMs: 0, 
+        message: 'Chave de API não informada. Por favor, insira sua chave OpenCode Go nas Configurações de IA.' 
+      };
+    }
+
+    // Comunicação segura via Serverless Gateway (evita bloqueio de CORS do navegador)
+    const startTime = Date.now();
     try {
-      const startTime = Date.now();
       const serverlessRes = await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,93 +67,44 @@ export class AiService {
           messages: [{ role: 'user', content: 'Ping' }],
           preferredModel: modelId,
           fallbackModels: [],
-          customApiKey: apiKey || undefined,
+          customApiKey: apiKey,
+          customEndpoint: endpoint,
           temperature: 0.1,
           maxTokens: 5
         })
       });
+
       const latencyMs = Date.now() - startTime;
-      if (serverlessRes.ok) {
-        const data = await serverlessRes.json();
-        if (data.success) {
-          return {
-            success: true,
-            latencyMs,
-            statusCode: 200,
-            message: `Conexão bem-sucedida com ${data.modelUsed || modelId} (${latencyMs}ms)`
-          };
-        } else {
-          return {
-            success: false,
-            latencyMs,
-            statusCode: serverlessRes.status,
-            message: data.error || (data.attempts?.[0]?.errorMessage) || `Erro HTTP ${serverlessRes.status}`
-          };
-        }
+      let data: any = {};
+      try {
+        data = await serverlessRes.json();
+      } catch {
+        data = {};
       }
-    } catch {
-      // Gateway offline, tenta fallback direto abaixo
-    }
 
-    if (!apiKey) {
-      return { success: false, latencyMs: 0, message: 'Chave de API não informada e Gateway offline.' };
-    }
-
-    const startTime = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    try {
-      const response = await fetch(`${endpoint}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'x-opencode-session': `contaju-test-${Date.now()}`
-        },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [
-            { role: 'user', content: 'Responda com a palavra OK.' }
-          ],
-          temperature: 0.1,
-          max_tokens: 10
-        }),
-        signal: controller.signal
-      });
-
-      const latencyMs = Date.now() - startTime;
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        let errText = '';
-        try {
-          const errJson = await response.json();
-          errText = errJson?.error?.message || response.statusText;
-        } catch {
-          errText = await response.text();
-        }
+      if (serverlessRes.ok && data.success) {
+        return {
+          success: true,
+          latencyMs,
+          statusCode: 200,
+          message: `Conexão bem-sucedida com ${data.modelUsed || modelId} (${latencyMs}ms)`
+        };
+      } else {
+        const errorMsg = data.error || (data.attempts?.[0]?.errorMessage) || `Erro HTTP ${serverlessRes.status}: Falha ao autenticar com o modelo ${modelId}.`;
         return {
           success: false,
           latencyMs,
-          statusCode: response.status,
-          message: `Erro HTTP ${response.status}: ${errText.substring(0, 150)}`
+          statusCode: serverlessRes.status,
+          message: errorMsg
         };
       }
-
-      return {
-        success: true,
-        latencyMs,
-        statusCode: 200,
-        message: `Conexão bem-sucedida com ${modelId} (${latencyMs}ms)`
-      };
     } catch (err: any) {
-      clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
-      if (err.name === 'AbortError') {
-        return { success: false, latencyMs, message: 'Tempo limite esgotado (timeout de 10s).' };
-      }
-      return { success: false, latencyMs, message: `Falha de rede: ${err.message || 'Sem conexão com a OpenCode'}` };
+      return {
+        success: false,
+        latencyMs,
+        message: `Servidor local da API não respondeu: ${err.message || 'Sem conexão com /api/agents'}. Verifique se a aplicação está em execução.`
+      };
     }
   }
 
@@ -218,7 +178,24 @@ export class AiService {
     const startTimeTotal = Date.now();
     const role: AgentRoleType = options.agentRole || 'CFO_EXECUTIVO';
 
-    // 1. Tentar primeiro via Vercel Serverless Gateway (/api/agents) com chaves protegidas no servidor
+    const apiKey = config.apiKey?.trim();
+    if (!apiKey) {
+      return {
+        success: false,
+        content: '',
+        modelUsed: 'NONE',
+        failoverOccurred: false,
+        attempts: [{
+          model: 'NONE',
+          durationMs: 0,
+          success: false,
+          errorMessage: 'Chave de API não informada. Por favor, insira sua chave OpenCode Go nas Configurações de IA.'
+        }],
+        totalDurationMs: 0
+      };
+    }
+
+    // 1. Executa via Serverless Gateway (/api/agents) com failover inteligente
     try {
       const serverlessRes = await fetch('/api/agents', {
         method: 'POST',
@@ -232,14 +209,20 @@ export class AiService {
           jsonMode: options.jsonMode,
           preferredModel: options.preferredModel || config.primaryModel,
           fallbackModels: config.fallbackModels || [],
-          customApiKey: config.apiKey || undefined
+          customApiKey: apiKey,
+          customEndpoint: config.endpointUrl || undefined
         })
       });
 
-      if (serverlessRes.ok) {
-        const data = await serverlessRes.json();
-        const duration = Date.now() - startTimeTotal;
+      const duration = Date.now() - startTimeTotal;
+      let data: any = {};
+      try {
+        data = await serverlessRes.json();
+      } catch {
+        data = {};
+      }
 
+      if (serverlessRes.ok && data.success) {
         // Registra a execução no histórico auditável da Central de Agentes
         storage.addAgentRun({
           id: `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -266,187 +249,56 @@ export class AiService {
           totalDurationMs: duration,
           parsedJson: data.parsedJson
         };
-      }
-    } catch {
-      // Falha de rede ou offline na rota serverless, tenta fallback
-    }
-
-    // 2. Fallback local direto se houver chave configurada
-    let rawEndpoint = (config.endpointUrl || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
-    if (rawEndpoint.includes('api.opencode.ai/v1')) {
-      rawEndpoint = 'https://opencode.ai/zen/go/v1';
-    }
-    const endpoint = rawEndpoint;
-
-    if (!config.apiKey) {
-      return {
-        success: false,
-        content: '',
-        modelUsed: 'NONE',
-        failoverOccurred: false,
-        attempts: [{
-          model: 'NONE',
-          durationMs: 0,
-          success: false,
-          errorMessage: 'Chave de API não informada. Conecte sua Chave OpenCode Go nas Configurações de IA.'
-        }],
-        totalDurationMs: 0
-      };
-    }
-
-    // Monta a cadeia de contingência: Modelo Primário (ou preferido) -> Modelos Secundários
-    const primary = options.preferredModel || config.primaryModel || 'deepseek-v4-pro';
-    const modelsChain: string[] = [
-      primary,
-      ...(config.fallbackModels || []).filter(m => m !== primary)
-    ];
-
-    const attempts: AiExecutionAttempt[] = [];
-    let failoverOccurred = false;
-    let successfulContent = '';
-    let winningModel = '';
-
-    for (let i = 0; i < modelsChain.length; i++) {
-      const currentModel = modelsChain[i];
-      const attemptStart = Date.now();
-      const controller = new AbortController();
-      const timeoutMs = config.timeoutMs || 14000;
-      const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        const payload: any = {
-          model: currentModel,
-          messages,
-          temperature: options.temperature ?? config.temperature ?? 0.2,
-          max_tokens: options.maxTokens ?? config.maxTokens ?? 2000
-        };
-
-        if (options.jsonMode) {
-          payload.response_format = { type: 'json_object' };
-        }
-
-        const res = await fetch(`${endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`,
-            'x-opencode-session': `contaju-${Date.now()}`
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
+      } else {
+        const errorMsg = data.error || (data.attempts?.[data.attempts.length - 1]?.errorMessage) || `Erro HTTP ${serverlessRes.status}`;
+        
+        storage.addAgentRun({
+          id: `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          agentRole: role,
+          taskType: options.featureName || 'Consulta IA',
+          requestedBy: storage.getCurrentUser().name,
+          companyId: 'comp-1',
+          startedAt: new Date(startTimeTotal).toISOString(),
+          completedAt: new Date().toISOString(),
+          status: 'FALHA',
+          modelUsed: data.modelUsed || config.primaryModel || 'NONE',
+          latencyMs: duration,
+          failoverOccurred: Boolean(data.failoverOccurred),
+          inputSummary: messages[messages.length - 1]?.content?.substring(0, 100) || '',
+          outputSummary: errorMsg.substring(0, 150)
         });
 
-        clearTimeout(timeoutTimer);
-        const duration = Date.now() - attemptStart;
-
-        if (!res.ok) {
-          let errDetail = '';
-          try {
-            const errBody = await res.json();
-            errDetail = errBody?.error?.message || res.statusText;
-          } catch {
-            errDetail = await res.text();
-          }
-
-          attempts.push({
-            model: currentModel,
+        return {
+          success: false,
+          content: '',
+          modelUsed: data.modelUsed || 'FAILOVER_EXHAUSTED',
+          failoverOccurred: Boolean(data.failoverOccurred),
+          attempts: data.attempts || [{
+            model: options.preferredModel || config.primaryModel || 'NONE',
             durationMs: duration,
             success: false,
-            statusCode: res.status,
-            errorMessage: `HTTP ${res.status}: ${errDetail.substring(0, 150)}`
-          });
-
-          // Registra o failover se houver um próximo modelo
-          if (i + 1 < modelsChain.length) {
-            failoverOccurred = true;
-            config.lastFailoverEvent = {
-              timestamp: new Date().toISOString(),
-              fromModel: currentModel,
-              toModel: modelsChain[i + 1],
-              reason: `HTTP ${res.status} (${errDetail.substring(0, 50)})`,
-              feature: options.featureName || 'IA Geral'
-            };
-            storage.saveAiConfig(config);
-          }
-          continue; // Pula para o próximo modelo da cadeia
-        }
-
-        const data = await res.json();
-        successfulContent = data.choices?.[0]?.message?.content || '';
-        winningModel = currentModel;
-
-        attempts.push({
-          model: currentModel,
-          durationMs: duration,
-          success: true,
-          statusCode: 200
-        });
-
-        break; // Sucesso! Interrompe a cadeia de contingência
-      } catch (err: any) {
-        clearTimeout(timeoutTimer);
-        const duration = Date.now() - attemptStart;
-        const isTimeout = err.name === 'AbortError';
-        const msg = isTimeout ? `Timeout esgotado (${timeoutMs}ms)` : (err.message || 'Falha de rede');
-
-        attempts.push({
-          model: currentModel,
-          durationMs: duration,
-          success: false,
-          errorMessage: msg
-        });
-
-        if (i + 1 < modelsChain.length) {
-          failoverOccurred = true;
-          config.lastFailoverEvent = {
-            timestamp: new Date().toISOString(),
-            fromModel: currentModel,
-            toModel: modelsChain[i + 1],
-            reason: msg,
-            feature: options.featureName || 'IA Geral'
-          };
-          storage.saveAiConfig(config);
-        }
+            statusCode: serverlessRes.status,
+            errorMessage: errorMsg
+          }],
+          totalDurationMs: duration
+        };
       }
-    }
-
-    const totalDurationMs = Date.now() - startTimeTotal;
-
-    if (!winningModel) {
+    } catch (err: any) {
+      const duration = Date.now() - startTimeTotal;
       return {
         success: false,
         content: '',
-        modelUsed: 'FAILOVER_EXHAUSTED',
-        failoverOccurred: true,
-        attempts,
-        totalDurationMs
+        modelUsed: 'GATEWAY_ERROR',
+        failoverOccurred: false,
+        attempts: [{
+          model: 'GATEWAY_ERROR',
+          durationMs: duration,
+          success: false,
+          errorMessage: `Falha de conexão com a API de Agentes: ${err.message || 'Servidor indisponível'}. Certifique-se de que a aplicação está em execução.`
+        }],
+        totalDurationMs: duration
       };
     }
-
-    let parsedJson: any = undefined;
-    if (options.jsonMode && successfulContent) {
-      try {
-        // Remove delimitadores de código markdown caso a IA responda com ```json
-        const cleanJson = successfulContent
-          .replace(/^```json\s*/i, '')
-          .replace(/^```\s*/i, '')
-          .replace(/```$/i, '')
-          .trim();
-        parsedJson = JSON.parse(cleanJson);
-      } catch (jsonErr) {
-        console.warn('Falha ao parsear JSON retornado pela IA:', jsonErr);
-      }
-    }
-
-    return {
-      success: true,
-      content: successfulContent,
-      modelUsed: winningModel,
-      failoverOccurred,
-      attempts,
-      totalDurationMs,
-      parsedJson
-    };
   }
 
   /**
