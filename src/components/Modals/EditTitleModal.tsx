@@ -198,6 +198,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
   const isReceber = title.type === 'RECEBER';
   const hasSettlements = (title.settledPrincipal || 0) > 0;
+  const isReconciled = title.reconciliationStatus === 'CONCILIADO' || Boolean(title.reconciledViaBank);
 
   const counterparties = (allCounterparties || []).filter(c => {
     if (!c) return false;
@@ -521,6 +522,11 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       return;
     }
 
+    if (isReconciled) {
+      setErrorMessage('Este título está conciliado via banco e não pode ser editado. Desfaça a conciliação bancária primeiro na tela de Conciliação.');
+      return;
+    }
+
     // Se marcou para liquidar/baixar agora o saldo restante
     if (isAlreadySettled) {
       if (!settlementBankAccountId) {
@@ -619,6 +625,15 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           {hasSettlements && (
             <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800">
               ⚠️ Este lançamento possui baixas parciais ({formatBRL(title.settledPrincipal)} baixados de {formatBRL(title.originalAmount)}). O valor original não pode ser reduzido abaixo do total já baixado.
+            </div>
+          )}
+
+          {isReconciled && (
+            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2.5 font-semibold">
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                🔒 Este lançamento está <strong>conciliado via banco</strong> e está protegido contra alterações diretas. Para editar valores, datas ou dados contábeis, desfaça a conciliação na tela de <strong>Conciliação Bancária</strong>.
+              </span>
             </div>
           )}
 
@@ -1154,10 +1169,16 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="min-h-[42px] px-5 sm:px-6 py-2.5 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-xl shadow-md transition-colors flex items-center justify-center cursor-pointer"
+                disabled={isReconciled}
+                className={`min-h-[42px] px-5 sm:px-6 py-2.5 text-xs font-bold rounded-xl shadow-md transition-colors flex items-center justify-center ${
+                  isReconciled
+                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-300 dark:border-slate-700'
+                    : 'text-slate-950 bg-amber-500 hover:bg-amber-400 cursor-pointer'
+                }`}
+                title={isReconciled ? 'Este título está conciliado via banco e não pode ser alterado diretamente.' : undefined}
               >
                 <CheckCircle2 className="w-4 h-4 mr-1.5 shrink-0" />
-                <span>Salvar Alterações</span>
+                <span>{isReconciled ? 'Bloqueado (Conciliado via Banco)' : 'Salvar Alterações'}</span>
               </button>
             </div>
 

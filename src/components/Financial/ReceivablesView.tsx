@@ -659,8 +659,26 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     });
   };
 
+  const handleStartEditTitle = (t: FinancialTitle) => {
+    if (t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank) {
+      setToastMessage({
+        type: 'info',
+        text: `🔒 O recebimento #${t.titleNumber} está conciliado via banco e não pode ser editado. Para fazer alterações, desfaça a conciliação na tela de Conciliação Bancária.`
+      });
+      return;
+    }
+    setSelectedTitleForEdit(t);
+  };
+
   const handleOpenSingleDelete = (t: FinancialTitle, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank) {
+      setToastMessage({
+        type: 'info',
+        text: `🔒 O recebimento #${t.titleNumber} está conciliado via banco e não pode ser excluído. Desfaça a conciliação bancária primeiro na tela de Conciliação.`
+      });
+      return;
+    }
     setConfirmModalState({
       isOpen: true,
       mode: 'DELETE',
@@ -670,6 +688,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
   const handleOpenSingleCancel = (t: FinancialTitle, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank) {
+      setToastMessage({
+        type: 'info',
+        text: `🔒 O recebimento #${t.titleNumber} está conciliado via banco e não pode ser cancelado. Desfaça a conciliação na tela de Conciliação Bancária.`
+      });
+      return;
+    }
     setConfirmModalState({
       isOpen: true,
       mode: 'CANCEL',
@@ -679,6 +704,13 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
   const handleOpenSingleReopen = (t: FinancialTitle, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank) {
+      setToastMessage({
+        type: 'info',
+        text: `🔒 O recebimento #${t.titleNumber} está conciliado via banco e não pode ser estornado diretamente. Desfaça a conciliação na tela de Conciliação Bancária primeiro.`
+      });
+      return;
+    }
     setReopenModalState({
       isOpen: true,
       titles: [t]
@@ -690,12 +722,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     const allTitles = storage.getTitles();
     const targetTitles = allTitles.filter(t => 
       selectedIds.includes(t.id) && 
-      (t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL')
+      (t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') &&
+      t.reconciliationStatus !== 'CONCILIADO' &&
+      !t.reconciledViaBank
     );
     if (targetTitles.length === 0) {
       setToastMessage({
         type: 'info',
-        text: 'Nenhum dos títulos selecionados possui recebimento para voltar a ficar em aberto.'
+        text: 'Nenhum dos títulos selecionados pode ser reaberto (títulos conciliados via banco devem ser desconciliados na tela de Conciliação antes de serem estornados).'
       });
       return;
     }
@@ -705,59 +739,23 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     });
   };
 
-  // Alterna o status de conciliação bancária do título a receber
+  // Status de conciliação bancária (informativo e com bloqueio de alteração acidental)
   const handleToggleSingleReconciled = (title: FinancialTitle, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const isCurrentlyReconciled = title.reconciliationStatus === 'CONCILIADO' || title.reconciledViaBank;
-    const allTitles = storage.getTitles().map(t => {
-      if (t.id === title.id) {
-        return {
-          ...t,
-          reconciliationStatus: (isCurrentlyReconciled ? 'PENDENTE' : 'CONCILIADO') as any,
-          reconciledViaBank: !isCurrentlyReconciled,
-          reconciledAt: !isCurrentlyReconciled ? new Date().toISOString() : undefined,
-          reconciliationNote: !isCurrentlyReconciled ? 'Conciliado manualmente no Contas a Receber' : undefined,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return t;
-    });
-    storage.saveTitles(allTitles);
     setToastMessage({
-      type: 'success',
-      text: isCurrentlyReconciled
-        ? `Recebimento #${title.titleNumber} desmarcado de conciliado.`
-        : `✓ Recebimento #${title.titleNumber} marcado como conciliado via banco!`
+      type: 'info',
+      text: title.reconciliationStatus === 'CONCILIADO' || title.reconciledViaBank
+        ? `🔒 O recebimento #${title.titleNumber} foi conciliado via extrato bancário. Para desconciliar, utilize a tela de Conciliação Bancária.`
+        : `Acesse a tela de Conciliação Bancária para conciliar o recebimento #${title.titleNumber} com o extrato bancário.`
     });
   };
 
-  // Alterna conciliação bancária em lote para os títulos selecionados
+  // Alterna conciliação bancária em lote
   const handleBatchToggleReconciled = () => {
     if (selectedIds.length === 0) return;
-    const allTitles = storage.getTitles();
-    const selectedTitles = allTitles.filter(t => selectedIds.includes(t.id));
-    const allAreReconciled = selectedTitles.every(t => t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank);
-    const newStatus = allAreReconciled ? 'PENDENTE' : 'CONCILIADO';
-
-    const updated = allTitles.map(t => {
-      if (selectedIds.includes(t.id)) {
-        return {
-          ...t,
-          reconciliationStatus: newStatus as any,
-          reconciledViaBank: newStatus === 'CONCILIADO',
-          reconciledAt: newStatus === 'CONCILIADO' ? new Date().toISOString() : undefined,
-          reconciliationNote: newStatus === 'CONCILIADO' ? 'Conciliado em lote no Contas a Receber' : undefined,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return t;
-    });
-    storage.saveTitles(updated);
     setToastMessage({
-      type: 'success',
-      text: newStatus === 'CONCILIADO'
-        ? `✓ ${selectedIds.length} recebimento(s) marcado(s) como conciliado(s) via banco!`
-        : `${selectedIds.length} recebimento(s) desmarcado(s) de conciliado.`
+      type: 'info',
+      text: 'A conciliação e desconciliação bancária devem ser realizadas na tela de Conciliação Bancária para garantir o cruzamento correto com o extrato bancário.'
     });
   };
 
@@ -1852,7 +1850,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                 key={t.id}
                 onSwipeRight={canSettle ? () => setSelectedTitleForSettlement(t) : undefined}
                 rightLabel="Receber"
-                onSwipeLeft={() => setSelectedTitleForEdit(t)}
+                onSwipeLeft={() => handleStartEditTitle(t)}
                 leftLabel="Editar"
               >
                 <div 
@@ -2174,33 +2172,58 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <button
                           type="button"
                           onClick={(e) => handleOpenSingleReopen(t, e)}
-                          className="min-h-[42px] py-2.5 px-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700/60 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                          title="Estornar recebimentos e voltar este título para EM ABERTO"
+                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                          className={`min-h-[42px] py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors ${
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                              : 'bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700/60 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 cursor-pointer'
+                          }`}
+                          title={
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'Bloqueado: Título conciliado via banco. Desfaça a conciliação na tela de Conciliação Bancária antes de estornar.'
+                              : 'Estornar recebimentos e voltar este título para EM ABERTO'
+                          }
                         >
                           <RotateCcw className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           <span>Voltar Aberto</span>
                         </button>
                       )}
 
-                      {/* Alternar Conciliação Bancária */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSingleReconciled(t, e)}
-                        className={`min-h-[40px] py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer ${
-                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
-                        }`}
-                        title={t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? 'Desmarcar conciliação' : 'Marcar como conciliado via banco'}
-                      >
-                        <CheckCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>{t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? 'Conciliado' : 'Conciliar'}</span>
-                      </button>
+                      {/* Status de Conciliação Bancária */}
+                      {t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? (
+                        <span
+                          className="min-h-[40px] py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 select-none"
+                          title="Conciliado com o Extrato Bancário. Para desconciliar, utilize a tela de Conciliação Bancária."
+                        >
+                          <CheckCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Conciliado</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleSingleReconciled(t, e)}
+                          className="min-h-[40px] py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50"
+                          title="Conciliar via extrato bancário na tela de Conciliação"
+                        >
+                          <CheckCheck className="w-4 h-4 text-slate-400" />
+                          <span>Conciliar</span>
+                        </button>
+                      )}
 
                       <button
                         type="button"
-                        onClick={() => setSelectedTitleForEdit(t)}
-                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                        onClick={() => handleStartEditTitle(t)}
+                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                        className={`min-h-[40px] min-w-[40px] py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors ${
+                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                            ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                            : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer'
+                        }`}
+                        title={
+                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                            ? 'Bloqueado: Título conciliado via banco não pode ser editado. Desfaça a conciliação na tela de Conciliação Bancária.'
+                            : 'Editar recebimento'
+                        }
                       >
                         <Edit3 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         <span>Editar</span>
@@ -2253,8 +2276,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <button
                           type="button"
                           onClick={(e) => handleOpenSingleCancel(t, e)}
-                          className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-600/50 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
-                          title="Cancelar título"
+                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                          className={`min-h-[40px] min-w-[40px] p-2 rounded-xl text-xs shadow-2xs flex items-center justify-center transition-colors ${
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                              : 'bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-600/50 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 cursor-pointer'
+                          }`}
+                          title={
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'Bloqueado: Título conciliado via banco não pode ser cancelado.'
+                              : 'Cancelar título'
+                          }
                         >
                           <Ban className="w-4 h-4" />
                         </button>
@@ -2263,8 +2295,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       <button
                         type="button"
                         onClick={(e) => handleOpenSingleDelete(t, e)}
-                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-600/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
-                        title="Excluir definitivamente"
+                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                        className={`min-h-[40px] min-w-[40px] p-2 rounded-xl text-xs shadow-2xs flex items-center justify-center transition-colors ${
+                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                            ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                            : 'bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-600/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 cursor-pointer'
+                        }`}
+                        title={
+                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                            ? 'Bloqueado: Título conciliado via banco não pode ser excluído.'
+                            : 'Excluir definitivamente'
+                        }
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -2478,7 +2519,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   return (
                     <tr 
                       key={t.id}
-                      onDoubleClick={() => setSelectedTitleForEdit(t)}
+                      onDoubleClick={() => handleStartEditTitle(t)}
                       title="💡 Dê um duplo clique para editar este lançamento"
                       className={`${rowColorClass} transition-colors cursor-pointer select-none ${
                         isSelected ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400' : ''
@@ -2621,21 +2662,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             {t.documentState === 'CANCELADO' ? 'CANCELADO' : t.settlementState}
                           </span>
                           {t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? (
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleSingleReconciled(t, e)}
-                              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all shadow-2xs cursor-pointer"
-                              title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''} (Clique para alternar)`}
+                            <span
+                              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 shadow-2xs select-none"
+                              title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''}. Para desconciliar, utilize a tela de Conciliação Bancária.`}
                             >
                               <CheckCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0 stroke-[2.5]" />
                               <span>Conciliado</span>
-                            </button>
+                            </span>
                           ) : t.settlementState === 'LIQUIDADO' ? (
                             <button
                               type="button"
                               onClick={(e) => handleToggleSingleReconciled(t, e)}
                               className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 transition-colors cursor-pointer"
-                              title="Baixado no ERP, mas ainda não conciliado com o extrato bancário. Clique para marcar como conciliado sem gerar nova movimentação."
+                              title="Baixado no ERP, aguardando conciliação com o extrato bancário. Concilie na tela de Conciliação Bancária."
                             >
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
                               <span>Pendente Banco</span>
@@ -2657,9 +2696,18 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         )}
 
                         <button
-                          onClick={() => setSelectedTitleForEdit(t)}
-                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
-                          title="Editar lançamento (ou dê duplo clique na linha)"
+                          onClick={() => handleStartEditTitle(t)}
+                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                          className={`p-1 rounded transition-colors ${
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
+                              : 'text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
+                          }`}
+                          title={
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'Bloqueado: Título conciliado via banco não pode ser editado. Desfaça a conciliação na tela de Conciliação Bancária.'
+                              : 'Editar lançamento (ou dê duplo clique na linha)'
+                          }
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
@@ -2704,8 +2752,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
                           <button
                             onClick={(e) => handleOpenSingleReopen(t, e)}
-                            className="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
-                            title="Voltar para Em Aberto (estorna recebimentos e devolve saldo)"
+                            disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                            className={`p-1 rounded transition-colors ${
+                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
+                                : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer'
+                            }`}
+                            title={
+                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                ? 'Bloqueado: Título conciliado via banco. Desfaça a conciliação na tela de Conciliação Bancária antes de estornar.'
+                                : 'Voltar para Em Aberto (estorna recebimentos e devolve saldo)'
+                            }
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
@@ -2714,8 +2771,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
                           <button
                             onClick={(e) => handleOpenSingleCancel(t, e)}
-                            className="p-1 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded"
-                            title="Cancelar Título (muda status para CANCELADO)"
+                            disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                            className={`p-1 rounded transition-colors ${
+                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
+                                : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50 cursor-pointer'
+                            }`}
+                            title={
+                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                ? 'Bloqueado: Título conciliado via banco não pode ser cancelado.'
+                                : 'Cancelar Título (muda status para CANCELADO)'
+                            }
                           >
                             <Ban className="w-4 h-4" />
                           </button>
@@ -2723,8 +2789,17 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
                         <button
                           onClick={(e) => handleOpenSingleDelete(t, e)}
-                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
-                          title="Excluir Lançamento Definitivamente"
+                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                          className={`p-1 rounded transition-colors ${
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
+                              : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer'
+                          }`}
+                          title={
+                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                              ? 'Bloqueado: Título conciliado via banco não pode ser excluído.'
+                              : 'Excluir Lançamento Definitivamente'
+                          }
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
