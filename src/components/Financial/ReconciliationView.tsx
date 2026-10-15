@@ -229,7 +229,7 @@ export const ReconciliationView: React.FC = () => {
   const getMatchHighlightStyle = (score: number, isSelected: boolean, isStatement: boolean = false) => {
     if (isSelected) {
       return {
-        borderClass: 'border-2 border-amber-500 ring-4 ring-amber-500/25 shadow-xl shadow-amber-500/15 rounded-xl z-10 transition-all scale-[1.008]',
+        borderClass: 'border-2 border-amber-500 ring-4 ring-amber-500/25 shadow-xl shadow-amber-500/15 rounded-xl z-10 transition-all scale-[1.006]',
         bgClass: isStatement 
           ? 'bg-gradient-to-r from-slate-950 via-[#0e1628] to-slate-900 text-white' 
           : 'bg-gradient-to-r from-slate-950 via-[#1b1428] to-slate-900 text-white'
@@ -237,37 +237,33 @@ export const ReconciliationView: React.FC = () => {
     }
 
     if (score >= 90) {
-      // Destaque Máximo (90%+): Lateral verde mais viva, degradê discreto apenas na borda lateral esquerda (via-12% to-transparent)
       return {
-        borderClass: 'border-l-[5px] border-l-emerald-500',
-        bgClass: 'bg-gradient-to-r from-emerald-500/22 via-emerald-500/6 via-12% to-transparent dark:from-emerald-500/28 dark:via-emerald-500/8 dark:via-12% dark:to-transparent'
+        borderClass: 'border border-emerald-500/40 border-l-[5px] border-l-emerald-500 rounded-xl shadow-2xs',
+        bgClass: 'bg-white dark:bg-[#151D2A] bg-gradient-to-r from-emerald-500/15 via-emerald-500/3 via-15% to-transparent hover:border-emerald-500/60 transition-all'
       };
     }
     if (score >= 75) {
-      // Destaque Forte (75-89%): Lateral verde nítida
       return {
-        borderClass: 'border-l-4 border-l-emerald-500',
-        bgClass: 'bg-gradient-to-r from-emerald-500/16 via-emerald-500/4 via-10% to-transparent dark:from-emerald-500/20 dark:via-emerald-500/5 dark:via-10% dark:to-transparent'
+        borderClass: 'border border-slate-200 dark:border-[#273040] border-l-4 border-l-emerald-500 rounded-xl shadow-2xs',
+        bgClass: 'bg-white dark:bg-[#151D2A] bg-gradient-to-r from-emerald-500/10 via-transparent to-transparent hover:border-emerald-400/60 transition-all'
       };
     }
     if (score >= 60) {
-      // Destaque Médio (60-74%)
       return {
-        borderClass: 'border-l-4 border-l-emerald-400 dark:border-l-emerald-500/80',
-        bgClass: 'bg-gradient-to-r from-emerald-500/10 via-emerald-500/2 via-8% to-transparent dark:from-emerald-500/12 dark:via-transparent dark:to-transparent'
+        borderClass: 'border border-slate-200 dark:border-[#273040] border-l-4 border-l-emerald-400 dark:border-l-emerald-500/70 rounded-xl shadow-2xs',
+        bgClass: 'bg-white dark:bg-[#151D2A] bg-gradient-to-r from-emerald-500/5 via-transparent to-transparent hover:border-slate-300 dark:hover:border-slate-600 transition-all'
       };
     }
     if (score >= 40) {
-      // Destaque Leve (40-59%)
       return {
-        borderClass: 'border-l-4 border-l-emerald-300 dark:border-l-emerald-700/60',
-        bgClass: 'bg-gradient-to-r from-emerald-500/5 via-transparent to-transparent'
+        borderClass: 'border border-slate-200 dark:border-[#273040] border-l-4 border-l-emerald-300 dark:border-l-emerald-700/60 rounded-xl shadow-2xs',
+        bgClass: 'bg-white dark:bg-[#151D2A] hover:border-slate-300 dark:hover:border-slate-600 transition-all'
       };
     }
 
     return {
-      borderClass: 'border-l-4 border-l-transparent',
-      bgClass: 'hover:bg-slate-50 dark:hover:bg-[#1B212D]/60'
+      borderClass: 'border border-slate-200/90 dark:border-[#273040] rounded-xl shadow-2xs',
+      bgClass: 'bg-white dark:bg-[#151D2A] hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-xs transition-all'
     };
   };
 
@@ -2816,10 +2812,10 @@ export const ReconciliationView: React.FC = () => {
 
 
 
-          {/* Statement List */}
-          <div className="divide-y divide-slate-100 dark:divide-[#273040] max-h-[580px] overflow-y-auto">
+          {/* Statement List com cards independentes e espaçamento visual claro */}
+          <div className="p-3 space-y-2.5 max-h-[600px] overflow-y-auto scrollbar-thin">
             {rankedStatements.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-500 bg-white dark:bg-[#151D2A] rounded-xl border border-dashed border-slate-200 dark:border-[#273040]">
                 Nenhum lançamento no extrato para o filtro selecionado.
               </div>
             ) : (
@@ -2835,11 +2831,11 @@ export const ReconciliationView: React.FC = () => {
                   <div
                     key={stmt.id}
                     onClick={(e) => handleCardClickStatement(stmt, e)}
-                    className={`p-4 transition-all cursor-pointer ${highlight.borderClass} ${highlight.bgClass}`}
+                    className={`p-3.5 transition-all cursor-pointer relative ${highlight.borderClass} ${highlight.bgClass}`}
                   >
                     {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
                     {isSelected && (
-                      <div className="mb-2.5 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
+                      <div className="mb-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
                         <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
                           <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
                           <span>Extrato Selecionado para Conciliação</span>
@@ -2850,72 +2846,104 @@ export const ReconciliationView: React.FC = () => {
                       </div>
                     )}
 
+                    {/* Linha Superior: Checkbox, Porcentagem à Esquerda, Status, Vencimento/Data e Valor em Destaque */}
                     <div className="flex items-start justify-between gap-3">
-                      {/* Checkbox de Seleção Múltipla */}
-                      <div className="pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => handleToggleStatement(stmt, e as any)}
-                          className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
-                          title="Marcar/desmarcar este extrato para conciliação"
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                          {isSelected && (
-                            <span className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in duration-150">
-                              <Check className="w-2.5 h-2.5 stroke-[3]" />
-                              <span>Selecionado {selectedStmtIds.length > 1 ? `(#${selectedStmtIds.indexOf(stmt.id) + 1})` : ''}</span>
-                            </span>
-                          )}
-
-                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                            {formatDateBR(stmt.date)}
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                            {stmt.fitId}
-                          </span>
-
-                          {/* Se houver match de compatibilidade */}
-                          {score >= 40 && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border ${getScoreAssertivenessColor(score).badgeClass}`}>
-                              <Sparkles className="w-2.5 h-2.5" />
-                              <span>{score}% compatível • {getScoreAssertivenessColor(score).label}</span>
-                            </span>
-                          )}
-
-                          {stmt.reconciliationStatus === 'SUGESTAO' && (
-                            <span className="text-[10px] bg-amber-500/15 text-amber-500 border border-amber-500/30 px-2 py-0.2 rounded-full font-bold flex items-center gap-1">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              {stmt.ruleApplied || 'Sugestão'}
-                            </span>
-                          )}
-                          {stmt.reconciliationStatus === 'CONCILIADO' && (
-                            <span className="text-[10px] bg-slate-800 text-amber-400 border border-amber-500/30 px-2 py-0.2 rounded-full font-bold flex items-center gap-1">
-                              <Check className="w-2.5 h-2.5" />
-                              Conciliado
-                            </span>
-                          )}
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1.5 min-w-0 flex-1">
+                        {/* Checkbox de Seleção Múltipla */}
+                        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleToggleStatement(stmt, e as any)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
+                            title="Marcar/desmarcar este extrato para conciliação"
+                          />
                         </div>
 
-                        <div className={`text-xs mt-1 ${isSelected ? 'font-black text-white text-[13px] tracking-wide' : 'font-bold text-slate-900 dark:text-slate-100'}`}>
-                          {stmt.description}
-                        </div>
-
-                        {/* Resumo de similaridade caso haja match */}
-                        {match && match.summaryBadge && (
-                          <div className={`text-[11px] mt-0.5 ${isSelected ? 'text-amber-200' : 'text-slate-500 dark:text-slate-400'}`}>
-                            {match.summaryBadge}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2.5 shrink-0">
-                        {/* Botão simples e clean de Conciliar ao lado do card selecionado */}
                         {isSelected && (
-                          <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in duration-150">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            <span>Selecionado {selectedStmtIds.length > 1 ? `(#${selectedStmtIds.indexOf(stmt.id) + 1})` : ''}</span>
+                          </span>
+                        )}
+
+                        {/* PORCENTAGEM DE COMPATIBILIDADE BEM À ESQUERDA */}
+                        {score >= 40 && (
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${getScoreAssertivenessColor(score).badgeClass}`}>
+                            <Sparkles className="w-3 h-3 shrink-0" />
+                            <span>{score}% compatível</span>
+                          </span>
+                        )}
+
+                        {stmt.reconciliationStatus === 'CONCILIADO' ? (
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
+                            <CheckCheck className="w-3 h-3 stroke-[2.5]" />
+                            <span>Conciliado</span>
+                          </span>
+                        ) : stmt.reconciliationStatus === 'SUGESTAO' ? (
+                          <span className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>{stmt.ruleApplied || 'Sugestão'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-bold">
+                            Pendente
+                          </span>
+                        )}
+
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          isCredit 
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' 
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}>
+                          {isCredit ? 'Crédito' : 'Débito'}
+                        </span>
+
+                        {/* DATA DO EXTRATO COM DESTAQUE MAIOR */}
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{formatDateBR(stmt.date)}</span>
+                        </span>
+                      </div>
+
+                      {/* VALOR DO EXTRATO EM DESTAQUE MÁXIMO */}
+                      <div className="text-right whitespace-nowrap shrink-0">
+                        <div className={`text-base sm:text-lg font-black font-mono leading-none ${
+                          isSelected 
+                            ? 'text-amber-400 drop-shadow-xs' 
+                            : isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {isCredit ? '+' : ''} {formatBRL(stmt.amount)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DESCRIÇÃO EM DESTAQUE */}
+                    <div className={`text-sm sm:text-[13px] font-extrabold leading-snug mt-2 ${
+                      isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'
+                    }`}>
+                      {stmt.description}
+                    </div>
+
+                    {/* Resumo de similaridade caso haja match */}
+                    {match && match.summaryBadge && (
+                      <div className={`text-[11px] mt-1 ${isSelected ? 'text-amber-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {match.summaryBadge}
+                      </div>
+                    )}
+
+                    {/* Linha Inferior: Código FITID Discreto e Ações */}
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                        <span className="bg-slate-100/80 dark:bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
+                          FITID: {stmt.fitId}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Botão de Conciliar ao lado do card selecionado */}
+                        {isSelected && (
+                          <>
                             {isValues100PercentExact && selectedTitle && (
                               <button
                                 type="button"
@@ -2923,7 +2951,7 @@ export const ReconciliationView: React.FC = () => {
                                   e.stopPropagation();
                                   handleDirectExpressReconcile(stmt, selectedTitle);
                                 }}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
                                 title="Conciliação Expressa em 1 Clique (Valores conferem 100%)"
                               >
                                 <Zap className="w-3.5 h-3.5 fill-white" />
@@ -2938,16 +2966,16 @@ export const ReconciliationView: React.FC = () => {
                                 const target = selectedTitle || (stmt.suggestedTitleId ? titles.find(t => t.id === stmt.suggestedTitleId) : null);
                                 handleOpenReconcileModal(stmt, target || undefined);
                               }}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
+                              className="px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
                               title="Conciliar imediatamente com o título selecionado"
                             >
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                               <span>Conciliar</span>
                             </button>
-                          </div>
+                          </>
                         )}
 
-                        {/* Botão de Desconciliação para extratos já conciliados (Opção 2) */}
+                        {/* Botão de Desconciliação para extratos já conciliados */}
                         {stmt.reconciliationStatus === 'CONCILIADO' && (
                           <button
                             type="button"
@@ -2960,7 +2988,7 @@ export const ReconciliationView: React.FC = () => {
                                 matchedTitle: matched || null
                               });
                             }}
-                            className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30 flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30 flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
                             title="Desfazer conciliação deste lançamento e reabrir título original"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -2972,20 +3000,12 @@ export const ReconciliationView: React.FC = () => {
                           <button
                             type="button"
                             onClick={(e) => handleDeleteStatement(stmt.id, e)}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-rose-500 rounded hover:bg-rose-500/10 transition-colors cursor-pointer"
                             title="Excluir lançamento pendente do extrato bancário"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
-
-                        <div className={`text-right whitespace-nowrap ${
-                          isSelected 
-                            ? 'font-black text-base text-amber-400 font-mono drop-shadow-xs' 
-                            : isCredit ? 'font-extrabold text-sm text-amber-600 dark:text-amber-400' : 'font-extrabold text-sm text-slate-700 dark:text-slate-200'
-                        }`}>
-                          {isCredit ? '+' : ''} {formatBRL(stmt.amount)}
-                        </div>
                       </div>
                     </div>
 
@@ -3228,10 +3248,10 @@ export const ReconciliationView: React.FC = () => {
                 </div>
               )}
 
-              {/* Lista de Títulos do ERP com Agrupamento e Priorização */}
-              <div className="divide-y divide-slate-100 dark:divide-[#273040] max-h-[580px] overflow-y-auto">
+              {/* Lista de Títulos do ERP com cards independentes e espaçamento visual claro */}
+              <div className="p-3 space-y-2.5 max-h-[600px] overflow-y-auto scrollbar-thin">
                 {rankedTitles.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-500 space-y-3">
+                  <div className="p-8 text-center text-xs text-slate-500 space-y-3 bg-white dark:bg-[#151D2A] rounded-xl border border-dashed border-slate-200 dark:border-[#273040]">
                     <p>
                       Nenhum título localizado com os filtros atuais.
                     </p>
@@ -3254,15 +3274,19 @@ export const ReconciliationView: React.FC = () => {
                     const isLiquidado = t.settlementState === 'LIQUIDADO';
                     const highlight = getMatchHighlightStyle(score, isSelected, false);
 
+                    const today = new Date().toISOString().split('T')[0];
+                    const isOverdue = (t.balancePrincipal > 0 || t.settlementState !== 'LIQUIDADO') && t.dueDate < today;
+                    const isToday = t.dueDate === today;
+
                     return (
                       <div
                         key={t.id}
                         onClick={(e) => handleCardClickTitle(t.id, e)}
-                        className={`p-4 transition-all cursor-pointer ${highlight.borderClass} ${highlight.bgClass}`}
+                        className={`p-3.5 transition-all cursor-pointer relative ${highlight.borderClass} ${highlight.bgClass}`}
                       >
                         {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
                         {isSelected && (
-                          <div className="mb-2.5 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
+                          <div className="mb-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
                             <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
                               <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
                               <span>Título ERP Selecionado para Conciliação</span>
@@ -3273,20 +3297,196 @@ export const ReconciliationView: React.FC = () => {
                           </div>
                         )}
 
+                        {/* Linha Superior: Checkbox, Porcentagem à Esquerda, Status, e VALOR EM DESTAQUE */}
                         <div className="flex items-start justify-between gap-3">
-                          {/* Checkbox de Seleção Múltipla */}
-                          <div className="pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => handleToggleTitle(t.id, e as any)}
-                              className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
-                              title="Marcar/desmarcar este título para conciliação"
-                            />
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1.5 min-w-0 flex-1">
+                            {/* Checkbox de Seleção Múltipla */}
+                            <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => handleToggleTitle(t.id, e as any)}
+                                className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
+                                title="Marcar/desmarcar este título para conciliação"
+                              />
+                            </div>
+
+                            {isSelected && (
+                              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in duration-150">
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                <span>Selecionado {selectedTitleIds.length > 1 ? `(#${selectedTitleIds.indexOf(t.id) + 1})` : ''}</span>
+                              </span>
+                            )}
+
+                            {/* PORCENTAGEM DE COMPATIBILIDADE BEM PRÓXIMA DA BORDA ESQUERDA */}
+                            {match && (
+                              <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${getScoreAssertivenessColor(score).badgeClass}`}>
+                                <Sparkles className="w-3 h-3 shrink-0" />
+                                <span>{score}% compatível • {match.confidence}</span>
+                              </span>
+                            )}
+
+                            {/* Tipo: A PAGAR ou A RECEBER */}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              t.type === 'PAGAR'
+                                ? 'bg-slate-800 text-slate-200 border border-slate-700'
+                                : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                            }`}>
+                              {t.type === 'PAGAR' ? 'A PAGAR' : 'A RECEBER'}
+                            </span>
+
+                            {/* Status de Conciliação Bancária e Baixa com Dois Vistinhos */}
+                            {t.reconciliationStatus === 'CONCILIADO' ? (
+                              <span 
+                                className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 shadow-2xs"
+                                title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''}`}
+                              >
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 stroke-[2.5]" />
+                                <span>CONCILIADO VIA BANCO</span>
+                              </span>
+                            ) : isLiquidado ? (
+                              <span 
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+                                title="Título já baixado/pago manualmente no ERP. Pronto para vincular à linha de extrato bancário sem duplicar caixa."
+                              >
+                                <Check className="w-2.5 h-2.5 text-amber-400" />
+                                <span>JÁ BAIXADO (PENDENTE BANCO)</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                EM ABERTO
+                              </span>
+                            )}
+
+                            {/* Divergência de centavos com o extrato selecionado */}
+                            {selectedStmt && (() => {
+                              const titleBal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
+                              const diff = Math.round((Math.abs(selectedStmt.amount) - titleBal) * 100) / 100;
+                              if (Math.abs(diff) < 0.005) {
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
+                                    ✓ Valor Exato (R$ 0,00)
+                                  </span>
+                                );
+                              }
+                              if (Math.abs(diff) <= 100) {
+                                return (
+                                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30">
+                                    {diff > 0 ? `+${formatBRL(diff)} (Juros/Multa)` : `-${formatBRL(Math.abs(diff))} (Desconto)`}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
 
-                          {/* Botão simples e clean de Conciliar ao lado do card (entre a coluna do extrato e dos pagamentos) */}
-                          <div className="pt-0.5 flex items-center gap-1.5 flex-shrink-0">
+                          {/* VALOR EM DESTAQUE MÁXIMO */}
+                          <div className="text-right whitespace-nowrap shrink-0">
+                            <div className={`text-base sm:text-lg font-black font-mono leading-none ${
+                              isSelected 
+                                ? 'text-amber-400 drop-shadow-xs' 
+                                : t.type === 'RECEBER' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                            }`}>
+                              {formatBRL(t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)}
+                            </div>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block text-right mt-0.5 font-medium">
+                              {t.balancePrincipal > 0 && t.settledPrincipal > 0 
+                                ? `Saldo (Orig: ${formatBRL(t.originalAmount)})` 
+                                : `Valor do Título`}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* DESCRIÇÃO EM DESTAQUE */}
+                        <div className={`text-sm sm:text-[14px] font-extrabold leading-snug mt-2 ${
+                          isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'
+                        }`}>
+                          {t.description}
+                        </div>
+
+                        {/* FAVORECIDO EM DESTAQUE */}
+                        <div className={`text-xs font-bold mt-1.5 flex items-center gap-1.5 flex-wrap ${
+                          isSelected ? 'text-amber-200' : 'text-slate-800 dark:text-slate-200'
+                        }`}>
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">Favorecido:</span>
+                          <span className="text-slate-900 dark:text-slate-100 font-extrabold">
+                            {person?.tradeName || person?.name || 'Não informado'}
+                          </span>
+                          {person?.document && (
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-normal">
+                              ({person.document})
+                            </span>
+                          )}
+                        </div>
+
+                        {/* DATA DE VENCIMENTO EM DESTAQUE MAIOR */}
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border shadow-2xs ${
+                            isOverdue
+                              ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                              : isToday
+                              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                              : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80'
+                          }`}>
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Vencimento: {formatDateBR(t.dueDate)}</span>
+                            {isOverdue && <span className="text-[10px] uppercase font-black tracking-wider text-rose-500">(Vencido)</span>}
+                            {isToday && <span className="text-[10px] uppercase font-black tracking-wider text-amber-500">(Vence Hoje)</span>}
+                          </span>
+
+                          {match && match.summaryBadge && (
+                            <span className={`text-[11px] font-medium ${isSelected ? 'text-amber-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {match.summaryBadge}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Painel expansível de auditoria de fatores (se aberto) */}
+                        {match && isExpanded && (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-white/90 dark:bg-black/50 border border-slate-200 dark:border-[#273040] text-[11px] space-y-1.5">
+                            <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
+                              <span>• Valor ({match.breakdown.amountScore}/50 pts):</span>
+                              <span className="font-semibold">{match.breakdown.amountSummary}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
+                              <span>• Data ({match.breakdown.dateScore}/30 pts):</span>
+                              <span className="font-semibold">{match.breakdown.dateSummary}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
+                              <span>• Descrição / Favorecido ({match.breakdown.descriptionScore}/20 pts):</span>
+                              <span className="font-semibold">{match.breakdown.descriptionSummary}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Linha Inferior: Código Doc e Dados Secundários com DESTAQUE MENOR + Ações */}
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 dark:text-slate-500 flex-wrap">
+                            <span className="bg-slate-100/80 dark:bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
+                              Doc #{t.titleNumber}
+                            </span>
+                            {t.competence && (
+                              <span className="bg-slate-100/80 dark:bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
+                                Comp: {t.competence}
+                              </span>
+                            )}
+                            {match && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedScoreTitleId(isExpanded ? null : t.id);
+                                }}
+                                className="text-[10px] font-semibold text-amber-500 hover:underline flex items-center gap-0.5 cursor-pointer ml-1"
+                              >
+                                <span>Ver Fatores</span>
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Botões de Ação na Direita */}
+                          <div className="flex items-center gap-1.5 shrink-0">
                             {selectedStmt && Math.abs(Math.abs(selectedStmt.amount) - (t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)) < 0.005 && (
                               <button
                                 type="button"
@@ -3294,7 +3494,7 @@ export const ReconciliationView: React.FC = () => {
                                   e.stopPropagation();
                                   handleDirectExpressReconcile(selectedStmt, t);
                                 }}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
                                 title="Conciliação Expressa em 1 Clique (Valores conferem 100%)"
                               >
                                 <Zap className="w-3.5 h-3.5 fill-white" />
@@ -3310,8 +3510,8 @@ export const ReconciliationView: React.FC = () => {
                                   const suggestedStmt = statements.find(s => s.suggestedTitleId === t.id || s.matchedTitleId === t.id);
                                   handleOpenReconcileModal(selectedStmt || suggestedStmt || undefined, t);
                                 }}
-                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
-                                title="Abrir janela flutuante para conciliar este título com o extrato"
+                                className="px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
+                                title="Abrir conciliação deste título com o extrato"
                               >
                                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                                 <span>Conciliar</span>
@@ -3324,7 +3524,7 @@ export const ReconciliationView: React.FC = () => {
                                   handleOpenReconcileModal(selectedStmt, t);
                                 }}
                                 className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500 text-amber-900 dark:text-amber-200 hover:text-black border border-amber-500/40 cursor-pointer active:scale-95"
-                                title="Abrir janela flutuante para conciliar este lançamento"
+                                title="Abrir janela de conciliação para este lançamento"
                               >
                                 <Check className="w-3 h-3 stroke-[2.5]" />
                                 <span>Conciliar</span>
@@ -3357,144 +3557,6 @@ export const ReconciliationView: React.FC = () => {
                                 <span>Marcar Conciliado</span>
                               </button>
                             ) : null}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              {isSelected && (
-                                <span className="text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in duration-150">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                  <span>Selecionado {selectedTitleIds.length > 1 ? `(#${selectedTitleIds.indexOf(t.id) + 1})` : ''}</span>
-                                </span>
-                              )}
-
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                t.type === 'PAGAR'
-                                  ? 'bg-slate-800 text-slate-200 border border-slate-700'
-                                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                              }`}>
-                                {t.type === 'PAGAR' ? 'A PAGAR' : 'A RECEBER'}
-                              </span>
-
-                              {/* Status de Conciliação Bancária e Baixa com Dois Vistinhos */}
-                              {t.reconciliationStatus === 'CONCILIADO' ? (
-                                <span 
-                                  className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 shadow-2xs"
-                                  title={`Conciliado com o Extrato Bancário${t.reconciliationNote ? `: ${t.reconciliationNote}` : ''}`}
-                                >
-                                  <CheckCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 stroke-[2.5]" />
-                                  <span>CONCILIADO VIA BANCO</span>
-                                </span>
-                              ) : isLiquidado ? (
-                                <span 
-                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30 flex items-center gap-1"
-                                  title="Título já baixado/pago manualmente no ERP. Pronto para vincular à linha de extrato bancário sem duplicar caixa."
-                                >
-                                  <Check className="w-2.5 h-2.5 text-amber-400" />
-                                  <span>JÁ BAIXADO (PENDENTE BANCO)</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                  EM ABERTO
-                                </span>
-                              )}
-
-                              {/* Indicação visual de divergência de centavos com o extrato ativo (Opção 3) */}
-                              {selectedStmt && (() => {
-                                const titleBal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
-                                const diff = Math.round((Math.abs(selectedStmt.amount) - titleBal) * 100) / 100;
-                                if (Math.abs(diff) < 0.005) {
-                                  return (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
-                                      ✓ Valor Exato (R$ 0,00)
-                                    </span>
-                                  );
-                                }
-                                if (Math.abs(diff) <= 100) {
-                                  return (
-                                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30">
-                                      {diff > 0 ? `+${formatBRL(diff)} (Juros/Multa)` : `-${formatBRL(Math.abs(diff))} (Desconto)`}
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
-
-                              <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100">
-                                {t.titleNumber}
-                              </span>
-                              <span className="text-[11px] text-slate-500">
-                                Venc: {formatDateBR(t.dueDate)}
-                              </span>
-
-                              {/* Badge de Assertividade com cor correspondente */}
-                              {match && (
-                                <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${getScoreAssertivenessColor(score).badgeClass}`}>
-                                  <Sparkles className="w-2.5 h-2.5" />
-                                  <span>{score}% • {match.confidence}</span>
-                                </span>
-                              )}
-                            </div>
-
-                            <div className={`text-xs mt-1 ${isSelected ? 'font-black text-white text-[13px] tracking-wide' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
-                              {t.description}
-                            </div>
-                            <div className={`text-[11px] ${isSelected ? 'text-amber-200 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
-                              Favorecido: {person?.name || 'Não informado'} {person?.tradeName ? `(${person.tradeName})` : ''}
-                            </div>
-
-                            {/* Resumo de similaridade */}
-                            {match && (
-                              <div className={`mt-1.5 flex items-center justify-between gap-2 text-[11px] ${isSelected ? 'text-amber-200' : 'text-slate-600 dark:text-slate-300'}`}>
-                                <span className={`font-medium ${isSelected ? 'text-amber-300 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                                  {match.summaryBadge}
-                                </span>
-
-                                {/* Botão para ver breakdown auditável de fatores */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedScoreTitleId(isExpanded ? null : t.id);
-                                  }}
-                                  className="text-[10px] font-semibold text-amber-500 hover:underline flex items-center gap-0.5 cursor-pointer"
-                                >
-                                  <span>Fatores</span>
-                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Painel expansível de auditoria de fatores */}
-                            {match && isExpanded && (
-                              <div className="mt-2 p-2.5 rounded-xl bg-white/80 dark:bg-black/40 border border-slate-200 dark:border-[#273040] text-[11px] space-y-1.5">
-                                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
-                                  <span>• Valor ({match.breakdown.amountScore}/50 pts):</span>
-                                  <span className="font-semibold">{match.breakdown.amountSummary}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
-                                  <span>• Data ({match.breakdown.dateScore}/30 pts):</span>
-                                  <span className="font-semibold">{match.breakdown.dateSummary}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
-                                  <span>• Descrição / Favorecido ({match.breakdown.descriptionScore}/20 pts):</span>
-                                  <span className="font-semibold">{match.breakdown.descriptionSummary}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="text-right flex-shrink-0">
-                            <div className={`whitespace-nowrap ${
-                              isSelected 
-                                ? 'font-black text-base text-amber-400 font-mono drop-shadow-xs' 
-                                : 'font-bold text-sm text-slate-900 dark:text-white'
-                            }`}>
-                              {formatBRL(t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)}
-                            </div>
-                            <span className={`text-[10px] block mt-0.5 ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                              Original: {formatBRL(t.originalAmount)}
-                            </span>
                           </div>
                         </div>
                       </div>
