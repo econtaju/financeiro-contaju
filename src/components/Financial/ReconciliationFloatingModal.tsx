@@ -107,18 +107,9 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
-  // Cálculos para Par Unitário
-  const stmtAbsAmount = singleStmt ? Math.round(Math.abs(Number(singleStmt.amount) || 0) * 100) / 100 : 0;
-  const currentTitleBalance = singleTitle ? (singleTitle.balancePrincipal > 0 ? singleTitle.balancePrincipal : singleTitle.originalAmount) : 0;
-  const totalSettledCalculated = Math.round((adjPrincipal + adjInterest + adjFine - adjDiscount) * 100) / 100;
-  const differenceToStatement = Math.round((totalSettledCalculated - stmtAbsAmount) * 100) / 100;
-  const isSingleExact = Math.abs(differenceToStatement) < 0.005;
-
-  // Candidatos compatíveis quando nenhum título foi pré-selecionado
+  // Candidatos compatíveis quando nenhum título foi pré-selecionado (Hook declarado incondicionalmente no topo)
   const topCandidateTitles = useMemo(() => {
-    if (!singleStmt || singleTitle) return [];
+    if (!isOpen || !singleStmt || singleTitle) return [];
     const pool = (allAvailableTitles && allAvailableTitles.length > 0) ? allAvailableTitles : storage.getTitles();
     const expectedType = singleStmt.amount < 0 ? 'PAGAR' : 'RECEBER';
     
@@ -131,7 +122,14 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
       })
       .sort((a, b) => b.match.score - a.match.score)
       .slice(0, 5);
-  }, [singleStmt, singleTitle, allAvailableTitles, counterpartyMap]);
+  }, [isOpen, singleStmt, singleTitle, allAvailableTitles, counterpartyMap]);
+
+  // Cálculos para Par Unitário
+  const stmtAbsAmount = singleStmt ? Math.round(Math.abs(Number(singleStmt.amount) || 0) * 100) / 100 : 0;
+  const currentTitleBalance = singleTitle ? (singleTitle.balancePrincipal > 0 ? singleTitle.balancePrincipal : singleTitle.originalAmount) : 0;
+  const totalSettledCalculated = Math.round((adjPrincipal + adjInterest + adjFine - adjDiscount) * 100) / 100;
+  const differenceToStatement = Math.round((totalSettledCalculated - stmtAbsAmount) * 100) / 100;
+  const isSingleExact = Math.abs(differenceToStatement) < 0.005;
 
   // Cálculos para Multi-seleção
   const totalStmtsAmount = Math.round(selectedStatements.reduce((sum, s) => sum + Math.abs(Number(s.amount) || 0), 0) * 100) / 100;
@@ -402,6 +400,8 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   };
 
   const person = singleTitle ? counterpartyMap.get(singleTitle.counterpartyId) : null;
+
+  if (!isOpen) return null;
 
   return (
     <div 

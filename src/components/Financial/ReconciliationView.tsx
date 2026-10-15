@@ -135,7 +135,26 @@ export const ReconciliationView: React.FC = () => {
   const [newTitleDate, setNewTitleDate] = useState('');
   const [saveAsAutoRule, setSaveAsAutoRule] = useState<boolean>(true);
 
+  // Estados de Equalização / Ajuste Financeiro da Conciliação (Valores 100% Exatos)
+  const [adjPrincipal, setAdjPrincipal] = useState<number>(0);
+  const [adjInterest, setAdjInterest] = useState<number>(0);
+  const [adjFine, setAdjFine] = useState<number>(0);
+  const [adjDiscount, setAdjDiscount] = useState<number>(0);
+  const [isManualEditOpen, setIsManualEditOpen] = useState<boolean>(false);
+
+  // Upload and parse real OFX file com leitura segura de ArrayBuffer, TextDecoder e deduplicação
+  const [isImportingOfx, setIsImportingOfx] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+
+  // Controles de limitação para performance fluida e sem travamentos na listagem
+  const [stmtsDisplayLimit, setStmtsDisplayLimit] = useState(50);
+  const [titlesDisplayLimit, setTitlesDisplayLimit] = useState(50);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedStmtIdsRef = useRef(selectedStmtIds);
+  selectedStmtIdsRef.current = selectedStmtIds;
+  const selectedTitleIdsRef = useRef(selectedTitleIds);
+  selectedTitleIdsRef.current = selectedTitleIds;
 
   const statements = useMemo(() => {
     try {
@@ -518,13 +537,6 @@ export const ReconciliationView: React.FC = () => {
       setErrorMsg(`Erro ao executar regras: ${err.message || 'Falha ao processar regras'}`);
     }
   };
-
-  // Estados de Equalização / Ajuste Financeiro da Conciliação (Valores 100% Exatos)
-  const [adjPrincipal, setAdjPrincipal] = useState<number>(0);
-  const [adjInterest, setAdjInterest] = useState<number>(0);
-  const [adjFine, setAdjFine] = useState<number>(0);
-  const [adjDiscount, setAdjDiscount] = useState<number>(0);
-  const [isManualEditOpen, setIsManualEditOpen] = useState<boolean>(false);
 
   // Sincroniza os valores de ajuste quando o par de seleção muda
   useEffect(() => {
@@ -1299,9 +1311,6 @@ export const ReconciliationView: React.FC = () => {
   };
 
   // Upload and parse real OFX file com leitura segura de ArrayBuffer, TextDecoder e deduplicação
-  const [isImportingOfx, setIsImportingOfx] = useState(false);
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
-
   const processFile = (file: File) => {
     if (!file) return;
 
@@ -1722,9 +1731,6 @@ export const ReconciliationView: React.FC = () => {
   }, [filteredStatements, selectedTitle, selectedStmtId, counterpartyMap]);
 
   // Controles de limitação para performance fluida e sem travamentos na listagem
-  const [stmtsDisplayLimit, setStmtsDisplayLimit] = useState(50);
-  const [titlesDisplayLimit, setTitlesDisplayLimit] = useState(50);
-
   const visibleRankedStatements = useMemo(() => {
     return rankedStatements.slice(0, stmtsDisplayLimit);
   }, [rankedStatements, stmtsDisplayLimit]);
@@ -1782,11 +1788,6 @@ export const ReconciliationView: React.FC = () => {
   };
 
   // Atalhos de teclado para conciliação ágil (com refs estáveis para nunca causar recriação de listeners)
-  const selectedStmtIdsRef = useRef(selectedStmtIds);
-  selectedStmtIdsRef.current = selectedStmtIds;
-  const selectedTitleIdsRef = useRef(selectedTitleIds);
-  selectedTitleIdsRef.current = selectedTitleIds;
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignorar se o foco estiver em campo de entrada de formulário ou se houver modal aberto
@@ -3221,35 +3222,37 @@ export const ReconciliationView: React.FC = () => {
       )}
 
       {/* Janela Flutuante de Conciliação Bancária & Auditoria Rigorosa 100% */}
-      <ReconciliationFloatingModal
-        isOpen={isFloatingReconcileOpen}
-        onClose={() => setIsFloatingReconcileOpen(false)}
-        selectedStatements={selectedStmts.length > 0 ? selectedStmts : (selectedStmt ? [selectedStmt] : [])}
-        selectedTitles={selectedTitles.length > 0 ? selectedTitles : (selectedTitle ? [selectedTitle] : [])}
-        counterpartyMap={counterpartyMap}
-        selectedAccountId={selectedAccountId}
-        allAvailableTitles={titles}
-        onSelectTitle={(t) => {
-          setSelectedTitleIds([t.id]);
-        }}
-        onCreateTitleDirectly={(stmt) => {
-          setIsFloatingReconcileOpen(false);
-          setSelectedStmtIds([stmt.id]);
-          setNewTitleDesc(stmt.description);
-          setNewTitleAmount(Math.abs(stmt.amount));
-          setNewTitleType(stmt.amount < 0 ? 'PAGAR' : 'RECEBER');
-          const today = new Date().toISOString().split('T')[0];
-          setNewTitleDate(stmt.date > today ? today : stmt.date);
-          setRightColumnTab('CREATE_NEW');
-        }}
-        onSuccess={(msg) => {
-          setSuccessMsg(msg);
-          setSelectedStmtIds([]);
-          setSelectedTitleIds([]);
-          setRefreshKey(k => k + 1);
-        }}
-        onError={(msg) => setErrorMsg(msg)}
-      />
+      {isFloatingReconcileOpen && (
+        <ReconciliationFloatingModal
+          isOpen={isFloatingReconcileOpen}
+          onClose={() => setIsFloatingReconcileOpen(false)}
+          selectedStatements={selectedStmts.length > 0 ? selectedStmts : (selectedStmt ? [selectedStmt] : [])}
+          selectedTitles={selectedTitles.length > 0 ? selectedTitles : (selectedTitle ? [selectedTitle] : [])}
+          counterpartyMap={counterpartyMap}
+          selectedAccountId={selectedAccountId}
+          allAvailableTitles={titles}
+          onSelectTitle={(t) => {
+            setSelectedTitleIds([t.id]);
+          }}
+          onCreateTitleDirectly={(stmt) => {
+            setIsFloatingReconcileOpen(false);
+            setSelectedStmtIds([stmt.id]);
+            setNewTitleDesc(stmt.description);
+            setNewTitleAmount(Math.abs(stmt.amount));
+            setNewTitleType(stmt.amount < 0 ? 'PAGAR' : 'RECEBER');
+            const today = new Date().toISOString().split('T')[0];
+            setNewTitleDate(stmt.date > today ? today : stmt.date);
+            setRightColumnTab('CREATE_NEW');
+          }}
+          onSuccess={(msg) => {
+            setSuccessMsg(msg);
+            setSelectedStmtIds([]);
+            setSelectedTitleIds([]);
+            setRefreshKey(k => k + 1);
+          }}
+          onError={(msg) => setErrorMsg(msg)}
+        />
+      )}
 
       {/* Modal de Gerenciamento de Regras De-Para */}
       <ReconciliationRulesModal
