@@ -35,7 +35,10 @@ import {
   Bot,
   RotateCcw,
   Undo2,
-  Landmark
+  Landmark,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeftRight
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -134,11 +137,18 @@ export const ReconciliationView: React.FC = () => {
   // Filtro de títulos: 'ALL' (inclui já baixados/pagos), 'PENDING' (em aberto), 'LIQUIDADO' (já pagos)
   const [titleSettlementFilter, setTitleSettlementFilter] = useState<'ALL' | 'PENDING' | 'LIQUIDADO'>('ALL');
 
+  // Filtro de Período / Mês dos Títulos do ERP (Padrão: Mês Atual)
+  const [titleYearMonth, setTitleYearMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [titlePeriodMode, setTitlePeriodMode] = useState<'MONTH' | 'ALL'>('MONTH');
+
   // Controle de expansão de detalhes do score por título
   const [expandedScoreTitleId, setExpandedScoreTitleId] = useState<string | null>(null);
 
-  // Right column tab: 'SELECT_EXISTING' or 'CREATE_NEW'
-  const [rightColumnTab, setRightColumnTab] = useState<'SELECT_EXISTING' | 'CREATE_NEW'>('SELECT_EXISTING');
+  // Right column tab: 'SELECT_EXISTING' | 'CREATE_NEW' | 'TRANSFER'
+  const [rightColumnTab, setRightColumnTab] = useState<'SELECT_EXISTING' | 'CREATE_NEW' | 'TRANSFER'>('SELECT_EXISTING');
 
   // Form states for creating a new ERP title from bank statement
   const [newTitleDesc, setNewTitleDesc] = useState('');
@@ -148,6 +158,15 @@ export const ReconciliationView: React.FC = () => {
   const [newTitleEntity, setNewTitleEntity] = useState('');
   const [newTitleDate, setNewTitleDate] = useState('');
   const [saveAsAutoRule, setSaveAsAutoRule] = useState<boolean>(true);
+
+  // Form states for Transferência Entre Contas
+  const [transferOriginAccountId, setTransferOriginAccountId] = useState('');
+  const [transferDestinationAccountId, setTransferDestinationAccountId] = useState('');
+  const [transferAmount, setTransferAmount] = useState<number>(0);
+  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [transferFeeAmount, setTransferFeeAmount] = useState<number>(0);
+  const [transferNotes, setTransferNotes] = useState('');
+  const [transferError, setTransferError] = useState('');
 
   // Estados de Equalização / Ajuste Financeiro da Conciliação (Valores 100% Exatos)
   const [adjPrincipal, setAdjPrincipal] = useState<number>(0);
@@ -412,6 +431,7 @@ export const ReconciliationView: React.FC = () => {
         setNewTitleAmount(Math.abs(stmtAmount));
         setNewTitleType(requiredType);
         setNewTitleDate(stmt.date || new Date().toISOString().split('T')[0]);
+        fillTransferDataFromStatement(stmt);
 
         // Se tiver sugestão ou vínculo, auto-seleciona o título
         if (stmt.suggestedTitleId) {
@@ -437,6 +457,7 @@ export const ReconciliationView: React.FC = () => {
     setNewTitleAmount(Math.abs(stmtAmount));
     setNewTitleType(requiredType);
     setNewTitleDate(stmt.date || new Date().toISOString().split('T')[0]);
+    fillTransferDataFromStatement(stmt);
 
     setSelectedStmtIds([stmt.id]);
 
@@ -448,6 +469,145 @@ export const ReconciliationView: React.FC = () => {
       setSelectedTitleIds([stmt.matchedTitleId]);
       setRightColumnTab('SELECT_EXISTING');
     }
+  };
+
+  // Preenche dados da transferência a partir de um lançamento de extrato selecionado
+  const fillTransferDataFromStatement = (stmt: BankStatementEntry) => {
+    const absAmt = Math.abs(Number(stmt.amount) || 0);
+    setTransferAmount(absAmt);
+    const today = new Date().toISOString().split('T')[0];
+    setTransferDate(stmt.date > today ? today : stmt.date);
+    setTransferNotes(`Transferência entre contas: ${stmt.description}`);
+    const activeAccs = accounts.filter(a => a.status === 'ATIVO');
+    const myAccId = stmt.bankAccountId || selectedAccountId;
+    if (stmt.amount < 0) {
+      // Saída: a conta do extrato é a de Origem
+      setTransferOriginAccountId(myAccId);
+      const other = activeAccs.find(a => a.id !== myAccId);
+      if (other) setTransferDestinationAccountId(other.id);
+    } else {
+      // Entrada: a conta do extrato é a de Destino
+      setTransferDestinationAccountId(myAccId);
+      const other = activeAccs.find(a => a.id !== myAccId);
+      if (other) setTransferOriginAccountId(other.id);
+    }
+  };
+
+  // Navegação de mês/período para a coluna de títulos do ERP
+  const handlePrevTitleMonth = () => {
+    setTitlePeriodMode('MONTH');
+    const [year, month] = titleYearMonth.split('-').map(Number);
+    const d = new Date(year, month - 2, 1);
+    setTitleYearMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextTitleMonth = () => {
+    setTitlePeriodMode('MONTH');
+    const [year, month] = titleYearMonth.split('-').map(Number);
+    const d = new Date(year, month, 1);
+    setTitleYearMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleCurrentTitleMonth = () => {
+    setTitlePeriodMode('MONTH');
+    const now = new Date();
+    setTitleYearMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const formatTitleMonthYearLabel = (ym: string) => {
+    try {
+      const [year, month] = ym.split('-').map(Number);
+      const date = new Date(year, month - 1, 1);
+      const monthName = date.toLocaleDateString('pt-BR', { month: 'long' });
+      return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} de ${year}`;
+    } catch {
+      return ym;
+    }
+  };
+
+  // Registra e concilia uma transferência entre contas bancárias
+  const handleCreateTransferAndReconcile = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTransferError('');
+
+    const origin = transferOriginAccountId;
+    const destination = transferDestinationAccountId;
+
+    if (!origin || !destination) {
+      setTransferError('Selecione a conta bancária de origem e a de destino.');
+      return;
+    }
+
+    if (origin === destination) {
+      setTransferError('A conta de origem e a de destino não podem ser iguais.');
+      return;
+    }
+
+    if (transferAmount <= 0) {
+      setTransferError('O valor da transferência deve ser maior que zero.');
+      return;
+    }
+
+    const res = FinancialEngine.postTransfer({
+      originAccountId: origin,
+      destinationAccountId: destination,
+      amount: Number(transferAmount),
+      date: transferDate,
+      feeAmount: Number(transferFeeAmount) || 0,
+      notes: transferNotes || `Transferência entre contas conciliada (${selectedStmt?.description || ''})`
+    });
+
+    if (!res.success) {
+      setTransferError(res.message);
+      return;
+    }
+
+    // Se houver lançamento de extrato ativo sendo conciliado:
+    if (selectedStmt) {
+      const allStmts = storage.getStatementEntries();
+      const updatedStmts = allStmts.map(s => {
+        if (s.id === selectedStmt.id) {
+          return {
+            ...s,
+            reconciliationStatus: 'CONCILIADO' as const,
+            reconciliationNote: `Conciliado via Transferência entre contas (${origin === currentAccount?.id ? 'Saída' : 'Entrada'})`
+          };
+        }
+        // Se na outra conta bancária houver extrato correspondente não conciliado com mesmo valor e data próxima, concilia também
+        const otherAccountId = origin === currentAccount?.id ? destination : origin;
+        if (
+          s.bankAccountId === otherAccountId &&
+          s.reconciliationStatus === 'PENDENTE' &&
+          Math.abs(Math.abs(Number(s.amount)) - Number(transferAmount)) < 0.005 &&
+          ((selectedStmt.amount < 0 && Number(s.amount) > 0) || (selectedStmt.amount > 0 && Number(s.amount) < 0))
+        ) {
+          return {
+            ...s,
+            reconciliationStatus: 'CONCILIADO' as const,
+            reconciliationNote: 'Conciliado automaticamente via contraparte de transferência'
+          };
+        }
+        return s;
+      });
+      storage.saveStatementEntries(updatedStmts);
+    }
+
+    // Auditoria
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CONCILIACAO_TRANSFERENCIA_BANCARIA',
+      module: 'Conciliação Bancária',
+      recordId: selectedStmt?.id || 'TRANSFERENCIA',
+      details: `Transferência de ${formatBRL(transferAmount)} entre contas ${origin} -> ${destination} registrada e conciliada.`
+    });
+
+    setSuccessMsg(`Transferência de ${formatBRL(transferAmount)} registrada e conciliada com sucesso!`);
+    setSelectedStmtIds([]);
+    setSelectedTitleIds([]);
+    setRightColumnTab('SELECT_EXISTING');
+    setRefreshKey(k => k + 1);
   };
 
   // Toggle de título (suporta seleção múltipla)
@@ -2076,6 +2236,19 @@ export const ReconciliationView: React.FC = () => {
       return true;
     });
 
+    // 1.1 FILTRO DE PERÍODO / MÊS DO ERP (Padrão: Mês atual; títulos selecionados sempre preservados)
+    if (titlePeriodMode === 'MONTH' && titleYearMonth) {
+      candidates = candidates.filter(t => {
+        // Se o título está selecionado ou vinculado ao extrato, preserva sempre visível
+        if (selectedTitleIds.includes(t.id)) return true;
+        if (selectedStmt && (selectedStmt.matchedTitleId === t.id || selectedStmt.suggestedTitleId === t.id)) return true;
+        
+        const dueYm = t.dueDate ? t.dueDate.substring(0, 7) : '';
+        const compYm = t.competence ? t.competence.substring(0, 7) : '';
+        return dueYm === titleYearMonth || compYm === titleYearMonth;
+      });
+    }
+
     // 2. REGRA MANDATÓRIA DO USUÁRIO:
     // "E quando selecionar um pagamento ele apenas selecione os pagamentos que ja tenho, quando for valor recebido, filtrar apenas os valores a receber"
     if (selectedStmt) {
@@ -2093,7 +2266,9 @@ export const ReconciliationView: React.FC = () => {
           t.description,
           person?.name,
           person?.tradeName,
-          person?.document
+          person?.document,
+          t.category,
+          t.notes
         ], deferredSearchTitle);
       });
     }
@@ -2146,7 +2321,7 @@ export const ReconciliationView: React.FC = () => {
     });
 
     return scored;
-  }, [titles, selectedStmt, deferredSearchTitle, counterpartyMap, titleSettlementFilter]);
+  }, [titles, selectedStmt, deferredSearchTitle, counterpartyMap, titleSettlementFilter, titlePeriodMode, titleYearMonth, selectedTitleIds]);
 
   // Bidirecionalidade: se um título for selecionado e nenhum extrato estiver marcado,
   // filtra e ordena os extratos de acordo com a natureza do título (Pagar -> débitos, Receber -> créditos)
@@ -2831,13 +3006,14 @@ export const ReconciliationView: React.FC = () => {
                   <div
                     key={stmt.id}
                     onClick={(e) => handleCardClickStatement(stmt, e)}
-                    className={`p-3.5 transition-all cursor-pointer relative ${highlight.borderClass} ${highlight.bgClass}`}
+                    className={`p-3.5 transition-all cursor-pointer relative min-h-[148px] flex flex-col justify-between ${highlight.borderClass} ${highlight.bgClass}`}
                   >
-                    {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
-                    {isSelected && (
-                      <div className="mb-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                    <div className="flex-1 min-w-0">
+                      {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
+                      {isSelected && (
+                        <div className="mb-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
                           <span>Extrato Selecionado para Conciliação</span>
                         </span>
                         <span className="text-[10px] font-bold text-amber-200">
@@ -2919,9 +3095,9 @@ export const ReconciliationView: React.FC = () => {
                     </div>
 
                     {/* DESCRIÇÃO EM DESTAQUE */}
-                    <div className={`text-sm sm:text-[13px] font-extrabold leading-snug mt-2 ${
+                    <div className={`text-sm sm:text-[13px] font-extrabold leading-snug mt-1.5 line-clamp-2 ${
                       isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'
-                    }`}>
+                    }`} title={stmt.description}>
                       {stmt.description}
                     </div>
 
@@ -2931,9 +3107,10 @@ export const ReconciliationView: React.FC = () => {
                         {match.summaryBadge}
                       </div>
                     )}
+                  </div>
 
-                    {/* Linha Inferior: Código FITID Discreto e Ações */}
-                    <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
+                  {/* Linha Inferior: Código FITID Discreto e Ações */}
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 dark:text-slate-500">
                         <span className="bg-slate-100/80 dark:bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
                           FITID: {stmt.fitId}
@@ -3141,7 +3318,20 @@ export const ReconciliationView: React.FC = () => {
                   }`}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Criar Novo e Conciliar
+                  Criar Novo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightColumnTab('TRANSFER')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-colors flex items-center gap-1 cursor-pointer ${
+                    rightColumnTab === 'TRANSFER'
+                      ? 'bg-amber-500 text-black shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                  title="Criar ou conciliar transferência entre contas bancárias"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  Transferência
                 </button>
               </div>
             </div>
@@ -3150,17 +3340,80 @@ export const ReconciliationView: React.FC = () => {
           {/* MODO 1: SELECIONAR TÍTULO EXISTENTE */}
           {rightColumnTab === 'SELECT_EXISTING' && (
             <div>
-              {/* Search Bar e Filtro de Liquidação */}
-              <div className="p-3 border-b border-slate-100 dark:border-[#273040] space-y-2">
+              {/* Search Bar e Filtros de Período e Liquidação */}
+              <div className="p-3 border-b border-slate-100 dark:border-[#273040] space-y-2.5">
+                {/* Input de Busca Estrita com Botão de Limpeza */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Filtrar por nº título ou favorecido..."
+                    placeholder="Filtrar por nº título, favorecido, descrição..."
                     value={searchTitle}
                     onChange={e => setSearchTitle(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    className="w-full pl-8 pr-8 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
                   />
+                  {searchTitle && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTitle('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                      title="Limpar busca"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Navegador de Período / Mês no Topo do ERP */}
+                <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#131720]/80 border border-slate-200/80 dark:border-[#273040] text-xs">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handlePrevTitleMonth}
+                      className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                      title="Mês anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="font-bold text-slate-800 dark:text-slate-100 px-1 select-none text-[11px] sm:text-xs">
+                      {titlePeriodMode === 'MONTH' ? formatTitleMonthYearLabel(titleYearMonth) : 'Todos os Períodos'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleNextTitleMonth}
+                      className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                      title="Próximo mês"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleCurrentTitleMonth}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors cursor-pointer ${
+                        titlePeriodMode === 'MONTH' && titleYearMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+                          ? 'bg-amber-500 text-black shadow-2xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                      }`}
+                      title="Voltar para o mês corrente"
+                    >
+                      Mês Atual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTitlePeriodMode(prev => prev === 'ALL' ? 'MONTH' : 'ALL')}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors cursor-pointer ${
+                        titlePeriodMode === 'ALL'
+                          ? 'bg-amber-500 text-black shadow-2xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                      }`}
+                      title="Exibir títulos de todos os meses ou filtrar por mês"
+                    >
+                      {titlePeriodMode === 'ALL' ? 'Filtro: Todos' : 'Ver Todos'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Filtro de Estado: Todos, Em Aberto, Já Baixados */}
@@ -3282,10 +3535,11 @@ export const ReconciliationView: React.FC = () => {
                       <div
                         key={t.id}
                         onClick={(e) => handleCardClickTitle(t.id, e)}
-                        className={`p-3.5 transition-all cursor-pointer relative ${highlight.borderClass} ${highlight.bgClass}`}
+                        className={`p-3.5 transition-all cursor-pointer relative min-h-[148px] flex flex-col justify-between ${highlight.borderClass} ${highlight.bgClass}`}
                       >
-                        {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
-                        {isSelected && (
+                        <div className="flex-1 min-w-0">
+                          {/* Badge Dourada de Destaque Premium na Linha Selecionada */}
+                          {isSelected && (
                           <div className="mb-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-between animate-in fade-in duration-150">
                             <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
                               <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
@@ -3398,22 +3652,22 @@ export const ReconciliationView: React.FC = () => {
                         </div>
 
                         {/* DESCRIÇÃO EM DESTAQUE */}
-                        <div className={`text-sm sm:text-[14px] font-extrabold leading-snug mt-2 ${
+                        <div className={`text-sm sm:text-[14px] font-extrabold leading-snug mt-1.5 line-clamp-2 ${
                           isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'
-                        }`}>
+                        }`} title={t.description}>
                           {t.description}
                         </div>
 
                         {/* FAVORECIDO EM DESTAQUE */}
-                        <div className={`text-xs font-bold mt-1.5 flex items-center gap-1.5 flex-wrap ${
+                        <div className={`text-xs font-bold mt-1.5 flex items-center gap-1.5 truncate ${
                           isSelected ? 'text-amber-200' : 'text-slate-800 dark:text-slate-200'
                         }`}>
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Favorecido:</span>
-                          <span className="text-slate-900 dark:text-slate-100 font-extrabold">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium shrink-0">Favorecido:</span>
+                          <span className="text-slate-900 dark:text-slate-100 font-extrabold truncate">
                             {person?.tradeName || person?.name || 'Não informado'}
                           </span>
                           {person?.document && (
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-normal">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-normal shrink-0">
                               ({person.document})
                             </span>
                           )}
@@ -3458,9 +3712,10 @@ export const ReconciliationView: React.FC = () => {
                             </div>
                           </div>
                         )}
+                      </div>
 
-                        {/* Linha Inferior: Código Doc e Dados Secundários com DESTAQUE MENOR + Ações */}
-                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
+                      {/* Linha Inferior: Código Doc e Dados Secundários com DESTAQUE MENOR + Ações */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-[#273040]/70 flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 dark:text-slate-500 flex-wrap">
                             <span className="bg-slate-100/80 dark:bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
                               Doc #{t.titleNumber}
@@ -3732,6 +3987,142 @@ export const ReconciliationView: React.FC = () => {
                 </button>
               </div>
 
+            </form>
+          )}
+
+          {/* MODO 3: REGISTRAR E CONCILIAR TRANSFERÊNCIA ENTRE CONTAS */}
+          {rightColumnTab === 'TRANSFER' && (
+            <form onSubmit={handleCreateTransferAndReconcile} className="p-6 space-y-4 text-xs max-h-[580px] overflow-y-auto">
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-1">
+                <div className="flex items-center gap-2 font-bold text-xs text-amber-700 dark:text-amber-300">
+                  <ArrowLeftRight className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Transferência Interna Entre Contas Bancárias</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Registra a movimentação financeira entre duas contas bancárias da empresa (ex: PIX entre contas próprias, suprimento de caixa) sem gerar despesa ou receita indevida na DRE.
+                </p>
+                {selectedStmt && (
+                  <div className="mt-2 pt-2 border-t border-amber-500/20 text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                    Lançamento do Extrato: <strong>{selectedStmt.description}</strong> ({formatBRL(selectedStmt.amount)}) em {formatDateBR(selectedStmt.date)}
+                  </div>
+                )}
+              </div>
+
+              {transferError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-600 dark:text-rose-300 flex items-center gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{transferError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Conta de Origem (Saída) *
+                  </label>
+                  <select
+                    value={transferOriginAccountId}
+                    onChange={e => setTransferOriginAccountId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="">Selecione a conta de saída...</option>
+                    {accounts.filter(a => a.status === 'ATIVO').map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName} - {acc.name} ({formatBRL(acc.currentBalance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Conta de Destino (Entrada) *
+                  </label>
+                  <select
+                    value={transferDestinationAccountId}
+                    onChange={e => setTransferDestinationAccountId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="">Selecione a conta de entrada...</option>
+                    {accounts.filter(a => a.status === 'ATIVO').map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName} - {acc.name} ({formatBRL(acc.currentBalance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Valor da Transferência (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={transferAmount || ''}
+                    onChange={e => setTransferAmount(parseFloat(e.target.value) || 0)}
+                    required
+                    placeholder="0,00"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 font-mono font-bold focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Data da Transferência *
+                  </label>
+                  <input
+                    type="date"
+                    value={transferDate}
+                    onChange={e => setTransferDate(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                    Tarifa Bancária (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={transferFeeAmount || ''}
+                    onChange={e => setTransferFeeAmount(parseFloat(e.target.value) || 0)}
+                    placeholder="0,00"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 font-mono focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                  Observações / Histórico
+                </label>
+                <input
+                  type="text"
+                  value={transferNotes}
+                  onChange={e => setTransferNotes(e.target.value)}
+                  placeholder="Ex: Transferência de saldo Inter para Bradesco"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 dark:border-[#273040]">
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 text-black hover:brightness-105 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                  Registrar e Conciliar Transferência
+                </button>
+              </div>
             </form>
           )}
 
