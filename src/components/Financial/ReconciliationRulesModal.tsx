@@ -63,6 +63,20 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
   const effectiveBankAccountId = bankAccountId || selectedBankAccountId || '';
   const effectiveUser = currentUser || storage.getCurrentUser();
 
+  const effectiveChartAccounts = useMemo(() => {
+    return (chartAccounts && chartAccounts.length > 0) ? chartAccounts : storage.getChartAccounts();
+  }, [chartAccounts]);
+
+  const effectiveCounterparties = useMemo(() => {
+    return (counterparties && counterparties.length > 0) ? counterparties : storage.getCounterparties();
+  }, [counterparties]);
+
+  const effectiveStatements = useMemo(() => {
+    if (statementEntries && statementEntries.length > 0) return statementEntries;
+    const all = storage.getStatementEntries();
+    return effectiveBankAccountId ? all.filter(s => s.bankAccountId === effectiveBankAccountId) : all;
+  }, [statementEntries, effectiveBankAccountId]);
+
   const [rules, setRules] = useState<ReconciliationRule[]>(() => storage.getReconciliationRules());
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -89,8 +103,8 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
 
   // Analytical Chart of Accounts
   const analyticalAccounts = useMemo(() => {
-    return chartAccounts.filter(a => a.isAnalytical && a.isActive);
-  }, [chartAccounts]);
+    return effectiveChartAccounts.filter(a => a.isAnalytical && a.isActive);
+  }, [effectiveChartAccounts]);
 
   const expenseAccounts = useMemo(() => {
     return analyticalAccounts.filter(a => a.nature?.includes('DESPESA') || a.code.startsWith('2') || a.code.startsWith('4'));
@@ -117,8 +131,8 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
       createdAt: '',
       updatedAt: ''
     };
-    return testRuleAgainstStatements(draftRule, statementEntries);
-  }, [formPattern, formMatchType, formTransactionType, statementEntries]);
+    return testRuleAgainstStatements(draftRule, effectiveStatements);
+  }, [formPattern, formMatchType, formTransactionType, formChartAccountId, formCounterpartyId, formAction, formPriority, effectiveStatements]);
 
   // Load Rule into Editor
   const handleEditRule = (rule: ReconciliationRule) => {
@@ -228,7 +242,7 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
   };
 
   const handleExecuteAllRulesNow = () => {
-    const res = applyReconciliationRules(bankAccountId, currentUser);
+    const res = applyReconciliationRules(effectiveBankAccountId, effectiveUser);
     setRules(storage.getReconciliationRules());
     setFeedbackBanner({
       type: 'success',
@@ -639,7 +653,7 @@ export const ReconciliationRulesModal: React.FC<ReconciliationRulesModalProps> =
                       className="w-full bg-slate-50 dark:bg-[#161C28] border border-slate-300 dark:border-[#242D3D] rounded-lg px-3 py-2 text-xs font-medium outline-hidden focus:border-amber-500"
                     >
                       <option value="">Nenhum favorecido fixo (adotar padrão contábil)</option>
-                      {counterparties.map(cp => (
+                      {effectiveCounterparties.map(cp => (
                         <option key={cp.id} value={cp.id}>
                           {cp.name} ({cp.type})
                         </option>

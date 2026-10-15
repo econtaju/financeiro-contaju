@@ -24,6 +24,7 @@ import { BankStatementEntry, FinancialTitle, Counterparty } from '../../types';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { storage } from '../../services/storageService';
 import { learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
+import { calculateReconciliationSimilarity } from '../../services/reconciliationMatchingEngine';
 
 interface ReconciliationFloatingModalProps {
   isOpen: boolean;
@@ -34,6 +35,9 @@ interface ReconciliationFloatingModalProps {
   selectedAccountId: string;
   onSuccess: (msg: string) => void;
   onError: (msg: string) => void;
+  onSelectTitle?: (title: FinancialTitle) => void;
+  allAvailableTitles?: FinancialTitle[];
+  onCreateTitleDirectly?: (stmt: BankStatementEntry) => void;
 }
 
 export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalProps> = ({
@@ -44,12 +48,28 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   counterpartyMap,
   selectedAccountId,
   onSuccess,
-  onError
+  onError,
+  onSelectTitle,
+  allAvailableTitles,
+  onCreateTitleDirectly
 }) => {
+  const [internalSelectedTitle, setInternalSelectedTitle] = useState<FinancialTitle | null>(null);
+
+  // Limpa seleção interna ao reabrir o modal ou mudar títulos externos
+  useEffect(() => {
+    if (selectedTitles && selectedTitles.length > 0) {
+      setInternalSelectedTitle(null);
+    }
+  }, [selectedTitles, isOpen]);
+
   // Par único ou multi-seleção
-  const isMultiSelection = selectedStatements.length > 1 || selectedTitles.length > 1;
+  const effectiveTitles = selectedTitles.length > 0 
+    ? selectedTitles 
+    : (internalSelectedTitle ? [internalSelectedTitle] : []);
+
+  const isMultiSelection = selectedStatements.length > 1 || effectiveTitles.length > 1;
   const singleStmt = selectedStatements[0] || null;
-  const singleTitle = selectedTitles[0] || null;
+  const singleTitle = effectiveTitles[0] || null;
 
   // Valores de ajuste para conciliação unitária
   const [adjPrincipal, setAdjPrincipal] = useState<number>(0);
@@ -96,9 +116,26 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   const differenceToStatement = Math.round((totalSettledCalculated - stmtAbsAmount) * 100) / 100;
   const isSingleExact = Math.abs(differenceToStatement) < 0.005;
 
+  // Candidatos compatíveis quando nenhum título foi pré-selecionado
+  const topCandidateTitles = useMemo(() => {
+    if (!singleStmt || singleTitle) return [];
+    const pool = (allAvailableTitles && allAvailableTitles.length > 0) ? allAvailableTitles : storage.getTitles();
+    const expectedType = singleStmt.amount < 0 ? 'PAGAR' : 'RECEBER';
+    
+    return pool
+      .filter(t => t.type === expectedType && t.settlementState !== 'LIQUIDADO')
+      .map(t => {
+        const cp = counterpartyMap.get(t.counterpartyId);
+        const match = calculateReconciliationSimilarity(singleStmt, t, cp);
+        return { title: t, match, cp };
+      })
+      .sort((a, b) => b.match.score - a.match.score)
+      .slice(0, 5);
+  }, [singleStmt, singleTitle, allAvailableTitles, counterpartyMap]);
+
   // Cálculos para Multi-seleção
   const totalStmtsAmount = Math.round(selectedStatements.reduce((sum, s) => sum + Math.abs(Number(s.amount) || 0), 0) * 100) / 100;
-  const totalTitlesAmount = Math.round(selectedTitles.reduce((sum, t) => {
+  const totalTitlesAmount = Math.round(effectiveTitles.reduce((sum, t) => {
     const val = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
     return sum + (Number(val) || 0);
   }, 0) * 100) / 100;
@@ -107,7 +144,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
 
   // Regra Estrita do Usuário: NÃO PODE ACEITAR SE OS VALORES NÃO FOREM CORRIGIDOS E BATEREM 100%
   const canConfirm = isMultiSelection 
-    ? (selectedStatements.length > 0 && selectedTitles.length > 0 && isMultiExact) 
+    ? (selectedStatements.length > 0 && effectiveTitles.length > 0 && isMultiExact) 
     : (Boolean(singleStmt && singleTitle) && isSingleExact);
 
   // Ações de Ajuste Rápido
@@ -173,7 +210,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
         let alreadySettledCount = 0;
         const successfullySettledTitleIds: string[] = [];
 
-        selectedTitles.forEach(t => {
+        effectiveTitles.forEach(t => {
           if (t.settlementState === 'LIQUIDADO') {
             alreadySettledCount++;
             successfullySettledTitleIds.push(t.id);
@@ -205,7 +242,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
         // Atualiza títulos
         const currentTitles = storage.getTitles();
         const updatedTitles = currentTitles.map(t => {
-          if (selectedTitles.some(st => st.id === t.id) && successfullySettledTitleIds.includes(t.id)) {
+          if (effectiveTitles.some(st => st.id === t.id) && successfullySettledTitleIds.includes(t.id)) {
             return {
               ...t,
               reconciliationStatus: 'CONCILIADO' as const,
@@ -223,7 +260,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
             return {
               ...s,
               reconciliationStatus: 'CONCILIADO' as const,
-              matchedTitleId: selectedTitles[0]?.id
+              matchedTitleId: effectiveTitles[0]?.id
             };
           }
           return s;
@@ -657,6 +694,77 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                       </strong>
                     </div>
                   </div>
+                </div>
+              ) : singleStmt ? (
+                <div className="p-3.5 bg-white dark:bg-[#131720] rounded-xl border border-slate-200 dark:border-[#273040] space-y-2.5">
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      Selecione um título para cruzar:
+                    </span>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                      {singleStmt.amount < 0 ? 'A Pagar' : 'A Receber'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                    {topCandidateTitles.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 py-3 text-center">
+                        Nenhum título {singleStmt.amount < 0 ? 'a pagar' : 'a receber'} em aberto no momento.
+                      </p>
+                    ) : (
+                      topCandidateTitles.map(({ title: t, match, cp }) => {
+                        const bal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
+                        return (
+                          <div 
+                            key={t.id} 
+                            onClick={() => {
+                              setInternalSelectedTitle(t);
+                              if (onSelectTitle) onSelectTitle(t);
+                            }}
+                            className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-amber-500/60 hover:bg-amber-500/5 transition-all cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">{t.titleNumber}</span>
+                                <span className="text-[10px] text-slate-500">Venc: {formatDateBR(t.dueDate)}</span>
+                                {match.score >= 40 && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                                    {match.score}% compatível
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-700 dark:text-slate-300 truncate block mt-0.5">
+                                {cp?.name || t.description}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-mono font-bold text-xs text-slate-900 dark:text-white block">
+                                {formatBRL(bal)}
+                              </span>
+                              <span className="text-[10px] text-amber-500 font-bold hover:underline">
+                                Selecionar ➔
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {onCreateTitleDirectly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onCreateTitleDirectly(singleStmt);
+                      }}
+                      className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-amber-500 hover:text-black text-slate-800 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Criar Novo Lançamento no ERP a partir deste Extrato</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="p-8 text-center text-slate-400 bg-white dark:bg-[#131720] rounded-xl border border-dashed border-slate-200 dark:border-slate-800">

@@ -37,7 +37,7 @@ import {
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
-import { parseOFX } from '../../utils/ofxParser';
+import { parseOFX, parseOFXFull } from '../../utils/ofxParser';
 import { calculateReconciliationSimilarity } from '../../services/reconciliationMatchingEngine';
 import { normalizeForSearch, matchesSearch } from '../../utils/searchUtils';
 import { ReconciliationRulesModal } from './ReconciliationRulesModal';
@@ -1292,9 +1292,9 @@ export const ReconciliationView: React.FC = () => {
 
   // Upload and parse real OFX file com leitura segura de ArrayBuffer, TextDecoder e deduplicação
   const [isImportingOfx, setIsImportingOfx] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processFile = (file: File) => {
     if (!file) return;
 
     setIsImportingOfx(true);
@@ -1320,8 +1320,9 @@ export const ReconciliationView: React.FC = () => {
           content = '';
         }
 
-        // Se o arquivo contiver cabeçalho declarando CHARSET:1252 ou se tiver caracteres de substituição
-        if (!content || content.includes('CHARSET:1252') || content.includes('CHARSET:CSISO88591') || content.includes('\uFFFD')) {
+        // Se o arquivo contiver cabeçalho declarando CHARSET:1252, ISO-8859-1 ou caracteres de substituição
+        const upperCheck = (content || '').toUpperCase();
+        if (!content || upperCheck.includes('CHARSET:1252') || upperCheck.includes('CHARSET:ISO-8859-1') || upperCheck.includes('CHARSET:CSISO88591') || content.includes('\uFFFD')) {
           try {
             const win1252Decoder = new TextDecoder('windows-1252');
             content = win1252Decoder.decode(buffer);
@@ -1330,7 +1331,8 @@ export const ReconciliationView: React.FC = () => {
           }
         }
 
-        const parsed = parseOFX(content);
+        const parsedResult = parseOFXFull(content);
+        const parsed = parsedResult.transactions;
 
         if (parsed.length === 0) {
           setErrorMsg(`Nenhuma transação financeira reconhecida em "${file.name}". Certifique-se de que o arquivo é um extrato bancário OFX ou CSV válido.`);
@@ -1373,18 +1375,42 @@ export const ReconciliationView: React.FC = () => {
         });
 
         if (newEntries.length === 0 && alreadyExistingCount > 0) {
-          setErrorMsg(`Todas as ${alreadyExistingCount} transações deste arquivo OFX já foram importadas anteriormente nesta conta bancária.`);
+          // Re-importação inteligente: atualiza descrições e valores das transações pendentes daquele arquivo
+          let refreshedCount = 0;
+          const updatedAll = currentStatements.map(s => {
+            if (s.bankAccountId === targetAccountId && s.reconciliationStatus === 'PENDENTE') {
+              const matchingOfx = parsed.find(p => p.fitId === s.fitId);
+              if (matchingOfx) {
+                refreshedCount++;
+                return {
+                  ...s,
+                  date: matchingOfx.date,
+                  amount: matchingOfx.amount,
+                  description: matchingOfx.description
+                };
+              }
+            }
+            return s;
+          });
+
+          storage.saveStatementEntries(updatedAll);
+          setSuccessMsg(`Extrato OFX "${file.name}" reimportado: ${alreadyExistingCount} lançamentos conferidos (${refreshedCount} pendentes atualizados com dados mais recentes).`);
+          setRefreshKey(k => k + 1);
           setIsImportingOfx(false);
           return;
         }
 
         storage.saveStatementEntries([...newEntries, ...currentStatements]);
 
-        // Feedback enriquecido
+        // Feedback enriquecido com saldo do banco se presente
+        const balanceInfo = parsedResult.ledgerBalance !== undefined 
+          ? ` • Saldo Informado pelo Banco: ${formatBRL(parsedResult.ledgerBalance)}`
+          : '';
+
         if (alreadyExistingCount > 0) {
-          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} novas transações adicionadas (${alreadyExistingCount} já existiam e foram preservadas sem duplicidade).`);
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} novas transações adicionadas (${alreadyExistingCount} já existiam e foram preservadas sem duplicidade)${balanceInfo}.`);
         } else {
-          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} transações adicionadas à conta bancária.`);
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} transações adicionadas à conta bancária${balanceInfo}.`);
         }
 
         setRefreshKey(k => k + 1);
@@ -1393,17 +1419,51 @@ export const ReconciliationView: React.FC = () => {
         setErrorMsg(`Falha ao ler o arquivo OFX: ${err?.message || 'Formato inválido ou corrompido'}`);
       } finally {
         setIsImportingOfx(false);
-        if (e.target) e.target.value = '';
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
 
     reader.onerror = () => {
       setErrorMsg('Erro de leitura física do arquivo no navegador.');
       setIsImportingOfx(false);
-      if (e.target) e.target.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  // Exclusão individual de lançamento do extrato
+  const handleDeleteStatement = (stmtId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const all = storage.getStatementEntries();
+    storage.saveStatementEntries(all.filter(s => s.id !== stmtId));
+    setSelectedStmtIds(prev => prev.filter(id => id !== stmtId));
+    setSuccessMsg('Lançamento removido do extrato bancário com sucesso.');
+    setRefreshKey(k => k + 1);
+  };
+
+  // Limpeza de todos os lançamentos pendentes da conta atual
+  const handleClearAccountPendingStatements = () => {
+    const pending = accountStatements.filter(s => s.reconciliationStatus === 'PENDENTE');
+    if (pending.length === 0) {
+      setErrorMsg('Nenhum lançamento pendente para limpar nesta conta bancária.');
+      return;
+    }
+    if (confirm(`Deseja realmente excluir todos os ${pending.length} lançamentos pendentes desta conta bancária? Os lançamentos já conciliados serão preservados intactos.`)) {
+      const all = storage.getStatementEntries();
+      const preserved = all.filter(s => s.bankAccountId !== selectedAccountId || s.reconciliationStatus !== 'PENDENTE');
+      storage.saveStatementEntries(preserved);
+      setSelectedStmtIds([]);
+      setSuccessMsg(`${pending.length} lançamentos pendentes foram removidos com sucesso. Agora você pode importar um novo arquivo OFX.`);
+      setRefreshKey(k => k + 1);
+    }
   };
 
   // Quick simulation sample OFX
@@ -1651,8 +1711,8 @@ export const ReconciliationView: React.FC = () => {
         return;
       }
 
-      // Atalho: Enter ou Barra de Espaço para abrir a janela flutuante de conciliação
-      if (e.key === 'Enter' || e.code === 'Space') {
+      // Atalho: Enter para abrir a janela flutuante de conciliação
+      if (e.key === 'Enter') {
         if (selectedStmtIds.length > 0 || selectedTitleIds.length > 0) {
           e.preventDefault();
           setIsFloatingReconcileOpen(true);
@@ -1683,7 +1743,7 @@ export const ReconciliationView: React.FC = () => {
         type="file" 
         ref={fileInputRef} 
         onChange={handleFileUpload} 
-        accept=".ofx,.csv,.txt" 
+        accept=".ofx,.OFX,.csv,.CSV,.txt,.TXT" 
         className="hidden" 
       />
 
@@ -2072,8 +2132,35 @@ export const ReconciliationView: React.FC = () => {
         {/* ======================================================== */}
         {/* COLUNA ESQUERDA: EXTRATO BANCÁRIO / OFX                  */}
         {/* ======================================================== */}
-        <div className="bg-white dark:bg-[#131720] rounded-2xl border border-slate-200 dark:border-[#273040] shadow-2xs overflow-hidden flex flex-col">
-          
+        <div 
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDraggingFile(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDraggingFile(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDraggingFile(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              processFile(e.dataTransfer.files[0]);
+            }
+          }}
+          className={`bg-white dark:bg-[#131720] rounded-2xl border transition-all duration-200 shadow-2xs overflow-hidden flex flex-col relative ${
+            isDraggingFile ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-slate-200 dark:border-[#273040]'
+          }`}
+        >
+          {/* Overlay de Drag and Drop para arquivo OFX */}
+          {isDraggingFile && (
+            <div className="absolute inset-0 bg-amber-500/10 backdrop-blur-xs z-30 flex flex-col items-center justify-center border-2 border-dashed border-amber-500 rounded-2xl pointer-events-none p-6 text-center">
+              <Upload className="w-12 h-12 text-amber-500 animate-bounce mb-2" />
+              <span className="text-sm font-bold text-amber-900 dark:text-amber-200">Solte o arquivo OFX ou CSV aqui</span>
+              <span className="text-xs text-amber-700 dark:text-amber-400 mt-1">Importação automática com proteção contra duplicidade</span>
+            </div>
+          )}
+
           {/* Header da Coluna 1 */}
           <div className="p-4 border-b border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] flex flex-col sm:flex-row justify-between sm:items-center gap-3">
             <div>
@@ -2161,15 +2248,29 @@ export const ReconciliationView: React.FC = () => {
               </span>
             </label>
 
-            {selectedStmtIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedStmtIds([])}
-                className="text-[11px] text-slate-500 hover:text-amber-500 transition-colors cursor-pointer"
-              >
-                Limpar Seleção ({selectedStmtIds.length})
-              </button>
-            )}
+            <div className="flex items-center gap-2.5">
+              {selectedStmtIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedStmtIds([])}
+                  className="text-[11px] text-slate-500 hover:text-amber-500 transition-colors cursor-pointer"
+                >
+                  Limpar Seleção ({selectedStmtIds.length})
+                </button>
+              )}
+
+              {accountStatements.some(s => s.reconciliationStatus === 'PENDENTE') && (
+                <button
+                  type="button"
+                  onClick={handleClearAccountPendingStatements}
+                  className="text-[11px] text-rose-500 hover:text-rose-600 transition-colors cursor-pointer flex items-center gap-1 font-medium hover:underline"
+                  title="Remove todos os lançamentos pendentes desta conta para permitir reimportação limpa de OFX"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Limpar Pendentes</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Aviso contextual de multi-seleção de títulos */}
@@ -2295,6 +2396,17 @@ export const ReconciliationView: React.FC = () => {
                           >
                             <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                             <span>Conciliar</span>
+                          </button>
+                        )}
+
+                        {stmt.reconciliationStatus !== 'CONCILIADO' && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteStatement(stmt.id, e)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Excluir lançamento pendente do extrato bancário"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
 
@@ -2974,6 +3086,20 @@ export const ReconciliationView: React.FC = () => {
         selectedTitles={selectedTitles.length > 0 ? selectedTitles : (selectedTitle ? [selectedTitle] : [])}
         counterpartyMap={counterpartyMap}
         selectedAccountId={selectedAccountId}
+        allAvailableTitles={titles}
+        onSelectTitle={(t) => {
+          setSelectedTitleIds([t.id]);
+        }}
+        onCreateTitleDirectly={(stmt) => {
+          setIsFloatingReconcileOpen(false);
+          setSelectedStmtIds([stmt.id]);
+          setNewTitleDesc(stmt.description);
+          setNewTitleAmount(Math.abs(stmt.amount));
+          setNewTitleType(stmt.amount < 0 ? 'PAGAR' : 'RECEBER');
+          const today = new Date().toISOString().split('T')[0];
+          setNewTitleDate(stmt.date > today ? today : stmt.date);
+          setRightColumnTab('CREATE_NEW');
+        }}
         onSuccess={(msg) => {
           setSuccessMsg(msg);
           setSelectedStmtIds([]);
@@ -2991,7 +3117,23 @@ export const ReconciliationView: React.FC = () => {
           setRulesPresetPattern('');
         }}
         presetPattern={rulesPresetPattern}
+        bankAccountId={selectedAccountId}
         selectedBankAccountId={selectedAccountId}
+        bankAccountName={currentAccount?.name || 'Conta Bancária'}
+        statementEntries={accountStatements}
+        chartAccounts={chartAccounts}
+        counterparties={persons}
+        currentUser={storage.getCurrentUser()}
+        onRulesApplied={({ reconciledCount, suggestedCount }) => {
+          setRefreshKey(k => k + 1);
+          if (reconciledCount > 0) {
+            setSuccessMsg(`Sucesso! ${reconciledCount} lançamento(s) conciliado(s) pelas regras De-Para.`);
+          } else if (suggestedCount > 0) {
+            setSuccessMsg(`Regras aplicadas: ${suggestedCount} sugestão(ões) vinculada(s).`);
+          } else {
+            setSuccessMsg('Regras de conciliação processadas.');
+          }
+        }}
       />
 
       {/* Modal de Diagnóstico e Auditoria Detalhada de Conciliação */}

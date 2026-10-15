@@ -52,9 +52,10 @@ export function matchesReconciliationRule(stmt: BankStatementEntry, rule: Reconc
  */
 export function testRuleAgainstStatements(
   rule: ReconciliationRule, 
-  statements: BankStatementEntry[]
+  statements?: BankStatementEntry[]
 ): { matchingCount: number; matchedSamples: BankStatementEntry[] } {
-  const matched = statements.filter(stmt => matchesReconciliationRule(stmt, rule));
+  const pool = (statements && statements.length > 0) ? statements : storage.getStatementEntries();
+  const matched = pool.filter(stmt => matchesReconciliationRule(stmt, rule));
   return {
     matchingCount: matched.length,
     matchedSamples: matched.slice(0, 5)
@@ -65,8 +66,8 @@ export function testRuleAgainstStatements(
  * Executa a aplicação de regras ativas em lote para extratos pendentes de uma conta
  */
 export function applyReconciliationRules(
-  accountId: string,
-  currentUser: User
+  accountId?: string,
+  currentUser?: User
 ): {
   processedCount: number;
   reconciledCount: number;
@@ -74,6 +75,7 @@ export function applyReconciliationRules(
   logs: ReconciliationDiagnosticLog[];
   appliedRuleNames: string[];
 } {
+  const effectiveUser = currentUser || storage.getCurrentUser();
   const rules = storage.getReconciliationRules().filter(r => r.active);
   // Ordena por prioridade crescente (1 primeiro, depois 2, etc.)
   rules.sort((a, b) => (a.priority || 99) - (b.priority || 99));
@@ -83,9 +85,11 @@ export function applyReconciliationRules(
   const counterparties = storage.getCounterparties();
   const chartAccounts = storage.getChartAccounts();
 
-  const targetStatements = allStatements.filter(
-    s => s.bankAccountId === accountId && s.reconciliationStatus === 'PENDENTE'
-  );
+  const targetStatements = allStatements.filter(s => {
+    if (s.reconciliationStatus !== 'PENDENTE') return false;
+    if (accountId && accountId !== 'ALL' && s.bankAccountId !== accountId) return false;
+    return true;
+  });
 
   let reconciledCount = 0;
   let suggestedCount = 0;
@@ -153,9 +157,10 @@ export function applyReconciliationRules(
         storage.saveTitles([newTitle, ...currentTitles]);
 
         // 2. Registra a baixa contábil imediata com validação de período contábil
+        const safeSettlementDate = (stmt.date && stmt.date <= today) ? stmt.date : today;
         const settlementRes = FinancialEngine.postSettlement({
           titleId: newTitle.id,
-          settlementDate: safeDueDate,
+          settlementDate: safeSettlementDate,
           bankAccountId: stmt.bankAccountId,
           principalSettled: absAmount,
           discount: 0,
@@ -271,11 +276,11 @@ export function applyReconciliationRules(
   // Adiciona ao log de auditoria geral
   if (reconciledCount > 0 || suggestedCount > 0) {
     storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
+      userName: effectiveUser.name,
+      userRole: effectiveUser.role,
       action: 'APLICACAO_REGRAS_CONCILIACAO',
       module: 'Conciliação Bancária',
-      recordId: accountId,
+      recordId: accountId || 'ALL',
       details: `Execução de Regras de Conciliação: ${reconciledCount} lançamentos conciliados e ${suggestedCount} sugestões aplicadas (${Array.from(appliedRulesSet).join(', ')}).`
     });
   }
@@ -294,10 +299,13 @@ export function applyReconciliationRules(
  * explicando com precisão por que cada transação conciliou ou por que NÃO conciliou.
  */
 export function generateReconciliationDiagnostics(
-  accountId: string,
+  accountId?: string,
   toleranceThreshold: number = 75
 ): ReconciliationDiagnosticLog[] {
-  const allStatements = storage.getStatementEntries().filter(s => s.bankAccountId === accountId);
+  const allStatements = storage.getStatementEntries().filter(s => {
+    if (accountId && accountId !== 'ALL' && s.bankAccountId !== accountId) return false;
+    return true;
+  });
   const allTitles = storage.getTitles();
   const counterparties = storage.getCounterparties();
   const counterpartyMap = new Map(counterparties.map(c => [c.id, c]));
