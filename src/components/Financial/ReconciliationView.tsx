@@ -32,7 +32,9 @@ import {
   Zap, 
   BookmarkPlus, 
   Scale, 
-  Bot 
+  Bot,
+  RotateCcw,
+  Undo2
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -111,6 +113,13 @@ export const ReconciliationView: React.FC = () => {
     totalTitles: number;
     difference: number;
     onConfirm: () => void;
+  } | null>(null);
+
+  // Modal de Confirmação para Desconciliação / Estorno Seguro (Opção 2)
+  const [unreconcileModal, setUnreconcileModal] = useState<{
+    isOpen: boolean;
+    stmt: BankStatementEntry;
+    matchedTitle?: FinancialTitle | null;
   } | null>(null);
 
   // Active selections for two-column pairing & multi-selection
@@ -602,6 +611,176 @@ export const ReconciliationView: React.FC = () => {
     setAdjInterest(0);
     setAdjFine(0);
     setAdjDiscount(Math.max(0, Math.round((p - stmtAbsAmount) * 100) / 100));
+  };
+
+  // Opção 1: Atalho de Auto-Conciliação Expressa com 1 Clique (Score 100% Exato ou Equalizado)
+  const handleDirectExpressReconcile = (stmt: BankStatementEntry, title: FinancialTitle) => {
+    if (!stmt || !title) return;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const stmtAbs = Math.round(Math.abs(Number(stmt.amount) || 0) * 100) / 100;
+      const titleBal = title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount;
+      
+      let p = titleBal;
+      let interest = 0;
+      let fine = 0;
+      let discount = 0;
+
+      // Se este for o par selecionado e o usuário já ajustou nos botões de equalização
+      if (selectedStmt?.id === stmt.id && selectedTitle?.id === title.id) {
+        p = adjPrincipal;
+        interest = adjInterest;
+        fine = adjFine;
+        discount = adjDiscount;
+      } else {
+        const diff = Math.round((stmtAbs - titleBal) * 100) / 100;
+        if (Math.abs(diff) < 0.005) {
+          p = titleBal;
+        } else if (diff > 0) {
+          p = titleBal;
+          interest = diff;
+        } else {
+          p = titleBal;
+          discount = Math.abs(diff);
+        }
+      }
+
+      // Se o título já estiver liquidado, apenas vincula
+      if (title.settlementState === 'LIQUIDADO' || title.balancePrincipal <= 0.005) {
+        const allStmts = storage.getStatementEntries();
+        const updatedStmts = allStmts.map(s => s.id === stmt.id ? {
+          ...s,
+          reconciliationStatus: 'CONCILIADO' as const,
+          matchedTitleId: title.id
+        } : s);
+        storage.saveStatementEntries(updatedStmts);
+
+        const allTitles = storage.getTitles();
+        const updatedTitles = allTitles.map(t => t.id === title.id ? {
+          ...t,
+          reconciliationStatus: 'CONCILIADO' as const,
+          updatedAt: new Date().toISOString()
+        } : t);
+        storage.saveTitles(updatedTitles);
+      } else {
+        // Título em aberto -> dar baixa contábil segura via FinancialEngine
+        const safeEffectiveDate = stmt.date > today ? today : stmt.date;
+        const safeBankAccountId = stmt.bankAccountId || selectedAccountId;
+
+        const res = FinancialEngine.postSettlement({
+          titleId: title.id,
+          settlementDate: safeEffectiveDate,
+          bankAccountId: safeBankAccountId,
+          principalSettled: p,
+          discount,
+          interest,
+          fine,
+          bankFee: 0,
+          notes: `Baixa via Conciliação Expressa 1-Clique (${stmt.description})${
+            interest > 0 || fine > 0 || discount > 0 ? ` [Ajuste: Juros ${formatBRL(interest)}, Multa ${formatBRL(fine)}, Desc ${formatBRL(discount)}]` : ''
+          }`,
+          voucherRef: stmt.fitId
+        });
+
+        if (!res.success) {
+          setErrorMsg(`Erro ao liquidar título: ${res.message}`);
+          return;
+        }
+
+        // Marca título como CONCILIADO
+        const allTitles = storage.getTitles();
+        const updatedTitles = allTitles.map(t => t.id === title.id ? {
+          ...t,
+          reconciliationStatus: 'CONCILIADO' as const,
+          updatedAt: new Date().toISOString()
+        } : t);
+        storage.saveTitles(updatedTitles);
+
+        // Marca extrato como CONCILIADO
+        const allStmts = storage.getStatementEntries();
+        const updatedStmts = allStmts.map(s => s.id === stmt.id ? {
+          ...s,
+          reconciliationStatus: 'CONCILIADO' as const,
+          matchedTitleId: title.id,
+          matchedMovementId: res.settlement?.id
+        } : s);
+        storage.saveStatementEntries(updatedStmts);
+      }
+
+      // Auditoria
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'CONCILIACAO_EXPRESSA_1_CLIQUE',
+        module: 'Conciliação Bancária',
+        recordId: stmt.id,
+        details: `⚡ Conciliação Expressa 1-Clique: Extrato "${stmt.description}" (${formatBRL(stmt.amount)}) cruzado e liquidado com título ${title.titleNumber}.`
+      });
+
+      setSuccessMsg(`⚡ Sucesso! Lançamento "${stmt.description}" conciliado com o título ${title.titleNumber} via Conciliação Expressa.`);
+      setSelectedStmtIds([]);
+      setSelectedTitleIds([]);
+      setRefreshKey(k => k + 1);
+    } catch (err: any) {
+      setErrorMsg(`Erro na conciliação expressa: ${err.message || 'Falha ao conciliar'}`);
+    }
+  };
+
+  // Opção 2: Desconciliação / Estorno Seguro (Undo/Rollback)
+  const handleUnreconcileConfirm = () => {
+    if (!unreconcileModal || !unreconcileModal.stmt) return;
+    const stmt = unreconcileModal.stmt;
+    try {
+      let revertedTitleNumber = '';
+      if (stmt.matchedTitleId) {
+        const currentTitles = storage.getTitles();
+        const matchedTitle = currentTitles.find(t => t.id === stmt.matchedTitleId);
+        if (matchedTitle) {
+          revertedTitleNumber = matchedTitle.titleNumber;
+          // Se o título foi liquidado/baixado, reabre o título restaurando o saldo contábil
+          if (matchedTitle.settlementState === 'LIQUIDADO' || matchedTitle.settledPrincipal > 0) {
+            FinancialEngine.reopenTitleToOpen(matchedTitle.id, `Desconciliação bancária do extrato "${stmt.description}"`);
+          } else {
+            // Se o título já era aberto ou apenas vinculado, desmarca reconciliationStatus
+            const updated = currentTitles.map(t => t.id === matchedTitle.id ? {
+              ...t,
+              reconciliationStatus: 'PENDENTE' as const,
+              updatedAt: new Date().toISOString()
+            } : t);
+            storage.saveTitles(updated);
+          }
+        }
+      }
+
+      // Atualiza o extrato para PENDENTE e desvincula IDs
+      const allStmts = storage.getStatementEntries();
+      const updatedStmts = allStmts.map(s => s.id === stmt.id ? {
+        ...s,
+        reconciliationStatus: 'PENDENTE' as const,
+        matchedTitleId: undefined,
+        matchedMovementId: undefined
+      } : s);
+      storage.saveStatementEntries(updatedStmts);
+
+      // Auditoria
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'DESCONCILIACAO_ESTORNO',
+        module: 'Conciliação Bancária',
+        recordId: stmt.id,
+        details: `Desconciliação realizada: Extrato "${stmt.description}" (${formatBRL(stmt.amount)}) desvinculado${revertedTitleNumber ? ` do título ${revertedTitleNumber}` : ''}.`
+      });
+
+      setSuccessMsg(`✓ Sucesso! Lançamento "${stmt.description}" foi desconciliado${revertedTitleNumber ? ` e o título ${revertedTitleNumber} foi reaberto no financeiro` : ''}.`);
+      setUnreconcileModal(null);
+      setRefreshKey(k => k + 1);
+    } catch (err: any) {
+      setErrorMsg(`Erro ao desconciliar: ${err.message || 'Falha na operação'}`);
+      setUnreconcileModal(null);
+    }
   };
 
   // Executa a conciliação em lote confirmada para múltiplos extratos e/ou múltiplos títulos
@@ -2214,34 +2393,120 @@ export const ReconciliationView: React.FC = () => {
       )}
 
       {/* TWO-COLUMN GRID */}
-      {/* Botão de conciliar simples e clean entre as colunas do extrato e dos pagamentos */}
+      {/* Botão de conciliar e equalizar simples e clean entre as colunas do extrato e dos pagamentos */}
       {selectedStmt && selectedTitle && (
         <div className="sticky top-20 z-30 -mb-2 flex items-center justify-center pointer-events-auto">
-          <div className="bg-slate-900/95 dark:bg-[#1B212D]/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-xl border border-amber-500/50 flex flex-wrap items-center justify-between gap-3 max-w-3xl w-full transition-all animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-2 text-xs truncate min-w-0">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
-              <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedStmt.description}</span>
-              <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedStmt.amount)}</span>
-              <span className="text-slate-400 mx-1 shrink-0">⇄</span>
-              <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedTitle.titleNumber}</span>
-              <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)}</span>
+          <div className="bg-slate-900/95 dark:bg-[#1B212D]/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-xl border border-amber-500/50 flex flex-col gap-2 max-w-3xl w-full transition-all animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+              <div className="flex items-center gap-2 text-xs truncate min-w-0">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
+                <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedStmt.description}</span>
+                <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedStmt.amount)}</span>
+                <span className="text-slate-400 mx-1 shrink-0">⇄</span>
+                <span className="font-semibold text-amber-300 truncate max-w-[140px] sm:max-w-[180px]">{selectedTitle.titleNumber}</span>
+                <span className="font-mono font-bold text-white shrink-0">{formatBRL(selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount)}</span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getScoreAssertivenessColor(currentPairScore).badgeClass}`}>
+                  {currentPairScore}% Assertividade
+                </span>
+
+                {isValues100PercentExact ? (
+                  <>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      ✓ 100% Exato
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDirectExpressReconcile(selectedStmt, selectedTitle)}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
+                      title="Conciliação Expressa em 1 Clique (Valores 100% conferidos)"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-white" />
+                      <span>⚡ 1-Clique</span>
+                    </button>
+                  </>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
+                    Diferença: {formatBRL(differenceToStatement)}
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenReconcileModal(selectedStmt, selectedTitle)}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
+                  title="Abrir Janela Flutuante de Conciliação"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Janela Completa</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getScoreAssertivenessColor(currentPairScore).badgeClass}`}>
-                {currentPairScore}% Assertividade
-              </span>
+            {/* Sugestões Automáticas de Juros / Multa / Desconto de Centavos (Opção 3) */}
+            {!isValues100PercentExact && (
+              <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="text-amber-400 font-semibold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Equalizar divergência na hora:
+                </span>
 
-              <button
-                type="button"
-                onClick={() => handleOpenReconcileModal(selectedStmt, selectedTitle)}
-                className="px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
-                title="Abrir Janela Flutuante de Conciliação"
-              >
-                <Check className="w-4 h-4 stroke-[3]" />
-                <span>Conciliar</span>
-              </button>
-            </div>
+                {differenceToStatement > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleApplyDiffAsInterest}
+                      className="px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Equaliza lançando a diferença como Juros"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>+ Juros ({formatBRL(differenceToStatement)})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyDiffAsFine}
+                      className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Equaliza lançando a diferença como Multa"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>+ Multa ({formatBRL(differenceToStatement)})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyStatementAsPrincipal}
+                      className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Ajusta o principal do título para o valor do extrato"
+                    >
+                      <Check className="w-2.5 h-2.5" />
+                      <span>Ajustar Principal</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleApplyDiffAsDiscount}
+                      className="px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Equaliza lançando a diferença como Desconto"
+                    >
+                      <Zap className="w-2.5 h-2.5 fill-emerald-400" />
+                      <span>- Desconto ({formatBRL(Math.abs(differenceToStatement))})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyStatementAsPrincipal}
+                      className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Ajusta o principal do título para o valor do extrato"
+                    >
+                      <Check className="w-2.5 h-2.5" />
+                      <span>Ajustar Principal</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2503,18 +2768,56 @@ export const ReconciliationView: React.FC = () => {
                       <div className="flex items-center gap-2.5 shrink-0">
                         {/* Botão simples e clean de Conciliar ao lado do card selecionado */}
                         {isSelected && (
+                          <div className="flex items-center gap-1.5">
+                            {isValues100PercentExact && selectedTitle && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDirectExpressReconcile(stmt, selectedTitle);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
+                                title="Conciliação Expressa em 1 Clique (Valores conferem 100%)"
+                              >
+                                <Zap className="w-3.5 h-3.5 fill-white" />
+                                <span>⚡ 1-Clique</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const target = selectedTitle || (stmt.suggestedTitleId ? titles.find(t => t.id === stmt.suggestedTitleId) : null);
+                                handleOpenReconcileModal(stmt, target || undefined);
+                              }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
+                              title="Conciliar imediatamente com o título selecionado"
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Conciliar</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Botão de Desconciliação para extratos já conciliados (Opção 2) */}
+                        {stmt.reconciliationStatus === 'CONCILIADO' && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const target = selectedTitle || (stmt.suggestedTitleId ? titles.find(t => t.id === stmt.suggestedTitleId) : null);
-                              handleOpenReconcileModal(stmt, target || undefined);
+                              const matched = titles.find(t => t.id === stmt.matchedTitleId);
+                              setUnreconcileModal({
+                                isOpen: true,
+                                stmt,
+                                matchedTitle: matched || null
+                              });
                             }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 cursor-pointer active:scale-95"
-                            title="Conciliar imediatamente com o título selecionado"
+                            className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30 flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
+                            title="Desfazer conciliação deste lançamento e reabrir título original"
                           >
-                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Conciliar</span>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Desconciliar</span>
                           </button>
                         )}
 
@@ -2537,23 +2840,60 @@ export const ReconciliationView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Vínculo info */}
+                    {/* Vínculo info com atalho de 1-Clique na Sugestão (Opção 1) */}
                     {stmt.reconciliationStatus === 'SUGESTAO' && suggestedTitle && (
-                      <div className="mt-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-slate-800 dark:text-slate-200 flex items-center justify-between">
-                        <div className="flex items-center space-x-1.5">
-                          <Link2 className="w-3.5 h-3.5 text-amber-500" />
-                          <span>Sugestão: <strong>{suggestedTitle.titleNumber}</strong> ({suggestedTitle.description})</span>
+                      <div className="mt-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2">
+                        <div className="flex items-center space-x-1.5 truncate min-w-0">
+                          <Link2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span className="truncate">Sugestão: <strong>{suggestedTitle.titleNumber}</strong> ({suggestedTitle.description})</span>
                         </div>
-                        <span className="font-bold text-amber-500">
-                          {formatBRL(suggestedTitle.balancePrincipal > 0 ? suggestedTitle.balancePrincipal : suggestedTitle.originalAmount)}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-bold text-amber-500 font-mono">
+                            {formatBRL(suggestedTitle.balancePrincipal > 0 ? suggestedTitle.balancePrincipal : suggestedTitle.originalAmount)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDirectExpressReconcile(stmt, suggestedTitle);
+                            }}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1 shadow-xs transition-colors cursor-pointer active:scale-95"
+                            title="Conciliar direto em 1 clique com esta sugestão"
+                          >
+                            <Zap className="w-2.5 h-2.5 fill-slate-950" />
+                            <span>1-Clique</span>
+                          </button>
+                        </div>
                       </div>
                     )}
 
                     {stmt.reconciliationStatus === 'CONCILIADO' && matchedTitle && (
-                      <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center space-x-1">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Auditado com {matchedTitle.titleNumber}</span>
+                      <div className="mt-2.5 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center justify-between gap-2">
+                        <div className="flex items-center space-x-1.5 truncate min-w-0">
+                          <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span className="truncate">Conciliado com: <strong>{matchedTitle.titleNumber}</strong> ({matchedTitle.description})</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                            {formatBRL(matchedTitle.originalAmount)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUnreconcileModal({
+                                isOpen: true,
+                                stmt,
+                                matchedTitle
+                              });
+                            }}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-bold text-rose-500 dark:text-rose-400 hover:bg-rose-500/15 border border-rose-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Desfazer conciliação e reabrir título no financeiro"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" />
+                            <span>Desfazer</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2781,8 +3121,23 @@ export const ReconciliationView: React.FC = () => {
                           </div>
 
                           {/* Botão simples e clean de Conciliar ao lado do card (entre a coluna do extrato e dos pagamentos) */}
-                          {isSelected ? (
-                            <div className="pt-0.5 flex-shrink-0">
+                          <div className="pt-0.5 flex items-center gap-1.5 flex-shrink-0">
+                            {selectedStmt && Math.abs(Math.abs(selectedStmt.amount) - (t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)) < 0.005 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDirectExpressReconcile(selectedStmt, t);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white border border-emerald-400 cursor-pointer active:scale-95"
+                                title="Conciliação Expressa em 1 Clique (Valores conferem 100%)"
+                              >
+                                <Zap className="w-3.5 h-3.5 fill-white" />
+                                <span>⚡ 1-Clique</span>
+                              </button>
+                            )}
+
+                            {isSelected ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -2796,9 +3151,7 @@ export const ReconciliationView: React.FC = () => {
                                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                                 <span>Conciliar</span>
                               </button>
-                            </div>
-                          ) : selectedStmt && score >= 40 ? (
-                            <div className="pt-0.5 flex-shrink-0">
+                            ) : selectedStmt && score >= 40 ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -2811,8 +3164,8 @@ export const ReconciliationView: React.FC = () => {
                                 <Check className="w-3 h-3 stroke-[2.5]" />
                                 <span>Conciliar</span>
                               </button>
-                            </div>
-                          ) : null}
+                            ) : null}
+                          </div>
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2 flex-wrap gap-y-1">
@@ -2835,6 +3188,27 @@ export const ReconciliationView: React.FC = () => {
                                   EM ABERTO
                                 </span>
                               )}
+
+                              {/* Indicação visual de divergência de centavos com o extrato ativo (Opção 3) */}
+                              {selectedStmt && (() => {
+                                const titleBal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
+                                const diff = Math.round((Math.abs(selectedStmt.amount) - titleBal) * 100) / 100;
+                                if (Math.abs(diff) < 0.005) {
+                                  return (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
+                                      ✓ Valor Exato (R$ 0,00)
+                                    </span>
+                                  );
+                                }
+                                if (Math.abs(diff) <= 100) {
+                                  return (
+                                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30">
+                                      {diff > 0 ? `+${formatBRL(diff)} (Juros/Multa)` : `-${formatBRL(Math.abs(diff))} (Desconto)`}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
 
                               <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100">
                                 {t.titleNumber}
@@ -3317,6 +3691,68 @@ export const ReconciliationView: React.FC = () => {
           handleCreateTitleFromAiSuggestion(stmt, sug);
         }}
       />
+
+      {/* Modal de Confirmação para Desconciliação / Estorno Seguro (Opção 2) */}
+      {unreconcileModal && unreconcileModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#131720] rounded-2xl border border-rose-500/40 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center space-x-3 text-rose-500">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Desfazer Conciliação</h3>
+                <p className="text-xs text-slate-500">Estorno Contábil e Restauração de Saldo</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Você tem certeza que deseja desconciliar o lançamento do extrato{' '}
+              <strong className="text-slate-900 dark:text-white font-semibold">"{unreconcileModal.stmt.description}"</strong> no valor de{' '}
+              <strong className="text-amber-500 font-mono font-bold">{formatBRL(Math.abs(unreconcileModal.stmt.amount))}</strong>?
+            </p>
+
+            {unreconcileModal.matchedTitle ? (
+              <div className="p-3 bg-slate-50 dark:bg-[#1B212D] rounded-xl border border-slate-200 dark:border-[#273040] space-y-1">
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Título Vinculado a Estornar/Reabrir:</span>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-900 dark:text-white truncate max-w-[240px]">
+                    {unreconcileModal.matchedTitle.titleNumber} - {unreconcileModal.matchedTitle.description}
+                  </span>
+                  <span className="font-mono font-bold text-amber-500 shrink-0">
+                    {formatBRL(unreconcileModal.matchedTitle.originalAmount)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  A baixa financeira será estornada, o saldo bancário da conta será recomposto e o título voltará para o status "EM ABERTO".
+                </p>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 italic">
+                O extrato voltará para o status "PENDENTE" na fila de conciliação desta conta.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100 dark:border-[#273040]">
+              <button
+                type="button"
+                onClick={() => setUnreconcileModal(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleUnreconcileConfirm}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Confirmar Desconciliação</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
