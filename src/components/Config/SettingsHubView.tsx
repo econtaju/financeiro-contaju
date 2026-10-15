@@ -156,9 +156,9 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
     },
     {
       id: 'IA',
-      label: 'Central de Agentes (IA)',
-      shortLabel: 'Central Agentes',
-      description: 'CFO Virtual, Auditor de Conciliação, Human-in-the-Loop e Gateway Serverless',
+      label: 'Inteligência Artificial (OpenCode Go)',
+      shortLabel: 'IA & Modelos',
+      description: 'Configurar chave OpenCode Go, sincronizar 37 modelos, conciliação e pareceres',
       icon: Bot,
       badge: storage.getAgentApprovals().filter(a => a.status === 'PENDENTE').length || undefined
     },

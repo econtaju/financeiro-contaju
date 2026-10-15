@@ -44,7 +44,10 @@ import { AiModelCatalogService } from '../../services/aiModelCatalogService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 
 export const AgentCenterView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'AGENTES' | 'APROVACOES' | 'RUNS' | 'GATEWAY'>('AGENTES');
+  const [activeTab, setActiveTab] = useState<'AGENTES' | 'APROVACOES' | 'RUNS' | 'GATEWAY'>(() => {
+    const cfg = AiService.getConfig();
+    return cfg.apiKey ? 'AGENTES' : 'GATEWAY';
+  });
   const [agents, setAgents] = useState<AgentDefinition[]>(() => AgentOrchestratorService.getAgents());
   const [approvals, setApprovals] = useState<AgentApprovalItem[]>(() => AgentOrchestratorService.getAllApprovals());
   const [runs, setRuns] = useState<AgentRunRecord[]>(() => storage.getAgentRuns());
@@ -68,6 +71,36 @@ export const AgentCenterView: React.FC = () => {
   // Mensagens de ação
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
   const [actionErrorMsg, setActionErrorMsg] = useState('');
+
+  // Sincroniza catálogo de modelos em tempo real na montagem
+  useEffect(() => {
+    setIsSyncingModels(true);
+    AiModelCatalogService.fetchCatalog(true)
+      .then(res => {
+        if (res.models && res.models.length > 0) {
+          setCatalogModels(res.models);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsSyncingModels(false));
+  }, []);
+
+  const handleRefreshCatalog = async () => {
+    setIsSyncingModels(true);
+    setActionSuccessMsg('');
+    setActionErrorMsg('');
+    try {
+      const res = await AiModelCatalogService.fetchCatalog(true);
+      setCatalogModels(res.models);
+      setActionSuccessMsg(`Catálogo atualizado com sucesso! ${res.models.length} modelos sincronizados com OpenCode Go.`);
+      setTimeout(() => setActionSuccessMsg(''), 5000);
+    } catch (err: any) {
+      setActionErrorMsg('Não foi possível sincronizar o catálogo online. Usando catálogo local.');
+      setTimeout(() => setActionErrorMsg(''), 5000);
+    } finally {
+      setIsSyncingModels(false);
+    }
+  };
 
   // Sincroniza com as alterações no storage
   useEffect(() => {
@@ -235,45 +268,97 @@ export const AgentCenterView: React.FC = () => {
           </div>
         </div>
 
-        {/* Status da Chave OpenCode Go no Top Banner */}
-        {aiConfig.apiKey ? (
-          <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-1 rounded-lg font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                OpenCode Go Conectado ({catalogModels.length} IAs disponíveis)
-              </span>
-              <span className="text-slate-300">
-                Modelo Ativo: <strong className="text-amber-400">{aiConfig.primaryModel}</strong>
-              </span>
+        {/* Painel Central de Conexão com OpenCode Go e Atualização de Modelos */}
+        <div className="mt-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-amber-950/20 to-slate-900 border border-purple-500/30 shadow-lg">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/40 shrink-0 mt-0.5">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <span>Configuração da Chave de API do OpenCode Go</span>
+                  </h3>
+                  {aiConfig.apiKey ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      Chave Ativa
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                      Cole sua chave abaixo
+                    </span>
+                  )}
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {catalogModels.length} IAs Carregadas
+                  </span>
+                  {aiConfig.primaryModel && (
+                    <span className="text-[11px] text-slate-300">
+                      Modelo: <strong className="text-amber-400">{aiConfig.primaryModel}</strong>
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                  {aiConfig.apiKey 
+                    ? 'Sua chave está vinculada e pronta para uso em todas as conciliações e relatórios executivos.' 
+                    : 'Insira sua chave OpenCode Go para ativar as IAs no sistema. Ao salvar, todos os modelos disponíveis serão importados automaticamente.'
+                  }
+                </p>
+              </div>
             </div>
+
             <button
               type="button"
-              onClick={() => setActiveTab('GATEWAY')}
-              className="text-amber-400 hover:text-amber-300 hover:underline font-semibold cursor-pointer text-xs flex items-center gap-1 self-start sm:self-auto"
+              onClick={handleRefreshCatalog}
+              disabled={isSyncingModels}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 disabled:opacity-50 self-stretch sm:self-auto"
             >
-              <span>Gerenciar Chave & Modelos</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingModels ? 'animate-spin text-purple-400' : 'text-slate-300'}`} />
+              <span>{isSyncingModels ? 'Sincronizando...' : 'Atualizar Catálogo (37 Modelos)'}</span>
             </button>
           </div>
-        ) : (
-          <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-500/10 p-3 rounded-xl border border-amber-500/30">
-            <div className="flex items-center gap-2.5 text-amber-300 text-xs">
-              <Key className="w-4 h-4 shrink-0 text-amber-400" />
-              <span>
-                <strong>Ativação Necessária:</strong> Insira sua chave do OpenCode Go para importar os modelos e habilitar a conciliação e pareceres de IA.
-              </span>
+
+          {/* Input Direto da Chave e Botão de Salvar/Atualizar */}
+          <div className="mt-3.5 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row gap-2.5">
+            <div className="relative flex-1">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="Cole sua API Key do OpenCode Go (opencode-zen-... ou sk-...)"
+                className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-700 bg-slate-950/80 text-xs font-mono text-white placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white p-1 cursor-pointer"
+                title={showApiKey ? 'Ocultar chave' : 'Exibir chave'}
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
+
             <button
               type="button"
-              onClick={() => setActiveTab('GATEWAY')}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors shrink-0 cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+              onClick={handleConnectOpenCodeGo}
+              disabled={isConnectingKey || !apiKeyInput.trim()}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
             >
-              <Key className="w-3.5 h-3.5" />
-              <span>Inserir Chave OpenCode Go</span>
+              {isConnectingKey ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Validando Chave & Modelos...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Salvar Chave & Atualizar Modelos Agora</span>
+                </>
+              )}
             </button>
           </div>
-        )}
+        </div>
 
         {/* Notificações de Ação */}
         {actionSuccessMsg && (
@@ -292,6 +377,24 @@ export const AgentCenterView: React.FC = () => {
 
       {/* Navegação entre Abas da Central */}
       <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setActiveTab('GATEWAY')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'GATEWAY'
+              ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+          }`}
+        >
+          <Key className="w-4 h-4 text-amber-500" />
+          <span>Catálogo de Modelos & Conexão ({catalogModels.length})</span>
+          {aiConfig.apiKey ? (
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          )}
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveTab('AGENTES')}
@@ -334,24 +437,6 @@ export const AgentCenterView: React.FC = () => {
         >
           <Activity className="w-4 h-4" />
           Trilha de Auditoria & Execuções ({runs.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('GATEWAY')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'GATEWAY'
-              ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
-          }`}
-        >
-          <Key className="w-4 h-4 text-amber-500" />
-          <span>Conexão OpenCode Go & IAs</span>
-          {aiConfig.apiKey ? (
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-          ) : (
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          )}
         </button>
       </div>
 
