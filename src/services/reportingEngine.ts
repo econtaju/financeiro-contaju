@@ -69,6 +69,7 @@ export class ReportingEngine {
     const titles = storage.getTitles().filter(t => t.documentState !== 'CANCELADO');
     const accounts = storage.getChartAccounts();
     const allSettlements = storage.getSettlements().filter(s => !s.isReversed);
+    const allMovements = storage.getMovements().filter(m => !m.isReversed);
 
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -177,6 +178,40 @@ export class ReportingEngine {
 
           monthlyCash[m] += monthSettled;
         }
+
+        // Computa encargos financeiros das baixas (tarifas, juros, multas)
+        if (accId === 'acc-4.2.04') { // Tarifas Bancárias
+          for (const s of allSettlements) {
+            if (s.settlementDate?.startsWith(monthStr) && (s.components?.bankFee || 0) > 0) {
+              monthlyCash[m] += s.components.bankFee;
+            }
+          }
+        } else if (accId === 'acc-4.2.01') { // Juros Pagos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(monthStr) && (s.components?.interest || 0) > 0) {
+              monthlyCash[m] += s.components.interest;
+            }
+          }
+        } else if (accId === 'acc-4.1.01') { // Juros Recebidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(monthStr) && (s.components?.interest || 0) > 0) {
+              monthlyCash[m] += s.components.interest;
+            }
+          }
+        }
+
+        // Movimentações financeiras avulsas diretas do extrato/caixa
+        for (const mov of allMovements) {
+          if (!mov.date || !mov.date.startsWith(monthStr)) continue;
+          const matchesMovementAcc = (mov as any).accountId === accId || 
+            (accId === 'acc-4.2.04' && mov.originType === 'OPERACAO_DIRETA' && mov.description?.toLowerCase().includes('tarifa'));
+          if (matchesMovementAcc) {
+            monthlyCash[m] += mov.amount || 0;
+          }
+        }
+
         monthlyCash[m] = Math.round(monthlyCash[m] * 100) / 100;
       }
 

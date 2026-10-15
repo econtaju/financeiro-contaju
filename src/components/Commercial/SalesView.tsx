@@ -181,7 +181,8 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
 
-  const installmentValue = installmentsCount > 0 ? totalAmount / installmentsCount : totalAmount;
+  const installmentValues = useMemo(() => FinancialEngine.splitInstallments(totalAmount, installmentsCount), [totalAmount, installmentsCount]);
+  const installmentValue = installmentValues[0] || totalAmount;
 
   const handleOpenEdit = (s: Sale) => {
     setEditingSale(s);
@@ -323,10 +324,13 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
       const firstDueDay = parseInt(firstDueDate.split('-')[2], 10);
       const [compBaseYear, compBaseMonth] = competence.split('-').map(Number);
 
+      const splitAmounts = FinancialEngine.splitInstallments(totalAmount, installmentsCount);
+
       for (let i = 1; i <= installmentsCount; i++) {
         const dueDateStr = addMonthsSafe(firstDueDate, i - 1, firstDueDay);
         const titleId = `tit-sale-${Date.now()}-${i}`;
         generatedTitleIds.push(titleId);
+        const currentInstallmentAmount = splitAmounts[i - 1];
 
         const title: FinancialTitle = {
           id: titleId,
@@ -341,9 +345,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ onOpenBillingModal, initia
           issueDate: today,
           dueDate: dueDateStr,
           expectedCashDate: dueDateStr,
-          originalAmount: installmentValue,
+          originalAmount: currentInstallmentAmount,
           settledPrincipal: 0,
-          balancePrincipal: installmentValue,
+          balancePrincipal: currentInstallmentAmount,
           accruedInterest: 0,
           accruedFine: 0,
           documentState: 'CONFIRMADO',

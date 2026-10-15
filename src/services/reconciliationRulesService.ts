@@ -91,7 +91,6 @@ export function applyReconciliationRules(
   let suggestedCount = 0;
   const appliedRulesSet = new Set<string>();
   const diagnosticLogs: ReconciliationDiagnosticLog[] = [];
-  const newTitlesToSave: FinancialTitle[] = [];
   const updatedStatementsMap = new Map<string, BankStatementEntry>();
 
   const today = new Date().toISOString().split('T')[0];
@@ -135,24 +134,26 @@ export function applyReconciliationRules(
           dueDate: safeDueDate,
           expectedCashDate: safeDueDate,
           originalAmount: absAmount,
-          settledPrincipal: absAmount,
-          balancePrincipal: 0,
+          settledPrincipal: 0,
+          balancePrincipal: absAmount,
           accruedInterest: 0,
           accruedFine: 0,
           documentState: 'CONFIRMADO',
-          settlementState: 'LIQUIDADO',
+          settlementState: 'ABERTO',
           originType: 'MANUAL',
           reconciliationStatus: 'CONCILIADO',
           expectedBankAccountId: stmt.bankAccountId,
-          notes: `Lançado e liquidado automaticamente pela Regra de Conciliação "${matchedRule.name}"`,
+          notes: `Lançado automaticamente pela Regra de Conciliação "${matchedRule.name}"`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
 
-        newTitlesToSave.push(newTitle);
+        // 1. Persiste o título em aberto antes de chamar a baixa para que o motor encontre o registro
+        const currentTitles = storage.getTitles();
+        storage.saveTitles([newTitle, ...currentTitles]);
 
-        // 2. Registra a baixa contábil imediata
-        FinancialEngine.postSettlement({
+        // 2. Registra a baixa contábil imediata com validação de período contábil
+        const settlementRes = FinancialEngine.postSettlement({
           titleId: newTitle.id,
           settlementDate: safeDueDate,
           bankAccountId: stmt.bankAccountId,
@@ -165,39 +166,65 @@ export function applyReconciliationRules(
           voucherRef: stmt.fitId
         });
 
-        // 3. Atualiza o extrato
-        updatedStatementsMap.set(stmt.id, {
-          ...stmt,
-          reconciliationStatus: 'CONCILIADO',
-          matchedTitleId: newTitle.id,
-          ruleApplied: `REGRA: ${matchedRule.name}`
-        });
+        if (settlementRes.success) {
+          // 3. Atualiza o extrato apenas se a baixa contábil foi confirmada
+          updatedStatementsMap.set(stmt.id, {
+            ...stmt,
+            reconciliationStatus: 'CONCILIADO',
+            matchedTitleId: newTitle.id,
+            ruleApplied: `REGRA: ${matchedRule.name}`
+          });
 
-        reconciledCount++;
+          reconciledCount++;
 
-        diagnosticLogs.push({
-          id: `diag-rule-${stmt.id}-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          bankAccountId: stmt.bankAccountId,
-          stmtId: stmt.id,
-          fitId: stmt.fitId,
-          date: stmt.date,
-          amount: stmt.amount,
-          description: stmt.description,
-          status: 'REGRA_APLICADA',
-          ruleAppliedName: matchedRule.name,
-          toleranceThresholdUsed: 0,
-          bestCandidateTitleId: newTitle.id,
-          bestCandidateTitleNumber: newTitle.titleNumber,
-          bestCandidateScore: 100,
-          primaryReason: `Conciliado automaticamente pela Regra "${matchedRule.name}". Novo título ${titleNumber} gerado e quitado no ERP.`,
-          detailedReasons: [
-            `Descritor bancário atendeu ao padrão "${matchedRule.pattern}" (${matchedRule.matchType})`,
-            `Natureza contábil compatível: ${targetType}`,
-            `Conta contábil vinculada: ${chartAccounts.find(a => a.id === matchedRule?.chartAccountId)?.name || matchedRule.chartAccountId}`
-          ],
-          suggestedAction: 'JA_CONCILIADO'
-        });
+          diagnosticLogs.push({
+            id: `diag-rule-${stmt.id}-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            bankAccountId: stmt.bankAccountId,
+            stmtId: stmt.id,
+            fitId: stmt.fitId,
+            date: stmt.date,
+            amount: stmt.amount,
+            description: stmt.description,
+            status: 'REGRA_APLICADA',
+            ruleAppliedName: matchedRule.name,
+            toleranceThresholdUsed: 0,
+            bestCandidateTitleId: newTitle.id,
+            bestCandidateTitleNumber: newTitle.titleNumber,
+            bestCandidateScore: 100,
+            primaryReason: `Conciliado automaticamente pela Regra "${matchedRule.name}". Novo título ${titleNumber} gerado e liquidado com partida dobrada no ERP.`,
+            detailedReasons: [
+              `Descritor bancário atendeu ao padrão "${matchedRule.pattern}" (${matchedRule.matchType})`,
+              `Natureza contábil compatível: ${targetType}`,
+              `Conta contábil vinculada: ${chartAccounts.find(a => a.id === matchedRule?.chartAccountId)?.name || matchedRule.chartAccountId}`
+            ],
+            suggestedAction: 'JA_CONCILIADO'
+          });
+        } else {
+          // Em caso de falha na baixa (ex: período contábil fechado), reverte o título em aberto e emite log
+          const remainingTitles = storage.getTitles().filter(t => t.id !== newTitle.id);
+          storage.saveTitles(remainingTitles);
+
+          diagnosticLogs.push({
+            id: `diag-rule-${stmt.id}-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            bankAccountId: stmt.bankAccountId,
+            stmtId: stmt.id,
+            fitId: stmt.fitId,
+            date: stmt.date,
+            amount: stmt.amount,
+            description: stmt.description,
+            status: 'NAO_CONCILIADO',
+            ruleAppliedName: matchedRule.name,
+            toleranceThresholdUsed: 0,
+            bestCandidateScore: 0,
+            primaryReason: `Regra "${matchedRule.name}" não pôde ser liquidada: ${settlementRes.message}`,
+            detailedReasons: [
+              `Falha na liquidação contábil: ${settlementRes.message}`
+            ],
+            suggestedAction: 'CONCILIAR_MANUAL'
+          });
+        }
       } else {
         // Apenas sugerir
         updatedStatementsMap.set(stmt.id, {
@@ -230,11 +257,6 @@ export function applyReconciliationRules(
         });
       }
     }
-  }
-
-  // Persiste novos títulos gerados
-  if (newTitlesToSave.length > 0) {
-    storage.saveTitles([...newTitlesToSave, ...storage.getTitles()]);
   }
 
   // Persiste extratos atualizados

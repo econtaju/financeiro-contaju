@@ -176,6 +176,25 @@ export class FinancialEngine {
   }
 
   /**
+   * Divisão canônica de valor financeiro em parcelas exatas sem perda de centavos (IEEE 754 precision)
+   * Garante que a soma das parcelas retornadas seja 100% igual ao totalAmount original.
+   */
+  public static splitInstallments(totalAmount: number, count: number): number[] {
+    if (count <= 1) return [Math.round(totalAmount * 100) / 100];
+    
+    const totalCents = Math.round(totalAmount * 100);
+    const baseCentsPerInstallment = Math.floor(totalCents / count);
+    const remainderCents = totalCents - (baseCentsPerInstallment * count);
+
+    const installments: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const cents = i < remainderCents ? baseCentsPerInstallment + 1 : baseCentsPerInstallment;
+      installments.push(cents / 100);
+    }
+    return installments;
+  }
+
+  /**
    * Calculate effective bank balance
    * Saldo = Saldo Inicial + Entradas Efetivas - Saídas Efetivas
    */
@@ -2590,10 +2609,24 @@ export class FinancialEngine {
     const bank = storage.getBankAccounts().find(b => b.id === params.bankAccountId);
     if (!bank) return { success: false, error: 'Conta bancária pagadora não encontrada.' };
 
-    const currentUser = storage.getCurrentUser();
-    const today = params.paymentDate || new Date().toISOString().split('T')[0];
+    if (!params.amountPaid || params.amountPaid <= 0) {
+      return { success: false, error: 'O valor do pagamento da fatura deve ser maior que R$ 0,00.' };
+    }
 
-    // 1. Create FinancialMovement (SAÍDA from PJ bank account)
+    const today = params.paymentDate || new Date().toISOString().split('T')[0];
+    const paymentMonth = today.substring(0, 7);
+
+    // Validação estrita de fechamento de período contábil
+    if (this.isPeriodClosed(params.invoiceMonth) || this.isPeriodClosed(paymentMonth)) {
+      return { 
+        success: false, 
+        error: `O período financeiro (${params.invoiceMonth} ou ${paymentMonth}) encontra-se encerrado para movimentações ou baixas.` 
+      };
+    }
+
+    const currentUser = storage.getCurrentUser();
+
+    // 1. Cria a movimentação financeira (SAÍDA bancária na data de pagamento)
     const movementId = `mov-ccpay-${Date.now()}`;
     const newMovement: FinancialMovement = {
       id: movementId,
@@ -2609,42 +2642,35 @@ export class FinancialEngine {
     };
     storage.saveMovements([newMovement, ...storage.getMovements()]);
 
-    // 2. Mark installments in purchases as settled
-    const purchases = storage.getCardPurchases();
-    const updatedPurchases = purchases.map(pur => {
-      if (pur.cardId !== params.cardId) return pur;
-      const updatedInstallments = pur.installments.map(inst => {
-        if (inst.invoiceMonth === params.invoiceMonth) {
-          return {
-            ...inst,
-            settled: true,
-            settledAt: today,
-            settlementId: movementId
-          };
-        }
-        return inst;
-      });
-      return { ...pur, installments: updatedInstallments };
-    });
-    storage.saveCardPurchases(updatedPurchases);
-
-    // 3. Mark matching FinancialTitle as LIQUIDADO in Contas a Pagar
+    // 2. Localiza os títulos a pagar da fatura
     const titles = storage.getTitles();
     const matchingTitles = titles.filter(t => 
       t.creditCardId === params.cardId && 
       t.creditCardInvoiceMonth === params.invoiceMonth &&
-      t.type === 'PAGAR'
+      t.type === 'PAGAR' &&
+      t.documentState !== 'CANCELADO'
     );
 
     const settlementIds: string[] = [];
     const currentSettlements = storage.getSettlements();
     const newSettlements: Settlement[] = [];
 
-    const updatedTitles = titles.map(t => {
-      const match = matchingTitles.find(mt => mt.id === t.id);
-      if (!match) return t;
+    // Alocação exata do valor pago (quitação total ou parcial sem perda de centavos)
+    let remainingToAllocate = Math.round(params.amountPaid * 100) / 100;
+    const fullySettledTitleIds = new Set<string>();
 
-      const settId = `sett-cc-${t.id}-${Date.now()}`;
+    const updatedTitles = titles.map(t => {
+      const isMatch = matchingTitles.some(mt => mt.id === t.id);
+      if (!isMatch || t.balancePrincipal <= 0) return t;
+
+      if (remainingToAllocate <= 0) {
+        return t; // Valor pago já foi totalmente alocado a títulos anteriores
+      }
+
+      const settleAmount = Math.min(t.balancePrincipal, remainingToAllocate);
+      remainingToAllocate = Math.round((remainingToAllocate - settleAmount) * 100) / 100;
+
+      const settId = `sett-cc-${t.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       settlementIds.push(settId);
 
       newSettlements.push({
@@ -2654,24 +2680,32 @@ export class FinancialEngine {
         settlementDate: today,
         bankAccountId: params.bankAccountId,
         components: {
-          principalSettled: t.balancePrincipal,
+          principalSettled: settleAmount,
           discount: 0,
           interest: 0,
           fine: 0,
           bankFee: 0,
-          netFinancialAmount: t.balancePrincipal
+          netFinancialAmount: settleAmount
         },
-        notes: `Liquidado via Pagamento de Fatura do Cartão ${card.name}`,
+        notes: `Liquidado via Pagamento de Fatura do Cartão ${card.name}${settleAmount < t.balancePrincipal ? ' (Amortização Parcial)' : ''}`,
         isReversed: false,
         createdAt: new Date().toISOString(),
         createdBy: currentUser.name
       });
 
+      const newBalance = Math.round((t.balancePrincipal - settleAmount) * 100) / 100;
+      const newSettled = Math.round(((t.settledPrincipal || 0) + settleAmount) * 100) / 100;
+      const isComplete = newBalance <= 0;
+
+      if (isComplete) {
+        fullySettledTitleIds.add(t.id);
+      }
+
       return {
         ...t,
-        settledPrincipal: t.originalAmount,
-        balancePrincipal: 0,
-        settlementState: 'LIQUIDADO' as TitleSettlementState,
+        settledPrincipal: newSettled,
+        balancePrincipal: Math.max(0, newBalance),
+        settlementState: (isComplete ? 'LIQUIDADO' : 'PARCIAL') as TitleSettlementState,
         expectedBankAccountId: params.bankAccountId,
         updatedAt: new Date().toISOString()
       };
@@ -2681,6 +2715,27 @@ export class FinancialEngine {
     if (newSettlements.length > 0) {
       storage.saveSettlements([...newSettlements, ...currentSettlements]);
     }
+
+    // 3. Atualiza parcelas nas compras com cartão
+    const purchases = storage.getCardPurchases();
+    const updatedPurchases = purchases.map(pur => {
+      if (pur.cardId !== params.cardId) return pur;
+      const updatedInstallments = pur.installments.map(inst => {
+        if (inst.invoiceMonth === params.invoiceMonth) {
+          // Se a fatura foi paga totalmente ou se o título vinculado foi quitado
+          const isSettled = remainingToAllocate <= 0 || fullySettledTitleIds.size === matchingTitles.length;
+          return {
+            ...inst,
+            settled: isSettled,
+            settledAt: isSettled ? today : inst.settledAt,
+            settlementId: isSettled ? movementId : inst.settlementId
+          };
+        }
+        return inst;
+      });
+      return { ...pur, installments: updatedInstallments };
+    });
+    storage.saveCardPurchases(updatedPurchases);
 
     // 4. Record invoice payment
     storage.addCardInvoicePayment({

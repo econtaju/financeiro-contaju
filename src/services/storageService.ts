@@ -641,16 +641,25 @@ class StorageService {
       return { success: false, error: 'Este usuário está inativo. Solicite liberação ao administrador.' };
     }
 
-    const expectedPass = user.password || 'contaju123';
-    // Aceita a senha do usuário ou padrão contaju123
-    const isPasswordValid = 
-      !password || 
-      password.trim() === expectedPass || 
-      password.trim() === 'contaju123' ||
-      (isMaster && (password.trim() === 'contaju123' || password.trim() === expectedPass));
+    if (!password || !password.trim()) {
+      return { success: false, error: 'Por favor, informe sua senha de acesso.' };
+    }
+
+    const trimmedPass = password.trim();
+    const hasCustomPassword = Boolean(user.password && user.password !== 'contaju123');
+
+    // Validação estrita de credenciais:
+    // Se o usuário já cadastrou senha personalizada, apenas ela é aceita.
+    // Para novos usuários ou conta inicial, aceita a senha cadastrada ou a padrão "contaju123".
+    let isPasswordValid = false;
+    if (hasCustomPassword) {
+      isPasswordValid = trimmedPass === user.password;
+    } else {
+      isPasswordValid = trimmedPass === (user.password || 'contaju123') || trimmedPass === 'contaju123';
+    }
 
     if (!isPasswordValid) {
-      return { success: false, error: 'Senha incorreta. A senha padrão do Gestor Geral é "contaju123".' };
+      return { success: false, error: 'Senha incorreta. Verifique suas credenciais de acesso.' };
     }
 
     // Se o usuário estiver com 2FA habilitado, dispara código e solicita verificação
@@ -681,8 +690,7 @@ class StorageService {
         success: true,
         requiresTwoFactor: true,
         twoFactorUserId: user.id,
-        maskedEmail,
-        devCode: code
+        maskedEmail
       };
     }
 
@@ -794,7 +802,7 @@ class StorageService {
       console.warn('Falha no reenvio do e-mail 2FA:', err);
     }
 
-    return { success: true, devCode: code };
+    return { success: true };
   }
 
   public toggleTwoFactor(userId: string, enabled?: boolean): { success: boolean; user?: User } {
@@ -872,7 +880,7 @@ class StorageService {
       // ignore
     }
 
-    return { success: true, devCode: code };
+    return { success: true };
   }
 
   public resetPasswordWithCode(
@@ -1261,6 +1269,19 @@ class StorageService {
     this.saveSales([sale, ...filtered]);
   }
 
+  private splitMonetaryInstallments(totalAmount: number, count: number): number[] {
+    if (count <= 1) return [Math.round(totalAmount * 100) / 100];
+    const totalCents = Math.round(totalAmount * 100);
+    const baseCents = Math.floor(totalCents / count);
+    const remainder = totalCents - (baseCents * count);
+    const result: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const cents = i < remainder ? baseCents + 1 : baseCents;
+      result.push(cents / 100);
+    }
+    return result;
+  }
+
   public updateSale(updatedSale: Sale, updateLinkedTitles = true): void {
     const sales = this.getSales();
     const existingSale = sales.find(s => s.id === updatedSale.id);
@@ -1279,7 +1300,9 @@ class StorageService {
           const isSettled = t.settlementState === 'LIQUIDADO';
           const newAmount = updatedSale.netTotal || updatedSale.grossTotal;
           const totalInst = t.totalInstallments || updatedSale.installmentsCount || 1;
-          const installmentAmount = totalInst > 1 ? Number((newAmount / totalInst).toFixed(2)) : newAmount;
+          const splitAmounts = this.splitMonetaryInstallments(newAmount, totalInst);
+          const instIdx = t.installmentIndex || 1;
+          const installmentAmount = splitAmounts[instIdx - 1] || splitAmounts[0] || newAmount;
 
           const updatedDocState = updatedSale.status === 'CANCELADA' && !isSettled 
             ? ('CANCELADO' as const) 
@@ -1936,20 +1959,26 @@ class StorageService {
     const movements = this.getMovements();
     const bankAccounts = this.getBankAccounts();
 
-    const titlesToDelete = titles.filter(t => setIds.has(t.id));
+    // Trava de integridade contábil: títulos de períodos encerrados são estritamente preservados
+    const closures = this.getPeriodClosures();
+    const closedMonths = new Set(closures.filter(c => c.isClosed).map(c => c.yearMonth));
+
+    const titlesToDelete = titles.filter(t => setIds.has(t.id) && !closedMonths.has(t.competence));
     const deletedCount = titlesToDelete.length;
     if (deletedCount === 0) return { deletedCount: 0, affectedSettlements: 0 };
 
+    const validDeleteIds = new Set(titlesToDelete.map(t => t.id));
+
     // 1. Remove titles from titles list and record IDs to prevent future resurrection
-    const remainingTitles = titles.filter(t => !setIds.has(t.id));
+    const remainingTitles = titles.filter(t => !validDeleteIds.has(t.id));
     this.saveTitles(remainingTitles);
 
     const currentDeleted = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
-    const updatedDeleted = Array.from(new Set([...currentDeleted, ...ids]));
+    const updatedDeleted = Array.from(new Set([...currentDeleted, ...Array.from(validDeleteIds)]));
     this.set(STORAGE_KEYS.DELETED_TITLE_IDS, updatedDeleted);
 
     // 2. Identify linked settlements to reverse balances and clean up
-    const linkedSettlements = settlements.filter(s => setIds.has(s.titleId));
+    const linkedSettlements = settlements.filter(s => validDeleteIds.has(s.titleId));
     const affectedSettlements = linkedSettlements.length;
 
     if (affectedSettlements > 0) {

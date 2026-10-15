@@ -276,7 +276,7 @@ CREATE INDEX IF NOT EXISTS idx_contaju_titles_settlement_state ON contaju_financ
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS contaju_settlements (
   id TEXT PRIMARY KEY,
-  title_id TEXT NOT NULL REFERENCES contaju_financial_titles(id) ON DELETE CASCADE,
+  title_id TEXT NOT NULL REFERENCES contaju_financial_titles(id) ON DELETE RESTRICT,
   settlement_number TEXT NOT NULL,
   settlement_date DATE NOT NULL,
   bank_account_id TEXT NOT NULL REFERENCES contaju_bank_accounts(id) ON DELETE RESTRICT,
@@ -503,6 +503,9 @@ $$;
 -- ==============================================================================
 -- 22. CONFIGURAÇÃO DE ROW LEVEL SECURITY (RLS)
 -- ==============================================================================
+-- Habilita RLS em todas as tabelas contaju_* para proteção de dados financeiros.
+-- Em produção, o acesso é restrito ao contexto autenticado (auth.role() = 'authenticated')
+-- e a Service Role Key do backend para sincronização e webhooks.
 DO $$
 DECLARE
   t text;
@@ -519,7 +522,16 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', t);
     EXECUTE format('DROP POLICY IF EXISTS "Public access for contaju" ON %I;', t);
-    EXECUTE format('CREATE POLICY "Public access for contaju" ON %I FOR ALL USING (true) WITH CHECK (true);', t);
+    EXECUTE format('DROP POLICY IF EXISTS "Allow authenticated access for contaju" ON %I;', t);
+    
+    -- Política restrita a usuários autenticados ou service_role
+    EXECUTE format('
+      CREATE POLICY "Allow authenticated access for contaju" ON %I
+      FOR ALL
+      TO authenticated, service_role
+      USING (true)
+      WITH CHECK (true);
+    ', t);
   END LOOP;
 END;
 $$;

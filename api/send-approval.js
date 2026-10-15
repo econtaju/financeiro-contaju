@@ -1,8 +1,7 @@
 export default async function handler(req, res) {
-  // Configurar CORS caso necessário
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // Configurar CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
@@ -18,10 +17,10 @@ export default async function handler(req, res) {
   }
 
   const { to, subject, html, apiKey } = req.body || {};
-  const resendApiKey = apiKey || process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
+  const resendApiKey = process.env.RESEND_API_KEY || apiKey;
 
   if (!resendApiKey) {
-    return res.status(500).json({ error: 'Chave do Resend não configurada nas variáveis de ambiente (RESEND_API_KEY).' });
+    return res.status(500).json({ error: 'Chave do Resend não configurada nas variáveis de ambiente do servidor (RESEND_API_KEY).' });
   }
 
   if (!to || !subject || !html) {

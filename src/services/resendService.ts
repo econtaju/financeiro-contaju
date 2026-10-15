@@ -14,7 +14,7 @@ export const resendService = {
       const savedKey = localStorage.getItem('contaju_resend_api_key');
       if (savedKey) return savedKey;
     }
-    return (import.meta.env.VITE_RESEND_API_KEY as string) || '';
+    return '';
   },
 
   setApiKey(key: string) {
@@ -32,9 +32,9 @@ export const resendService = {
   },
 
   async sendEmail(to: string, subject: string, html: string): Promise<{ success: boolean; error?: string }> {
-    const apiKey = this.getApiKey();
+    const userCustomApiKey = this.getApiKey();
 
-    // 1. Tentar primeiro via Vercel Serverless Function (/api/send-approval)
+    // Envio seguro e isolado exclusivamente via Serverless Function (/api/send-approval)
     try {
       const serverlessRes = await fetch('/api/send-approval', {
         method: 'POST',
@@ -43,43 +43,22 @@ export const resendService = {
           to,
           subject,
           html,
-          apiKey
+          apiKey: userCustomApiKey || undefined
         })
       });
 
-      if (serverlessRes.ok) {
+      const resData = await serverlessRes.json().catch(() => ({}));
+
+      if (serverlessRes.ok && (resData.success || resData.id)) {
         return { success: true };
       }
-    } catch {
-      // Falha de rede ou offline na rota serverless, tenta fallback
-    }
-
-    // 2. Fallback direto para a API oficial do Resend
-    try {
-      const directRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'Contaju Sistema <onboarding@resend.dev>',
-          to: [to],
-          subject,
-          html
-        })
-      });
-
-      if (directRes.ok) {
-        return { success: true };
-      } else {
-        const errData = await directRes.json().catch(() => ({}));
-        console.warn('Aviso ao enviar via Resend direta:', errData);
-        return { success: true };
-      }
+      
+      const errorMessage = resData.error || resData.message || `Status HTTP ${serverlessRes.status}`;
+      console.warn('Aviso no envio de e-mail institucional:', errorMessage);
+      return { success: false, error: errorMessage };
     } catch (err: any) {
-      console.warn('Fallback de envio do e-mail:', err?.message || err);
-      return { success: true };
+      console.warn('Falha na comunicação com o serviço de e-mail:', err?.message || err);
+      return { success: false, error: err?.message || 'Serviço de e-mail temporariamente indisponível' };
     }
   },
 
