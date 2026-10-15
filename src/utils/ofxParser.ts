@@ -268,18 +268,31 @@ export function parseOFXFull(ofxContent: string): ParsedOfxResult {
     // Parse da Data
     const formattedDate = parseOfxDate(dtPosted);
 
-    // Formação da Descrição Rica e Limpa
-    const descriptionParts: string[] = [];
-    if (memo && memo.trim()) descriptionParts.push(memo.trim());
-    if (name && name.trim() && name.trim() !== memo?.trim()) descriptionParts.push(name.trim());
-    if (checkNum && !descriptionParts.some(d => d.includes(checkNum))) {
-      descriptionParts.push(`Doc: ${checkNum}`);
-    }
-    if (refNum && !descriptionParts.some(d => d.includes(refNum))) {
-      descriptionParts.push(`Ref: ${refNum}`);
+    // Formação da Descrição Rica e Limpa (sem duplicações redundantes)
+    let finalDesc = '';
+    const cleanMemo = (memo || '').trim();
+    const cleanName = (name || '').trim();
+
+    if (cleanMemo && cleanName) {
+      const lowerMemo = cleanMemo.toLowerCase();
+      const lowerName = cleanName.toLowerCase();
+      if (lowerMemo.includes(lowerName)) {
+        finalDesc = cleanMemo;
+      } else if (lowerName.includes(lowerMemo)) {
+        finalDesc = cleanName;
+      } else {
+        finalDesc = `${cleanMemo} - ${cleanName}`;
+      }
+    } else {
+      finalDesc = cleanMemo || cleanName;
     }
 
-    let finalDesc = descriptionParts.join(' - ').trim();
+    // Adiciona número de documento apenas se for documento real (diferente do código do banco)
+    const isDocCode = checkNum && checkNum !== bankId && checkNum !== '0' && !finalDesc.includes(checkNum);
+    if (isDocCode) {
+      finalDesc = `${finalDesc} - Doc: ${checkNum}`;
+    }
+
     if (!finalDesc) {
       finalDesc = parsedAmount < 0 ? 'Pagamento / Débito Bancário' : 'Recebimento / Crédito Bancário';
     }

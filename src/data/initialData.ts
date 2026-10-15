@@ -77,7 +77,24 @@ export const INITIAL_USERS: User[] = [
   }
 ];
 
-export const INITIAL_BANK_ACCOUNTS: BankAccount[] = [];
+export const INITIAL_BANK_ACCOUNTS: BankAccount[] = [
+  {
+    id: 'bank-077-inter',
+    institution: 'Banco Inter',
+    name: 'Banco Inter (Cta 437267326)',
+    bankCode: '077',
+    agency: '0001-9',
+    accountNumber: '437267326',
+    type: 'CORRENTE',
+    currency: 'BRL',
+    initialBalance: 8522.51,
+    currentBalance: 8522.51,
+    baseDate: '2026-10-01',
+    includeInCashFlow: true,
+    status: 'ATIVO',
+    color: '#f59e0b'
+  }
+];
 
 export const INITIAL_COUNTERPARTIES: Counterparty[] = [];
 

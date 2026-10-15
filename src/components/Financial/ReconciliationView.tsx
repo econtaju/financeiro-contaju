@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useDeferredValue } from 'react';
 import { 
   CheckCheck, 
   Upload, 
@@ -12,29 +12,29 @@ import {
   ArrowUpRight, 
   ArrowDownRight,
   Plus,
-  Sliders,
-  FileText,
-  Calendar,
-  Layers,
-  ArrowRight,
-  RefreshCw,
-  Trash2,
-  Info,
-  ChevronDown,
-  ChevronUp,
-  Calculator,
-  Wand2,
-  DollarSign,
-  Check,
-  X,
-  Settings2,
-  Wallet,
-  Zap,
-  BookmarkPlus,
-  Scale,
-  Bot
+  Sliders, 
+  FileText, 
+  Calendar, 
+  Layers, 
+  ArrowRight, 
+  RefreshCw, 
+  Trash2, 
+  Info, 
+  ChevronDown, 
+  ChevronUp, 
+  Calculator, 
+  Wand2, 
+  DollarSign, 
+  Check, 
+  X, 
+  Settings2, 
+  Wallet, 
+  Zap, 
+  BookmarkPlus, 
+  Scale, 
+  Bot 
 } from 'lucide-react';
-import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion } from '../../types';
+import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { parseOFX, parseOFXFull } from '../../utils/ofxParser';
@@ -46,6 +46,7 @@ import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 import { ReconciliationFloatingModal } from './ReconciliationFloatingModal';
 import { AiReconciliationModal } from './AiReconciliationModal';
 import { applyReconciliationRules, learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
+import { BANCO_INTER_ACCOUNT, BANCO_INTER_OFX_TRANSACTIONS } from '../../data/interOfxTrainingData';
 
 export const ReconciliationView: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -68,14 +69,19 @@ export const ReconciliationView: React.FC = () => {
   const accounts = useMemo(() => {
     try {
       const data = storage.getBankAccounts();
-      return Array.isArray(data) ? data.filter(Boolean) : [];
+      const list = Array.isArray(data) ? data.filter(Boolean) : [];
+      if (list.length === 0) {
+        storage.saveBankAccounts([BANCO_INTER_ACCOUNT]);
+        return [BANCO_INTER_ACCOUNT];
+      }
+      return list;
     } catch (err) {
       console.error('Erro ao ler contas bancárias:', err);
-      return [];
+      return [BANCO_INTER_ACCOUNT];
     }
   }, [refreshKey]);
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(accounts[0]?.id || 'acc-1');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(accounts[0]?.id || BANCO_INTER_ACCOUNT.id);
 
   // Atualiza a conta selecionada se a lista mudar ou se a conta atual não existir mais
   useEffect(() => {
@@ -86,7 +92,9 @@ export const ReconciliationView: React.FC = () => {
 
   const [statementFilter, setStatementFilter] = useState<'ALL' | 'PENDENTE' | 'SUGESTAO' | 'CONCILIADO'>('PENDENTE');
   const [searchStmt, setSearchStmt] = useState('');
+  const deferredSearchStmt = useDeferredValue(searchStmt);
   const [searchTitle, setSearchTitle] = useState('');
+  const deferredSearchTitle = useDeferredValue(searchTitle);
   const [toleranceThreshold, setToleranceThreshold] = useState<number>(75); // % de similaridade mínima (default 75% - Forte)
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -284,15 +292,15 @@ export const ReconciliationView: React.FC = () => {
     return accountStatements.filter(s => {
       if (!s) return false;
       if (statementFilter !== 'ALL' && s.reconciliationStatus !== statementFilter) return false;
-      if (searchStmt) {
-        const q = normalizeForSearch(searchStmt);
+      if (deferredSearchStmt) {
+        const q = normalizeForSearch(deferredSearchStmt);
         const match = normalizeForSearch(s.description || '').includes(q) || 
                       normalizeForSearch(s.fitId || '').includes(q);
         if (!match) return false;
       }
       return true;
     });
-  }, [accountStatements, statementFilter, searchStmt]);
+  }, [accountStatements, statementFilter, deferredSearchStmt]);
 
   const selectedStmtId = selectedStmtIds[0] || null;
   const selectedTitleId = selectedTitleIds[0] || null;
@@ -1340,7 +1348,68 @@ export const ReconciliationView: React.FC = () => {
           return;
         }
 
-        const targetAccountId = selectedAccountId || accounts[0]?.id || 'acc-1';
+        // Resolução inteligente da conta bancária:
+        // 1. Procura conta bancária correspondente por número de conta ou código do banco
+        const currentBankAccounts = storage.getBankAccounts();
+        const rawOfxAcct = (parsedResult.accountId || '').replace(/\D/g, '');
+        const rawOfxBank = (parsedResult.bankId || '').trim();
+
+        let targetAccount = currentBankAccounts.find(a => {
+          const aAcct = (a.accountNumber || '').replace(/\D/g, '');
+          const aBank = (a.bankCode || '').trim();
+          if (rawOfxAcct && aAcct && (aAcct === rawOfxAcct || aAcct.includes(rawOfxAcct) || rawOfxAcct.includes(aAcct))) {
+            return true;
+          }
+          if (rawOfxBank && aBank && (aBank === rawOfxBank || aBank === `0${rawOfxBank}` || `0${aBank}` === rawOfxBank)) {
+            return true;
+          }
+          return false;
+        });
+
+        // 2. Se não encontrou por dados bancários, verifica a conta atualmente selecionada
+        if (!targetAccount) {
+          targetAccount = currentBankAccounts.find(a => a.id === selectedAccountId);
+        }
+
+        // 3. Se nenhuma conta existir ou bater, cria automaticamente com os dados do OFX
+        if (!targetAccount) {
+          const bankName = rawOfxBank === '077' || rawOfxBank === '77' ? 'Banco Inter' :
+                           (rawOfxBank === '260' || rawOfxBank === '0260') ? 'Nubank' :
+                           rawOfxBank === '001' || rawOfxBank === '1' ? 'Banco do Brasil' :
+                           rawOfxBank === '237' ? 'Bradesco' :
+                           rawOfxBank === '341' ? 'Itaú' :
+                           rawOfxBank === '033' || rawOfxBank === '33' ? 'Santander' :
+                           rawOfxBank === '756' ? 'Sicoob' :
+                           rawOfxBank === '748' ? 'Sicredi' :
+                           rawOfxBank === '104' ? 'Caixa Econômica Federal' :
+                           `Banco (${rawOfxBank || 'OFX'})`;
+
+          const newAcc: BankAccount = {
+            id: `bank-${rawOfxBank || '077'}-${Date.now()}`,
+            institution: bankName,
+            name: `${bankName} (Cta ${parsedResult.accountId || 'Principal'})`,
+            bankCode: rawOfxBank || '077',
+            agency: parsedResult.branchId || '0001-9',
+            accountNumber: parsedResult.accountId || '437267326',
+            type: 'CORRENTE',
+            currency: 'BRL',
+            initialBalance: parsedResult.ledgerBalance !== undefined ? parsedResult.ledgerBalance : 0,
+            currentBalance: parsedResult.ledgerBalance !== undefined ? parsedResult.ledgerBalance : 0,
+            baseDate: parsedResult.ledgerDate || new Date().toISOString().split('T')[0],
+            includeInCashFlow: true,
+            status: 'ATIVO',
+            color: '#f59e0b'
+          };
+
+          storage.saveBankAccounts([...currentBankAccounts, newAcc]);
+          targetAccount = newAcc;
+        }
+
+        const targetAccountId = targetAccount.id;
+        setSelectedAccountId(targetAccountId);
+        setStatementFilter('ALL');
+        setSearchStmt('');
+
         const currentStatements = storage.getStatementEntries();
         const batchId = `batch-ofx-${Date.now()}`;
 
@@ -1394,7 +1463,7 @@ export const ReconciliationView: React.FC = () => {
           });
 
           storage.saveStatementEntries(updatedAll);
-          setSuccessMsg(`Extrato OFX "${file.name}" reimportado: ${alreadyExistingCount} lançamentos conferidos (${refreshedCount} pendentes atualizados com dados mais recentes).`);
+          setSuccessMsg(`Extrato OFX "${file.name}" sincronizado: ${alreadyExistingCount} lançamentos conferidos na conta ${targetAccount.name} (${refreshedCount} pendentes atualizados).`);
           setRefreshKey(k => k + 1);
           setIsImportingOfx(false);
           return;
@@ -1402,15 +1471,23 @@ export const ReconciliationView: React.FC = () => {
 
         storage.saveStatementEntries([...newEntries, ...currentStatements]);
 
+        // Aplica regras de conciliação De-Para automaticamente nos novos lançamentos
+        try {
+          const currentUser = storage.getCurrentUser();
+          applyReconciliationRules(targetAccountId, currentUser);
+        } catch (ruleErr) {
+          console.warn('Aplicação de regras De-Para pós-importação:', ruleErr);
+        }
+
         // Feedback enriquecido com saldo do banco se presente
         const balanceInfo = parsedResult.ledgerBalance !== undefined 
           ? ` • Saldo Informado pelo Banco: ${formatBRL(parsedResult.ledgerBalance)}`
           : '';
 
         if (alreadyExistingCount > 0) {
-          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} novas transações adicionadas (${alreadyExistingCount} já existiam e foram preservadas sem duplicidade)${balanceInfo}.`);
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso na conta ${targetAccount.name}! ${newEntries.length} novas transações adicionadas (${alreadyExistingCount} já existiam)${balanceInfo}.`);
         } else {
-          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso! ${newEntries.length} transações adicionadas à conta bancária${balanceInfo}.`);
+          setSuccessMsg(`Extrato OFX "${file.name}" importado com sucesso na conta ${targetAccount.name}! ${newEntries.length} transações adicionadas${balanceInfo}.`);
         }
 
         setRefreshKey(k => k + 1);
@@ -1466,44 +1543,49 @@ export const ReconciliationView: React.FC = () => {
     }
   };
 
-  // Quick simulation sample OFX
+  // Carga e treino com o extrato real do Banco Inter (36 transações)
   const handleSimulateOFX = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const newEntries: BankStatementEntry[] = [
-      {
-        id: `stmt-imp-${Date.now()}-1`,
-        importBatchId: `batch-${Date.now()}`,
-        bankAccountId: selectedAccountId,
-        fitId: `FITID-${Math.floor(Math.random() * 900000)}`,
-        date: today,
-        amount: 3200.00,
-        description: 'TED RECEBIDA - ALPHA ENGENHARIA LTDA',
-        reconciliationStatus: 'PENDENTE'
-      },
-      {
-        id: `stmt-imp-${Date.now()}-2`,
-        importBatchId: `batch-${Date.now()}`,
-        bankAccountId: selectedAccountId,
-        fitId: `FITID-${Math.floor(Math.random() * 900000)}`,
-        date: today,
-        amount: -450.00,
-        description: 'PAGTO ELETRONICO - INTERNET FIBRA OPTICA',
-        reconciliationStatus: 'PENDENTE'
-      },
-      {
-        id: `stmt-imp-${Date.now()}-3`,
-        importBatchId: `batch-${Date.now()}`,
-        bankAccountId: selectedAccountId,
-        fitId: `FITID-${Math.floor(Math.random() * 900000)}`,
-        date: today,
-        amount: -89.90,
-        description: 'TARIFA BANCARIA PACOTE CONTA PJ',
-        reconciliationStatus: 'PENDENTE'
-      }
-    ];
+    // 1. Garante que a conta Banco Inter está cadastrada e selecionada
+    const currentBanks = storage.getBankAccounts();
+    let interBank = currentBanks.find(b => b.bankCode === '077' || b.accountNumber === '437267326' || b.id === BANCO_INTER_ACCOUNT.id);
+    if (!interBank) {
+      storage.saveBankAccounts([...currentBanks, BANCO_INTER_ACCOUNT]);
+      interBank = BANCO_INTER_ACCOUNT;
+    }
+    setSelectedAccountId(interBank.id);
 
-    storage.saveStatementEntries([...newEntries, ...statements]);
-    setSuccessMsg(`3 lançamentos de extrato bancário inseridos para teste de conciliação.`);
+    const batchId = `batch-inter-train-${Date.now()}`;
+    const allStmts = storage.getStatementEntries();
+    const existingFitIds = new Set(allStmts.filter(s => s.bankAccountId === interBank!.id).map(s => s.fitId));
+
+    const newEntries: BankStatementEntry[] = BANCO_INTER_OFX_TRANSACTIONS
+      .filter(t => !existingFitIds.has(t.fitId))
+      .map(t => ({
+        ...t,
+        importBatchId: batchId,
+        bankAccountId: interBank!.id
+      }));
+
+    if (newEntries.length === 0) {
+      setSuccessMsg(`Extrato de treino do Banco Inter (36 transações) já carregado na conta ${interBank.name}.`);
+    } else {
+      storage.saveStatementEntries([...newEntries, ...allStmts]);
+      setSuccessMsg(`Extrato de treino do Banco Inter carregado com sucesso (${newEntries.length} transações importadas). Saldo do banco: R$ 8.522,51.`);
+    }
+
+    // Aplica regras de conciliação De-Para automáticas
+    try {
+      const currentUser = storage.getCurrentUser();
+      const rulesRes = applyReconciliationRules(interBank.id, currentUser);
+      if (rulesRes.suggestedCount > 0) {
+        setSuccessMsg(prev => `${prev} • ${rulesRes.suggestedCount} sugestões vinculadas por De-Para.`);
+      }
+    } catch {
+      // ignore
+    }
+
+    setStatementFilter('ALL');
+    setSearchStmt('');
     setRefreshKey(k => k + 1);
   };
 
@@ -1536,7 +1618,7 @@ export const ReconciliationView: React.FC = () => {
     }
 
     // 3. Pesquisa de texto com tolerância e acentuação via matchesSearch
-    if (searchTitle) {
+    if (deferredSearchTitle) {
       candidates = candidates.filter(t => {
         const person = counterpartyMap.get(t.counterpartyId);
         return matchesSearch([
@@ -1545,7 +1627,7 @@ export const ReconciliationView: React.FC = () => {
           person?.name,
           person?.tradeName,
           person?.document
-        ], searchTitle);
+        ], deferredSearchTitle);
       });
     }
 
@@ -1597,7 +1679,7 @@ export const ReconciliationView: React.FC = () => {
     });
 
     return scored;
-  }, [titles, selectedStmt, searchTitle, counterpartyMap, titleSettlementFilter]);
+  }, [titles, selectedStmt, deferredSearchTitle, counterpartyMap, titleSettlementFilter]);
 
   // Bidirecionalidade: se um título for selecionado e nenhum extrato estiver marcado,
   // filtra e ordena os extratos de acordo com a natureza do título (Pagar -> débitos, Receber -> créditos)
@@ -1638,6 +1720,18 @@ export const ReconciliationView: React.FC = () => {
 
     return scored;
   }, [filteredStatements, selectedTitle, selectedStmtId, counterpartyMap]);
+
+  // Controles de limitação para performance fluida e sem travamentos na listagem
+  const [stmtsDisplayLimit, setStmtsDisplayLimit] = useState(50);
+  const [titlesDisplayLimit, setTitlesDisplayLimit] = useState(50);
+
+  const visibleRankedStatements = useMemo(() => {
+    return rankedStatements.slice(0, stmtsDisplayLimit);
+  }, [rankedStatements, stmtsDisplayLimit]);
+
+  const visibleRankedTitles = useMemo(() => {
+    return rankedTitles.slice(0, titlesDisplayLimit);
+  }, [rankedTitles, titlesDisplayLimit]);
 
   // Match do par atualmente selecionado
   const currentPairMatch = useMemo(() => {
@@ -1687,7 +1781,12 @@ export const ReconciliationView: React.FC = () => {
     }
   };
 
-  // Atalhos de teclado para conciliação ágil (Sugestão 2: Enter / Espaço / Esc)
+  // Atalhos de teclado para conciliação ágil (com refs estáveis para nunca causar recriação de listeners)
+  const selectedStmtIdsRef = useRef(selectedStmtIds);
+  selectedStmtIdsRef.current = selectedStmtIds;
+  const selectedTitleIdsRef = useRef(selectedTitleIds);
+  selectedTitleIdsRef.current = selectedTitleIds;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignorar se o foco estiver em campo de entrada de formulário ou se houver modal aberto
@@ -1704,7 +1803,7 @@ export const ReconciliationView: React.FC = () => {
 
       // Atalho: ESC para limpar seleções ativas
       if (e.key === 'Escape') {
-        if (selectedStmtIds.length > 0 || selectedTitleIds.length > 0) {
+        if (selectedStmtIdsRef.current.length > 0 || selectedTitleIdsRef.current.length > 0) {
           e.preventDefault();
           handleClearSelection();
         }
@@ -1713,7 +1812,7 @@ export const ReconciliationView: React.FC = () => {
 
       // Atalho: Enter para abrir a janela flutuante de conciliação
       if (e.key === 'Enter') {
-        if (selectedStmtIds.length > 0 || selectedTitleIds.length > 0) {
+        if (selectedStmtIdsRef.current.length > 0 || selectedTitleIdsRef.current.length > 0) {
           e.preventDefault();
           setIsFloatingReconcileOpen(true);
         }
@@ -1722,21 +1821,40 @@ export const ReconciliationView: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isMultiSelection,
-    isMultiExact,
-    selectedStmtIds,
-    selectedTitleIds,
-    selectedStmt,
-    selectedTitle,
-    titles,
-    handleConfirmPairing,
-    handleClearSelection,
-    executeDirectReconciliation
-  ]);
+  }, []);
 
   return (
-    <div className="space-y-6" key={refreshKey}>
+    <div 
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingFile(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDraggingFile(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDraggingFile(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          processFile(e.dataTransfer.files[0]);
+        }
+      }}
+      className="space-y-6 relative"
+    >
+      {/* Full Page Overlay de Drag and Drop para arquivo OFX */}
+      {isDraggingFile && (
+        <div className="fixed inset-0 bg-amber-500/15 backdrop-blur-xs z-50 flex flex-col items-center justify-center border-4 border-dashed border-amber-500 rounded-3xl p-8 text-center pointer-events-none animate-in fade-in duration-200">
+          <div className="p-6 bg-slate-900/90 rounded-3xl border border-amber-500/50 shadow-2xl flex flex-col items-center max-w-md pointer-events-auto">
+            <Upload className="w-16 h-16 text-amber-400 animate-bounce mb-3" />
+            <h3 className="text-lg font-bold text-amber-200">Solte seu extrato OFX ou CSV aqui</h3>
+            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+              O sistema irá identificar automaticamente o banco, selecionar ou criar a conta bancária e importar todos os lançamentos com proteção anti-duplicidade.
+            </p>
+          </div>
+        </div>
+      )}
       
       {/* Hidden file input for real OFX */}
       <input 
@@ -2312,7 +2430,7 @@ export const ReconciliationView: React.FC = () => {
                 Nenhum lançamento no extrato para o filtro selecionado.
               </div>
             ) : (
-              rankedStatements.map(({ statement: stmt, match }) => {
+              visibleRankedStatements.map(({ statement: stmt, match }) => {
                 const isSelected = selectedStmtIds.includes(stmt.id);
                 const isCredit = stmt.amount > 0;
                 const suggestedTitle = titles.find(t => t.id === stmt.suggestedTitleId);
@@ -2440,6 +2558,18 @@ export const ReconciliationView: React.FC = () => {
                   </div>
                 );
               })
+            )}
+
+            {rankedStatements.length > stmtsDisplayLimit && (
+              <div className="p-3 text-center bg-slate-50 dark:bg-[#1B212D]/60 border-t border-slate-100 dark:border-[#273040]">
+                <button
+                  type="button"
+                  onClick={() => setStmtsDisplayLimit(prev => prev + 50)}
+                  className="text-xs font-bold text-amber-500 hover:text-amber-400 py-1.5 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                >
+                  Carregar mais lançamentos (+{rankedStatements.length - stmtsDisplayLimit} restantes)...
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -2624,7 +2754,7 @@ export const ReconciliationView: React.FC = () => {
                     )}
                   </div>
                 ) : (
-                  rankedTitles.map(({ title: t, match, person }) => {
+                  visibleRankedTitles.map(({ title: t, match, person }) => {
                     const isSelected = selectedTitleIds.includes(t.id);
                     const isExpanded = expandedScoreTitleId === t.id;
                     const score = match?.score || 0;
@@ -2781,6 +2911,18 @@ export const ReconciliationView: React.FC = () => {
                       </div>
                     );
                   })
+                )}
+
+                {rankedTitles.length > titlesDisplayLimit && (
+                  <div className="p-3 text-center bg-slate-50 dark:bg-[#1B212D]/60 border-t border-slate-100 dark:border-[#273040]">
+                    <button
+                      type="button"
+                      onClick={() => setTitlesDisplayLimit(prev => prev + 50)}
+                      className="text-xs font-bold text-amber-500 hover:text-amber-400 py-1.5 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                    >
+                      Carregar mais títulos (+{rankedTitles.length - titlesDisplayLimit} restantes)...
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

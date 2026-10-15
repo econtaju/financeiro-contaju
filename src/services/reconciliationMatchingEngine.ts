@@ -17,11 +17,16 @@ const BANK_STOP_WORDS = new Set([
   'cx', 'extrato', 'lancamento', 'operacao', 'ref', 'chq', 'cheque'
 ]);
 
+const CLEAN_DESC_CACHE = new Map<string, { cleaned: string; tokens: string[]; docDigits: string }>();
+
 /**
- * Limpa e higieniza histórico de extrato bancário removendo códigos e stop words
+ * Limpa e higieniza histórico de extrato bancário removendo códigos e stop words (memoizado com cache de alta performance)
  */
 export function cleanBankDescription(raw: string): { cleaned: string; tokens: string[]; docDigits: string } {
   if (!raw) return { cleaned: '', tokens: [], docDigits: '' };
+
+  const cached = CLEAN_DESC_CACHE.get(raw);
+  if (cached) return cached;
 
   // Extrai dígitos para possível CPF/CNPJ (ex: 8 dígitos ou mais)
   const allDigits = raw.replace(/\D/g, '');
@@ -35,11 +40,20 @@ export function cleanBankDescription(raw: string): { cleaned: string; tokens: st
     .split(/\s+/)
     .filter(t => t.length > 2 && !BANK_STOP_WORDS.has(t));
 
-  return {
+  const result = {
     cleaned: tokens.join(' '),
     tokens,
     docDigits
   };
+
+  // Mantém tamanho máximo de 500 itens no cache
+  if (CLEAN_DESC_CACHE.size > 500) {
+    const firstKey = CLEAN_DESC_CACHE.keys().next().value;
+    if (firstKey) CLEAN_DESC_CACHE.delete(firstKey);
+  }
+  CLEAN_DESC_CACHE.set(raw, result);
+
+  return result;
 }
 
 /**
