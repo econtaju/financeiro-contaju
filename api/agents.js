@@ -36,13 +36,15 @@ function resolveModelProtocol(modelId, customProtocol) {
  * Adaptadores de protocolo para despacho HTTP resiliente
  */
 const ProtocolAdapters = {
-  // 1. OpenAI Chat Completions (padrão OpenCode / OpenAI / DeepSeek / Qwen / GLM / Minimax)
+  // 1. OpenAI Chat Completions (padrão OpenCode Go / OpenAI / DeepSeek / Qwen / GLM / Minimax)
   openai_chat: {
     buildRequest: (endpoint, model, messages, options, apiKey) => {
       const url = `${endpoint}/chat/completions`;
+      const sessionTag = options.sessionId || `contaju-${options.companyId || 'comp-1'}-${Date.now()}`;
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
+        'x-opencode-session': sessionTag
       };
       const body = {
         model,
@@ -65,10 +67,12 @@ const ProtocolAdapters = {
   anthropic_messages: {
     buildRequest: (endpoint, model, messages, options, apiKey) => {
       const url = `${endpoint}/v1/messages`;
+      const sessionTag = options.sessionId || `contaju-${options.companyId || 'comp-1'}-${Date.now()}`;
       const headers = {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        'x-opencode-session': sessionTag
       };
 
       // Separa prompt do sistema do histórico do usuário
@@ -109,9 +113,11 @@ const ProtocolAdapters = {
   openai_responses: {
     buildRequest: (endpoint, model, messages, options, apiKey) => {
       const url = `${endpoint}/responses`;
+      const sessionTag = options.sessionId || `contaju-${options.companyId || 'comp-1'}-${Date.now()}`;
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
+        'x-opencode-session': sessionTag
       };
       const body = {
         model,
@@ -169,12 +175,17 @@ export default async function handler(req, res) {
                        process.env.GEMINI_API_KEY || 
                        customApiKey;
 
-  const endpoint = (process.env.AI_ENDPOINT_URL || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
+  let rawEndpoint = (process.env.AI_ENDPOINT_URL || req.body?.customEndpoint || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
+  // Migra endpoint legado se informado
+  if (rawEndpoint.includes('api.opencode.ai/v1')) {
+    rawEndpoint = 'https://opencode.ai/zen/go/v1';
+  }
+  const endpoint = rawEndpoint;
 
   if (!serverApiKey) {
     return res.status(503).json({
       success: false,
-      error: 'Provedor de IA não configurado nas variáveis de ambiente do servidor (OPENCODE_API_KEY ou AI_GATEWAY_KEY).',
+      error: 'Provedor de IA não configurado. Por favor, informe sua Chave OpenCode Go nas Configurações de IA ou configure OPENCODE_API_KEY no servidor.',
       code: 'AI_PROVIDER_NOT_CONFIGURED'
     });
   }

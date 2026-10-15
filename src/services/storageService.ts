@@ -114,10 +114,10 @@ const STORAGE_KEYS = {
 export const DEFAULT_AI_CONFIG: AiProviderConfig = {
   enabled: false,
   apiKey: '',
-  endpointUrl: 'https://api.opencode.ai/v1',
-  primaryModel: 'claude-3-5-sonnet',
-  fallbackModels: ['gpt-4o', 'gpt-4o-mini', 'deepseek-chat', 'gemini-1.5-pro'],
-  timeoutMs: 12000,
+  endpointUrl: 'https://opencode.ai/zen/go/v1',
+  primaryModel: 'deepseek-v4-pro',
+  fallbackModels: ['deepseek-v4.1-flash', 'gpt-5.6-luna', 'claude-haiku-5-5', 'qwen3.8-max'],
+  timeoutMs: 14000,
   temperature: 0.2,
   maxTokens: 2048,
   enableAutoReconciliation: true,
@@ -1880,7 +1880,26 @@ class StorageService {
 
   // AI & OpenCode Multi-Model Config
   public getAiConfig(): AiProviderConfig {
-    return this.get(STORAGE_KEYS.AI_CONFIG, DEFAULT_AI_CONFIG);
+    const config = this.get(STORAGE_KEYS.AI_CONFIG, DEFAULT_AI_CONFIG);
+    let needsUpdate = false;
+
+    // Migração transparente de endpoint legado para o endpoint oficial do OpenCode Go
+    if (config.endpointUrl && config.endpointUrl.includes('api.opencode.ai/v1')) {
+      config.endpointUrl = 'https://opencode.ai/zen/go/v1';
+      needsUpdate = true;
+    }
+
+    // Se o modelo primário for claude-3-5-sonnet (não anunciado no Go), migra para deepseek-v4-pro
+    if (config.primaryModel === 'claude-3-5-sonnet') {
+      config.primaryModel = 'deepseek-v4-pro';
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      this.saveAiConfig(config);
+    }
+
+    return config;
   }
 
   public saveAiConfig(config: AiProviderConfig) {

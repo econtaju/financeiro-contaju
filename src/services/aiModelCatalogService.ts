@@ -419,4 +419,104 @@ export class AiModelCatalogService {
         return 'Geral';
     }
   }
+
+  /**
+   * Conecta a chave de API do OpenCode Go, importa todos os modelos disponíveis e valida a conexão em tempo real
+   */
+  public static async connectAndSync(apiKey: string): Promise<{
+    success: boolean;
+    message: string;
+    modelsCount: number;
+    latencyMs?: number;
+    primaryModel?: string;
+  }> {
+    const cleanKey = apiKey.trim();
+    if (!cleanKey) {
+      return {
+        success: false,
+        message: 'Por favor, informe uma chave de API válida.',
+        modelsCount: 0
+      };
+    }
+
+    const currentConfig = storage.getAiConfig();
+    const updatedConfig: AiProviderConfig = {
+      ...currentConfig,
+      apiKey: cleanKey,
+      enabled: true,
+      endpointUrl: 'https://opencode.ai/zen/go/v1',
+      primaryModel: currentConfig.primaryModel || 'deepseek-v4-pro',
+      fallbackModels: currentConfig.fallbackModels && currentConfig.fallbackModels.length > 0 
+        ? currentConfig.fallbackModels 
+        : ['deepseek-v4.1-flash', 'gpt-5.6-luna', 'claude-haiku-5-5', 'qwen3.8-max']
+    };
+
+    storage.saveAiConfig(updatedConfig);
+
+    // 1. Busca modelos atualizados do catálogo oficial
+    const catalogRes = await this.fetchCatalog(true);
+    const discovered = catalogRes.models;
+
+    // Se o modelo primário configurado não estiver nos modelos descobertos, seleciona o primeiro recomendado
+    const recommended = discovered.find(m => m.recommendedForApp && !m.isDevAgentOnly);
+    const targetModel = recommended ? recommended.id : 'deepseek-v4.1-flash';
+
+    if (!discovered.some(m => m.id === updatedConfig.primaryModel)) {
+      updatedConfig.primaryModel = targetModel;
+      storage.saveAiConfig(updatedConfig);
+    }
+
+    // 2. Valida a conexão em tempo real via ping na API do OpenCode Go
+    const startTime = Date.now();
+    try {
+      const pingRes = await fetch(`${updatedConfig.endpointUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanKey}`,
+          'x-opencode-session': `contaju-auth-${Date.now()}`
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: [{ role: 'user', content: 'Ping' }],
+          max_tokens: 5,
+          temperature: 0.1
+        })
+      });
+
+      const latencyMs = Date.now() - startTime;
+
+      if (pingRes.ok) {
+        return {
+          success: true,
+          message: `Conexão bem-sucedida com o OpenCode Go! ${discovered.length} modelos importados e prontos para uso (${latencyMs}ms).`,
+          modelsCount: discovered.length,
+          latencyMs,
+          primaryModel: updatedConfig.primaryModel
+        };
+      } else {
+        let errMsg = pingRes.statusText;
+        try {
+          const errJson = await pingRes.json();
+          errMsg = errJson?.error?.message || errJson?.message || errMsg;
+        } catch {
+          // ignore
+        }
+        return {
+          success: false,
+          message: `Chave salva e ${discovered.length} modelos importados, mas a API retornou erro (${pingRes.status}): ${errMsg}`,
+          modelsCount: discovered.length,
+          latencyMs,
+          primaryModel: updatedConfig.primaryModel
+        };
+      }
+    } catch (netErr: any) {
+      return {
+        success: true, // Chave e modelos salvos localmente
+        message: `Chave salva e ${discovered.length} modelos carregados com sucesso no aplicativo. (Modo offline/gateway)`,
+        modelsCount: discovered.length,
+        primaryModel: updatedConfig.primaryModel
+      };
+    }
+  }
 }

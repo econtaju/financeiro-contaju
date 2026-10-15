@@ -14,10 +14,12 @@ import {
   BookmarkPlus,
   TrendingUp,
   FileCheck,
-  Activity
+  Activity,
+  Key
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, ChartOfAccount, AiReconciliationSuggestion } from '../../types';
 import { AiService } from '../../services/aiService';
+import { AiModelCatalogService } from '../../services/aiModelCatalogService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 
 interface AiReconciliationModalProps {
@@ -49,6 +51,8 @@ export const AiReconciliationModal: React.FC<AiReconciliationModalProps> = ({
   const [lastModelUsed, setLastModelUsed] = useState<string>('');
   const [attemptsLog, setAttemptsLog] = useState<any[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
+  const [quickApiKey, setQuickApiKey] = useState('');
+  const [isQuickConnecting, setIsQuickConnecting] = useState(false);
 
   // Sincroniza o extrato selecionado ao abrir
   useEffect(() => {
@@ -64,6 +68,24 @@ export const AiReconciliationModal: React.FC<AiReconciliationModalProps> = ({
     }
   }, [isOpen, selectedStatement]);
 
+  const handleQuickConnect = async () => {
+    if (!quickApiKey.trim()) return;
+    setIsQuickConnecting(true);
+    setErrorMsg('');
+    try {
+      const res = await AiModelCatalogService.connectAndSync(quickApiKey.trim());
+      if (res.success && currentStmt) {
+        await runAiAnalysis(currentStmt);
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(`Falha na conexão: ${err.message || 'Erro inesperado'}`);
+    } finally {
+      setIsQuickConnecting(false);
+    }
+  };
+
   const runAiAnalysis = async (stmt: BankStatementEntry) => {
     setLoading(true);
     setErrorMsg('');
@@ -71,8 +93,13 @@ export const AiReconciliationModal: React.FC<AiReconciliationModalProps> = ({
     setAttemptsLog([]);
 
     const config = AiService.getConfig();
-    if (!config.enabled) {
-      setErrorMsg('O módulo de Inteligência Artificial está desativado nas Configurações.');
+    if (config.apiKey && !config.enabled) {
+      config.enabled = true;
+      AiService.saveConfig(config);
+    }
+
+    if (!config.apiKey) {
+      setErrorMsg('A Chave da API do OpenCode Go ainda não foi configurada. Insira sua chave abaixo para importar as IAs e conciliar:');
       setLoading(false);
       return;
     }
@@ -227,18 +254,51 @@ export const AiReconciliationModal: React.FC<AiReconciliationModalProps> = ({
                   <p className="mt-0.5 text-[11px]">{errorMsg}</p>
                 </div>
               </div>
+
+              {/* Inserção rápida de Chave caso não esteja configurada ou para reconfigurar */}
+              <div className="pt-2 border-t border-rose-500/20">
+                <label className="text-[11px] font-bold text-[var(--text-secondary)] block mb-1.5 flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-purple-400" />
+                  Ativar ou Atualizar Chave da API OpenCode Go:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="Cole sua API Key do OpenCode Go (opencode-zen-...)"
+                    value={quickApiKey}
+                    onChange={(e) => setQuickApiKey(e.target.value)}
+                    className="flex-1 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg px-3 py-1.5 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleQuickConnect}
+                    disabled={isQuickConnecting || !quickApiKey.trim()}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    {isQuickConnecting ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    Ativar & Conciliar
+                  </button>
+                </div>
+              </div>
+
               {onOpenAiConfig && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenAiConfig();
-                  }}
-                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  Abrir Configurações de IA OpenCode
-                </button>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAiConfig();
+                    }}
+                    className="px-3 py-1.5 bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    Abrir Central de Agentes Completa
+                  </button>
+                </div>
               )}
             </div>
           )}

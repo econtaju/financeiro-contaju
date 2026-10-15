@@ -355,17 +355,17 @@ export const AiConfigView: React.FC = () => {
               </label>
               <button
                 type="button"
-                onClick={() => setConfig({ ...config, endpointUrl: 'https://api.opencode.ai/v1' })}
+                onClick={() => setConfig({ ...config, endpointUrl: 'https://opencode.ai/zen/go/v1' })}
                 className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer font-semibold"
               >
-                Restaurar Padrão
+                Restaurar Padrão OpenCode Go
               </button>
             </div>
             <input
               type="text"
               value={config.endpointUrl}
               onChange={(e) => setConfig({ ...config, endpointUrl: e.target.value })}
-              placeholder="https://api.opencode.ai/v1"
+              placeholder="https://opencode.ai/zen/go/v1"
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#19202D] text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
             <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">

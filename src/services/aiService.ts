@@ -40,8 +40,11 @@ export class AiService {
     customEndpoint?: string
   ): Promise<{ success: boolean; latencyMs: number; message: string; statusCode?: number }> {
     const config = this.getConfig();
-    const apiKey = customApiKey !== undefined ? customApiKey : config.apiKey;
-    const endpoint = (customEndpoint || config.endpointUrl || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
+    const apiKey = customApiKey || config.apiKey;
+    let endpoint = (customEndpoint || config.endpointUrl || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
+    if (endpoint.includes('api.opencode.ai/v1')) {
+      endpoint = 'https://opencode.ai/zen/go/v1';
+    }
 
     if (!apiKey) {
       // Tenta testar via Serverless Gateway (usando credencial do servidor sem expor ao client)
@@ -90,13 +93,13 @@ export class AiService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${apiKey}`,
+          'x-opencode-session': `contaju-test-${Date.now()}`
         },
         body: JSON.stringify({
           model: modelId,
           messages: [
-            { role: 'system', content: 'Responda apenas a palavra OK.' },
-            { role: 'user', content: 'Ping' }
+            { role: 'user', content: 'Responda com a palavra OK.' }
           ],
           temperature: 0.1,
           max_tokens: 10
@@ -211,7 +214,11 @@ export class AiService {
     }
 
     // 2. Fallback local direto se houver chave configurada
-    const endpoint = (config.endpointUrl || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
+    let rawEndpoint = (config.endpointUrl || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
+    if (rawEndpoint.includes('api.opencode.ai/v1')) {
+      rawEndpoint = 'https://opencode.ai/zen/go/v1';
+    }
+    const endpoint = rawEndpoint;
 
     if (!config.apiKey) {
       return {
@@ -223,7 +230,7 @@ export class AiService {
           model: 'NONE',
           durationMs: 0,
           success: false,
-          errorMessage: 'Gateway de IA do servidor não configurado. Adicione OPENCODE_API_KEY na Vercel ou configure uma chave de acesso.'
+          errorMessage: 'Chave de API não informada. Conecte sua Chave OpenCode Go nas Configurações de IA.'
         }],
         totalDurationMs: 0
       };
@@ -231,7 +238,7 @@ export class AiService {
 
     // Monta a cadeia de contingência: Modelo Primário -> Modelos Secundários
     const modelsChain: string[] = [
-      config.primaryModel || 'claude-3-5-sonnet',
+      config.primaryModel || 'deepseek-v4-pro',
       ...(config.fallbackModels || []).filter(m => m !== config.primaryModel)
     ];
 
@@ -244,7 +251,7 @@ export class AiService {
       const currentModel = modelsChain[i];
       const attemptStart = Date.now();
       const controller = new AbortController();
-      const timeoutMs = config.timeoutMs || 12000;
+      const timeoutMs = config.timeoutMs || 14000;
       const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
@@ -263,7 +270,8 @@ export class AiService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`
+            'Authorization': `Bearer ${config.apiKey}`,
+            'x-opencode-session': `contaju-${Date.now()}`
           },
           body: JSON.stringify(payload),
           signal: controller.signal

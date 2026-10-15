@@ -18,7 +18,16 @@ import {
   Layers, 
   FileText,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Key,
+  Eye,
+  EyeOff,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  Check,
+  Plus,
+  X
 } from 'lucide-react';
 import { 
   AgentDefinition, 
@@ -43,6 +52,15 @@ export const AgentCenterView: React.FC = () => {
   const [catalogModels, setCatalogModels] = useState<AiModelChainItem[]>(() => AiModelCatalogService.getCachedCatalog());
   const [isSyncingModels, setIsSyncingModels] = useState(false);
 
+  // Estados de Conexão com OpenCode Go
+  const [apiKeyInput, setApiKeyInput] = useState(() => aiConfig.apiKey || '');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isConnectingKey, setIsConnectingKey] = useState(false);
+  const [searchModelQuery, setSearchModelQuery] = useState('');
+  const [selectedProviderFilter, setSelectedProviderFilter] = useState('ALL');
+  const [testingModelId, setTestingModelId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs: number; message: string }>>({});
+
   // Estado de execução de teste do CFO
   const [isRunningCfo, setIsRunningCfo] = useState(false);
   const [cfoResult, setCfoResult] = useState<{ briefing: string; modelUsed: string; failover: boolean } | null>(null);
@@ -57,10 +75,54 @@ export const AgentCenterView: React.FC = () => {
       setAgents(AgentOrchestratorService.getAgents());
       setApprovals(AgentOrchestratorService.getAllApprovals());
       setRuns(storage.getAgentRuns());
-      setAiConfig(AiService.getConfig());
+      const cfg = AiService.getConfig();
+      setAiConfig(cfg);
+      if (cfg.apiKey && !apiKeyInput) {
+        setApiKeyInput(cfg.apiKey);
+      }
     });
     return unsub;
   }, []);
+
+  const handleConnectOpenCodeGo = async () => {
+    if (!apiKeyInput.trim()) {
+      setActionErrorMsg('Por favor, informe sua Chave de API do OpenCode Go.');
+      setTimeout(() => setActionErrorMsg(''), 5000);
+      return;
+    }
+    setIsConnectingKey(true);
+    setActionErrorMsg('');
+    setActionSuccessMsg('');
+    try {
+      const res = await AiModelCatalogService.connectAndSync(apiKeyInput.trim());
+      setCatalogModels(AiModelCatalogService.getCachedCatalog());
+      setAiConfig(AiService.getConfig());
+      if (res.success) {
+        setActionSuccessMsg(`🎉 ${res.message}`);
+        setTimeout(() => setActionSuccessMsg(''), 6000);
+      } else {
+        setActionErrorMsg(res.message);
+        setTimeout(() => setActionErrorMsg(''), 7000);
+      }
+    } catch (err: any) {
+      setActionErrorMsg(`Falha na conexão: ${err.message || 'Erro inesperado'}`);
+      setTimeout(() => setActionErrorMsg(''), 6000);
+    } finally {
+      setIsConnectingKey(false);
+    }
+  };
+
+  const handleTestSingleModel = async (modelId: string) => {
+    setTestingModelId(modelId);
+    try {
+      const res = await AiService.testModelConnection(modelId, aiConfig.apiKey, aiConfig.endpointUrl);
+      setTestResults(prev => ({ ...prev, [modelId]: res }));
+    } catch (err: any) {
+      setTestResults(prev => ({ ...prev, [modelId]: { success: false, latencyMs: 0, message: err.message || 'Falha de conexão' } }));
+    } finally {
+      setTestingModelId(null);
+    }
+  };
 
   const pendingApprovalsCount = approvals.filter(a => a.status === 'PENDENTE').length;
 
@@ -173,6 +235,46 @@ export const AgentCenterView: React.FC = () => {
           </div>
         </div>
 
+        {/* Status da Chave OpenCode Go no Top Banner */}
+        {aiConfig.apiKey ? (
+          <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-1 rounded-lg font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                OpenCode Go Conectado ({catalogModels.length} IAs disponíveis)
+              </span>
+              <span className="text-slate-300">
+                Modelo Ativo: <strong className="text-amber-400">{aiConfig.primaryModel}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('GATEWAY')}
+              className="text-amber-400 hover:text-amber-300 hover:underline font-semibold cursor-pointer text-xs flex items-center gap-1 self-start sm:self-auto"
+            >
+              <span>Gerenciar Chave & Modelos</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-500/10 p-3 rounded-xl border border-amber-500/30">
+            <div className="flex items-center gap-2.5 text-amber-300 text-xs">
+              <Key className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>
+                <strong>Ativação Necessária:</strong> Insira sua chave do OpenCode Go para importar os modelos e habilitar a conciliação e pareceres de IA.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('GATEWAY')}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors shrink-0 cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Inserir Chave OpenCode Go</span>
+            </button>
+          </div>
+        )}
+
         {/* Notificações de Ação */}
         {actionSuccessMsg && (
           <div className="mt-4 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs flex items-center gap-2">
@@ -243,8 +345,13 @@ export const AgentCenterView: React.FC = () => {
               : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
           }`}
         >
-          <Server className="w-4 h-4" />
-          Gateway & Modelos Server-Side
+          <Key className="w-4 h-4 text-amber-500" />
+          <span>Conexão OpenCode Go & IAs</span>
+          {aiConfig.apiKey ? (
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          )}
         </button>
       </div>
 
@@ -494,21 +601,104 @@ export const AgentCenterView: React.FC = () => {
         </div>
       )}
 
-      {/* ABA 4: GATEWAY & MODELOS SERVER-SIDE */}
+      {/* ABA 4: CONEXÃO OPENCODE GO & CATÁLOGO DINÂMICO DE IAS */}
       {activeTab === 'GATEWAY' && (
         <div className="space-y-6">
-          <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4">
+          {/* Card 1: Conexão e Importação da Chave OpenCode Go */}
+          <div className="p-6 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
               <div className="flex items-center gap-2.5">
-                <Server className="w-5 h-5 text-indigo-400" />
+                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                  <Key className="w-5 h-5" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                    Cadeia de Contingência Dinâmica de Modelos de IA (Failover)
+                  <h3 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                    <span>Ativação & Conexão OpenCode Go</span>
+                    {aiConfig.apiKey ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        Ativo & Conectado
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                        Aguardando Chave
+                      </span>
+                    )}
                   </h3>
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    Se o modelo primário estiver temporariamente indisponível ou retornar Rate Limit (HTTP 429), o gateway comuta instantaneamente para o próximo especialista.
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    Cole sua chave da API do OpenCode Go abaixo. Ao conectar, o sistema valida a credencial, atualiza e importa todas as IAs disponíveis para uso imediato no sistema.
                   </p>
                 </div>
+              </div>
+
+              <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] self-start sm:self-auto">
+                Endpoint: https://opencode.ai/zen/go/v1
+              </span>
+            </div>
+
+            {/* Input da Chave e Ação de Conexão Imediata */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-[var(--text-primary)]">
+                Chave da API do OpenCode Go:
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="Cole sua chave da API OpenCode Go (ex: sk-... ou opencode_...)"
+                    className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs font-mono text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 cursor-pointer"
+                    title={showApiKey ? 'Ocultar chave' : 'Exibir chave'}
+                  >
+                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleConnectOpenCodeGo}
+                  disabled={isConnectingKey}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {isConnectingKey ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Validando & Importando IAs...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>Conectar & Importar IAs Agora</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {aiConfig.apiKey && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400 font-semibold pt-1">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Chave configurada com sucesso. As IAs estão ativas para Conciliação Bancária, Parecer do CFO e Análises Contábeis.</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Card 2: Cadeia de Contingência Dinâmica (Failover) */}
+          <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-amber-500" />
+                  <span>Cadeia de Contingência Ativa</span>
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Ordem de execução das IAs. Se o modelo primário retornar sobrecarga ou Rate Limit (429), o próximo assume automaticamente.
+                </p>
               </div>
 
               <button
@@ -518,7 +708,7 @@ export const AgentCenterView: React.FC = () => {
                   try {
                     const res = await AiModelCatalogService.fetchCatalog(true);
                     setCatalogModels(res.models);
-                    setActionSuccessMsg(`Catálogo atualizado: ${res.models.length} modelos descobertos.`);
+                    setActionSuccessMsg(`Catálogo sincronizado: ${res.models.length} modelos identificados.`);
                     setTimeout(() => setActionSuccessMsg(''), 4000);
                   } catch (e: any) {
                     setActionErrorMsg(`Falha na atualização: ${e.message}`);
@@ -531,63 +721,230 @@ export const AgentCenterView: React.FC = () => {
                 className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] border border-[var(--border-subtle)] transition-colors flex items-center gap-2 cursor-pointer shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${isSyncingModels ? 'animate-spin' : ''}`} />
-                <span>{isSyncingModels ? 'Sincronizando...' : 'Atualizar Catálogo'}</span>
+                <span>{isSyncingModels ? 'Sincronizando...' : 'Atualizar Lista Oficial'}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {catalogModels.slice(0, 16).map((item) => {
-                const isPrimary = aiConfig.primaryModel === item.id;
-                const isFallback = aiConfig.fallbackModels?.includes(item.id);
+            {/* Modelos da Cadeia Ativa */}
+            <div className="space-y-2">
+              {[aiConfig.primaryModel, ...(aiConfig.fallbackModels || [])].filter(Boolean).map((modelId, idx) => {
+                const isPrimary = idx === 0;
+                const meta = catalogModels.find(m => m.id === modelId);
+                const testRes = testResults[modelId];
+                const isTesting = testingModelId === modelId;
 
                 return (
-                  <div 
-                    key={item.id}
-                    className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+                  <div
+                    key={modelId}
+                    className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       isPrimary 
-                        ? 'bg-amber-500/10 border-amber-500/40 text-[var(--text-primary)]'
-                        : isFallback
-                        ? 'bg-[var(--surface-elevated)] border-indigo-500/30 text-[var(--text-primary)]'
-                        : 'bg-[var(--surface-elevated)]/50 border-[var(--border-subtle)] text-[var(--text-secondary)] opacity-75'
+                        ? 'bg-amber-500/10 border-amber-500/40 text-[var(--text-primary)]' 
+                        : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)]'
                     }`}
                   >
-                    <div className="min-w-0 pr-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-xs truncate">{item.name}</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-[var(--surface-elevated)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
-                          {item.id}
-                        </span>
-                        {isPrimary && (
-                          <span className="px-2 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500 text-slate-950">
-                            Primário
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${
+                        isPrimary ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-700 text-slate-300'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs">{meta?.name || modelId}</span>
+                          <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-[var(--surface-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                            {modelId}
                           </span>
-                        )}
-                        {isFallback && !isPrimary && (
-                          <span className="px-2 py-0.2 rounded-full text-[9px] font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                            Contingência
-                          </span>
+                          {isPrimary && (
+                            <span className="px-2 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500 text-slate-950">
+                              ⭐ Modelo Primário
+                            </span>
+                          )}
+                        </div>
+                        {meta?.description && (
+                          <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5">{meta.description}</p>
                         )}
                       </div>
-                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate">{item.description}</p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated: AiProviderConfig = {
-                          ...aiConfig,
-                          primaryModel: item.id
-                        };
-                        AiService.saveConfig(updated);
-                        setAiConfig(updated);
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-[var(--border-subtle)] hover:border-amber-500 hover:text-amber-500 transition-colors cursor-pointer shrink-0"
-                    >
-                      {isPrimary ? 'Ativo' : 'Tornar Primário'}
-                    </button>
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      {testRes && (
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
+                          testRes.success 
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
+                            : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                        }`}>
+                          {testRes.success ? `Ativo (${testRes.latencyMs}ms)` : 'Falhou'}
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleTestSingleModel(modelId)}
+                        disabled={isTesting || !aiConfig.apiKey}
+                        className="p-1.5 rounded-lg border border-[var(--border-subtle)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer disabled:opacity-50"
+                        title="Testar conectividade"
+                      >
+                        {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" /> : <Play className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {!isPrimary && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentChain = [aiConfig.primaryModel, ...(aiConfig.fallbackModels || [])];
+                            const updatedChain = currentChain.filter(m => m !== modelId);
+                            const updatedConfig = {
+                              ...aiConfig,
+                              primaryModel: updatedChain[0] || 'deepseek-v4-pro',
+                              fallbackModels: updatedChain.slice(1)
+                            };
+                            AiService.saveConfig(updatedConfig);
+                            setAiConfig(updatedConfig);
+                          }}
+                          className="p-1.5 rounded-lg border border-[var(--border-subtle)] hover:bg-rose-500/10 text-[var(--text-secondary)] hover:text-rose-400 cursor-pointer"
+                          title="Remover da contingência"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Card 3: Explorador Completo das IAs da OpenCode Go */}
+          <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Server className="w-4 h-4 text-indigo-400" />
+                  <span>IAs Disponíveis no OpenCode Go ({catalogModels.length} modelos)</span>
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Clique em "Tornar Primário" ou "+ Contingência" para configurar quais IAs o aplicativo utilizará nas análises.
+                </p>
+              </div>
+
+              {/* Busca de Modelo */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--text-secondary)]" />
+                <input
+                  type="text"
+                  value={searchModelQuery}
+                  onChange={(e) => setSearchModelQuery(e.target.value)}
+                  placeholder="Pesquisar IA (ex: deepseek, luna, qwen)..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            {/* Grid com os Modelos Disponíveis */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {catalogModels
+                .filter(m => {
+                  if (!searchModelQuery.trim()) return true;
+                  const q = searchModelQuery.toLowerCase();
+                  return m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q));
+                })
+                .map((item) => {
+                  const isPrimary = aiConfig.primaryModel === item.id;
+                  const isFallback = aiConfig.fallbackModels?.includes(item.id);
+                  const isTesting = testingModelId === item.id;
+                  const testRes = testResults[item.id];
+
+                  return (
+                    <div 
+                      key={item.id}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+                        isPrimary 
+                          ? 'bg-amber-500/10 border-amber-500/40 text-[var(--text-primary)] shadow-xs'
+                          : isFallback
+                          ? 'bg-blue-500/10 border-blue-500/30 text-[var(--text-primary)]'
+                          : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="min-w-0">
+                            <span className="font-bold text-xs text-[var(--text-primary)] truncate block">{item.name}</span>
+                            <span className="text-[9px] font-mono text-[var(--text-secondary)] truncate block">{item.id}</span>
+                          </div>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-[var(--surface-card)] border border-[var(--border-subtle)] shrink-0">
+                            {item.provider}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed mb-3 line-clamp-2">
+                          {item.description}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-1 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => handleTestSingleModel(item.id)}
+                          disabled={isTesting || !aiConfig.apiKey}
+                          className="p-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer disabled:opacity-40"
+                          title="Testar conectividade com esta IA"
+                        >
+                          {isTesting ? <RefreshCw className="w-3 h-3 animate-spin text-amber-500" /> : <Play className="w-3 h-3" />}
+                        </button>
+
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          {isPrimary ? (
+                            <span className="text-[10px] font-black text-amber-500 px-2 py-0.5">
+                              ⭐ Ativo
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated: AiProviderConfig = {
+                                    ...aiConfig,
+                                    primaryModel: item.id
+                                  };
+                                  AiService.saveConfig(updated);
+                                  setAiConfig(updated);
+                                  setActionSuccessMsg(`Modelo primário alterado para ${item.name}.`);
+                                  setTimeout(() => setActionSuccessMsg(''), 3000);
+                                }}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded-md border border-amber-500/50 text-amber-500 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                              >
+                                Tornar Primário
+                              </button>
+
+                              {!isFallback ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const fallbacks = aiConfig.fallbackModels || [];
+                                    if (!fallbacks.includes(item.id)) {
+                                      const updated: AiProviderConfig = {
+                                        ...aiConfig,
+                                        fallbackModels: [...fallbacks, item.id]
+                                      };
+                                      AiService.saveConfig(updated);
+                                      setAiConfig(updated);
+                                    }
+                                  }}
+                                  className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[var(--surface-card)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] transition-colors cursor-pointer"
+                                >
+                                  + Contingência
+                                </button>
+                              ) : (
+                                <span className="text-[9px] font-bold text-blue-400 px-1.5 py-0.5">
+                                  ✓ Na Cadeia
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>

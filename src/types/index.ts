@@ -843,8 +843,8 @@ export interface AiModelChainItem {
 
 export interface AiProviderConfig {
   enabled: boolean;
-  apiKey: string; // API Key da OpenCode (ou OpenAI compatível)
-  endpointUrl: string; // Default: 'https://api.opencode.ai/v1' ou endpoint customizado
+  apiKey: string; // API Key da OpenCode Go (ou OpenAI compatível)
+  endpointUrl: string; // Default: 'https://opencode.ai/zen/go/v1' ou endpoint customizado
   primaryModel: string; // Modelo prioritário
   fallbackModels: string[]; // Lista ordenada de contingência quando o primário falhar
   timeoutMs: number; // Timeout por requisição (ex: 12000ms)
