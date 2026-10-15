@@ -76,6 +76,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   const [adjInterest, setAdjInterest] = useState<number>(0);
   const [adjFine, setAdjFine] = useState<number>(0);
   const [adjDiscount, setAdjDiscount] = useState<number>(0);
+  const [adjBankFee, setAdjBankFee] = useState<number>(0);
   const [isManualEditOpen, setIsManualEditOpen] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -89,6 +90,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
       setAdjInterest(0);
       setAdjFine(0);
       setAdjDiscount(0);
+      setAdjBankFee(0);
       
       // Abre a edição manual se houver divergência inicial
       const isExact = Math.abs(stmtAbs - titleBal) < 0.005;
@@ -127,7 +129,15 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   // Cálculos para Par Unitário
   const stmtAbsAmount = singleStmt ? Math.round(Math.abs(Number(singleStmt.amount) || 0) * 100) / 100 : 0;
   const currentTitleBalance = singleTitle ? (singleTitle.balancePrincipal > 0 ? singleTitle.balancePrincipal : singleTitle.originalAmount) : 0;
-  const totalSettledCalculated = Math.round((adjPrincipal + adjInterest + adjFine - adjDiscount) * 100) / 100;
+  
+  // Distinção de natureza: RECEBER (tarifa bancária é retida/descontada na entrada) vs PAGAR (tarifa bancária é debitada a mais)
+  const isReceipt = singleTitle ? singleTitle.type === 'RECEBER' : (singleStmt ? Number(singleStmt.amount) > 0 : true);
+  const totalSettledCalculated = Math.round(
+    (isReceipt
+      ? (adjPrincipal + adjInterest + adjFine - adjDiscount - adjBankFee)
+      : (adjPrincipal + adjInterest + adjFine - adjDiscount + adjBankFee)
+    ) * 100
+  ) / 100;
   const differenceToStatement = Math.round((totalSettledCalculated - stmtAbsAmount) * 100) / 100;
   const isSingleExact = Math.abs(differenceToStatement) < 0.005;
 
@@ -151,6 +161,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
     setAdjInterest(0);
     setAdjFine(0);
     setAdjDiscount(0);
+    setAdjBankFee(0);
   };
 
   const handleApplyDiffAsInterest = () => {
@@ -158,6 +169,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
     setAdjInterest(Math.max(0, Math.round((stmtAbsAmount - currentTitleBalance) * 100) / 100));
     setAdjFine(0);
     setAdjDiscount(0);
+    setAdjBankFee(0);
   };
 
   const handleApplyDiffAsFine = () => {
@@ -165,6 +177,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
     setAdjInterest(0);
     setAdjFine(Math.max(0, Math.round((stmtAbsAmount - currentTitleBalance) * 100) / 100));
     setAdjDiscount(0);
+    setAdjBankFee(0);
   };
 
   const handleApplyDiffAsDiscount = () => {
@@ -172,6 +185,18 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
     setAdjInterest(0);
     setAdjFine(0);
     setAdjDiscount(Math.max(0, Math.round((currentTitleBalance - stmtAbsAmount) * 100) / 100));
+    setAdjBankFee(0);
+  };
+
+  const handleApplyDiffAsBankFee = () => {
+    setAdjPrincipal(currentTitleBalance);
+    setAdjInterest(0);
+    setAdjFine(0);
+    setAdjDiscount(0);
+    const fee = isReceipt
+      ? Math.max(0, Math.round((currentTitleBalance - stmtAbsAmount) * 100) / 100)
+      : Math.max(0, Math.round((stmtAbsAmount - currentTitleBalance) * 100) / 100);
+    setAdjBankFee(fee);
   };
 
   // Salvar Regra De-Para
@@ -345,10 +370,10 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           discount: adjDiscount,
           interest: adjInterest,
           fine: adjFine,
-          bankFee: 0,
+          bankFee: adjBankFee,
           notes: `Baixa via Janela Flutuante de Conciliação (${singleStmt.description})${
-            adjInterest > 0 || adjFine > 0 || adjDiscount > 0 || Math.abs(adjPrincipal - currentTitleBalance) > 0.005
-              ? ` [Ajuste 100%: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjFine > 0 ? `, Multa ${formatBRL(adjFine)}` : ''}${adjDiscount > 0 ? `, Desc ${formatBRL(adjDiscount)}` : ''}]`
+            adjInterest > 0 || adjFine > 0 || adjDiscount > 0 || adjBankFee > 0 || Math.abs(adjPrincipal - currentTitleBalance) > 0.005
+              ? ` [Ajuste 100%: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjFine > 0 ? `, Multa ${formatBRL(adjFine)}` : ''}${adjDiscount > 0 ? `, Desc Comercial ${formatBRL(adjDiscount)}` : ''}${adjBankFee > 0 ? `, Tarifa Bancária ${formatBRL(adjBankFee)}` : ''}]`
               : ''
           }`,
           voucherRef: singleStmt.fitId
@@ -386,7 +411,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           action: 'CONCILIACAO_100_EXATA',
           module: 'Conciliação Bancária',
           recordId: singleStmt.id,
-          details: `Conciliado 100%: Extrato "${singleStmt.description}" (${formatBRL(singleStmt.amount)}) com título ${singleTitle.titleNumber}. Liquidado: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjDiscount > 0 ? `, Desc ${formatBRL(adjDiscount)}` : ''}. Diferença: R$ 0,00.`
+          details: `Conciliado 100%: Extrato "${singleStmt.description}" (${formatBRL(singleStmt.amount)}) com título ${singleTitle.titleNumber}. Liquidado: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjFine > 0 ? `, Multa ${formatBRL(adjFine)}` : ''}${adjDiscount > 0 ? `, Desc Comercial ${formatBRL(adjDiscount)}` : ''}${adjBankFee > 0 ? `, Tarifa Bancária ${formatBRL(adjBankFee)}` : ''}. Diferença: R$ 0,00.`
         });
 
         onSuccess(`Conciliação concluída com sucesso! Extrato e Título 100% conferidos e quitados no ERP.`);
@@ -493,38 +518,96 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                     <span>Ajustar Principal para {formatBRL(stmtAbsAmount)}</span>
                   </button>
 
-                  {stmtAbsAmount > currentTitleBalance ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={handleApplyDiffAsInterest}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Lança a diferença a maior como juros de mora"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-sky-500" />
-                        <span>Lançar como Juros (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
-                      </button>
+                  {isReceipt ? (
+                    stmtAbsAmount < currentTitleBalance ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsBankFee}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-orange-600 dark:text-orange-400 border border-orange-500/40 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança a retenção bancária como Tarifa Bancária (taxa de boleto, cartão ou intermediação)"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
+                          <span>Lançar como Tarifa Bancária (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
+                        </button>
 
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsDiscount}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança como Desconto Comercial concedido ao cliente"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
+                          <span>Lançar como Desconto Comercial (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsInterest}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança a diferença a maior como juros de mora"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-sky-500" />
+                          <span>Lançar como Juros (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsFine}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança a diferença a maior como multa"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Lançar como Multa (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        </button>
+                      </>
+                    )
+                  ) : (
+                    stmtAbsAmount > currentTitleBalance ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsBankFee}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-orange-600 dark:text-orange-400 border border-orange-500/40 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança o valor adicional como Tarifa Bancária paga ao banco (TED, DOC, taxa de emissão)"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-orange-500" />
+                          <span>Lançar como Tarifa Bancária (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsInterest}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança a diferença a maior como juros de mora"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-sky-500" />
+                          <span>Lançar como Juros (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleApplyDiffAsFine}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Lança a diferença a maior como multa"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Lançar como Multa (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        onClick={handleApplyDiffAsFine}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Lança a diferença a maior como multa"
+                        onClick={handleApplyDiffAsDiscount}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Lança como Desconto Comercial obtido do fornecedor"
                       >
-                        <Plus className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Lançar como Multa (+{formatBRL(stmtAbsAmount - currentTitleBalance)})</span>
+                        <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
+                        <span>Lançar como Desconto Comercial (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleApplyDiffAsDiscount}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Lança a diferença a menor como desconto comercial ou tarifa"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
-                      <span>Lançar como Desconto/Tarifa (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
-                    </button>
+                    )
                   )}
                 </div>
               )}
@@ -791,7 +874,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                 {/* Principal */}
                 <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
                   <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
@@ -840,10 +923,10 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                   <span className="text-[9px] text-slate-500 mt-1 block">Penalidade contratual</span>
                 </div>
 
-                {/* Desconto */}
+                {/* Desconto Comercial */}
                 <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
                   <label className="text-[10px] text-emerald-400 font-bold uppercase block mb-1">
-                    - Desconto / Tarifa (R$)
+                    - Desconto Comercial (R$)
                   </label>
                   <input
                     type="number"
@@ -853,7 +936,25 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                     onChange={e => setAdjDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
                     className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-emerald-300 font-mono focus:border-emerald-400 focus:outline-hidden"
                   />
-                  <span className="text-[9px] text-slate-500 mt-1 block">Abatimento / tarifa retenção</span>
+                  <span className="text-[9px] text-slate-500 mt-1 block">Abatimento negociado</span>
+                </div>
+
+                {/* Tarifa Bancária */}
+                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                  <label className="text-[10px] text-orange-400 font-bold uppercase block mb-1">
+                    {isReceipt ? '- Tarifa Bancária (R$)' : '+ Tarifa Bancária (R$)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={adjBankFee || ''}
+                    onChange={e => setAdjBankFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-orange-300 font-mono focus:border-orange-400 focus:outline-hidden"
+                  />
+                  <span className="text-[9px] text-slate-500 mt-1 block">
+                    {isReceipt ? 'Taxa boleto/cartão retida' : 'Taxa TED/DOC/emissão'}
+                  </span>
                 </div>
               </div>
 
@@ -864,7 +965,8 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                   <span className="text-white font-semibold">{formatBRL(adjPrincipal)}</span>
                   {adjInterest > 0 && <span className="text-rose-400"> + {formatBRL(adjInterest)} (Juros)</span>}
                   {adjFine > 0 && <span className="text-amber-400"> + {formatBRL(adjFine)} (Multa)</span>}
-                  {adjDiscount > 0 && <span className="text-emerald-400"> - {formatBRL(adjDiscount)} (Desc)</span>}
+                  {adjDiscount > 0 && <span className="text-emerald-400"> - {formatBRL(adjDiscount)} (Desc. Comercial)</span>}
+                  {adjBankFee > 0 && <span className="text-orange-400"> {isReceipt ? '-' : '+'} {formatBRL(adjBankFee)} (Tarifa Bancária)</span>}
                   <span className="text-white font-bold"> = Total: {formatBRL(totalSettledCalculated)}</span>
                 </div>
 

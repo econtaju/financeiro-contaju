@@ -144,6 +144,57 @@ export class ReportingEngine {
           }
         }
 
+        // Computa encargos e deduções financeiras apuradas nas baixas para Competência
+        if (accId === 'acc-4.2.04') { // Tarifas Bancárias
+          for (const s of allSettlements) {
+            if (s.settlementDate?.startsWith(compStr) && (s.components?.bankFee || 0) > 0) {
+              monthlyComp[m] += s.components.bankFee;
+            }
+          }
+        } else if (accId === 'acc-4.2.03') { // Descontos Financeiros Concedidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(compStr) && (s.components?.discount || 0) > 0) {
+              monthlyComp[m] += s.components.discount;
+            }
+          }
+        } else if (accId === 'acc-4.1.03') { // Descontos Financeiros Obtidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(compStr) && (s.components?.discount || 0) > 0) {
+              monthlyComp[m] += s.components.discount;
+            }
+          }
+        } else if (accId === 'acc-4.2.01') { // Juros Pagos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(compStr) && (s.components?.interest || 0) > 0) {
+              monthlyComp[m] += s.components.interest;
+            }
+          }
+        } else if (accId === 'acc-4.1.01') { // Juros Recebidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(compStr) && (s.components?.interest || 0) > 0) {
+              monthlyComp[m] += s.components.interest;
+            }
+          }
+        } else if (accId === 'acc-4.2.02') { // Multas Pagas
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(compStr) && (s.components?.fine || 0) > 0) {
+              monthlyComp[m] += s.components.fine;
+            }
+          }
+        } else if (accId === 'acc-4.1.02') { // Multas Recebidas
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(compStr) && (s.components?.fine || 0) > 0) {
+              monthlyComp[m] += s.components.fine;
+            }
+          }
+        }
+
         monthlyComp[m] = Math.round(monthlyComp[m] * 100) / 100;
       }
 
@@ -179,11 +230,25 @@ export class ReportingEngine {
           monthlyCash[m] += monthSettled;
         }
 
-        // Computa encargos financeiros das baixas (tarifas, juros, multas)
+        // Computa encargos e deduções financeiras apuradas nas baixas para Caixa
         if (accId === 'acc-4.2.04') { // Tarifas Bancárias
           for (const s of allSettlements) {
             if (s.settlementDate?.startsWith(monthStr) && (s.components?.bankFee || 0) > 0) {
               monthlyCash[m] += s.components.bankFee;
+            }
+          }
+        } else if (accId === 'acc-4.2.03') { // Descontos Financeiros Concedidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(monthStr) && (s.components?.discount || 0) > 0) {
+              monthlyCash[m] += s.components.discount;
+            }
+          }
+        } else if (accId === 'acc-4.1.03') { // Descontos Financeiros Obtidos
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(monthStr) && (s.components?.discount || 0) > 0) {
+              monthlyCash[m] += s.components.discount;
             }
           }
         } else if (accId === 'acc-4.2.01') { // Juros Pagos
@@ -198,6 +263,20 @@ export class ReportingEngine {
             const title = titles.find(t => t.id === s.titleId);
             if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(monthStr) && (s.components?.interest || 0) > 0) {
               monthlyCash[m] += s.components.interest;
+            }
+          }
+        } else if (accId === 'acc-4.2.02') { // Multas Pagas
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'PAGAR' && s.settlementDate?.startsWith(monthStr) && (s.components?.fine || 0) > 0) {
+              monthlyCash[m] += s.components.fine;
+            }
+          }
+        } else if (accId === 'acc-4.1.02') { // Multas Recebidas
+          for (const s of allSettlements) {
+            const title = titles.find(t => t.id === s.titleId);
+            if (title?.type === 'RECEBER' && s.settlementDate?.startsWith(monthStr) && (s.components?.fine || 0) > 0) {
+              monthlyCash[m] += s.components.fine;
             }
           }
         }

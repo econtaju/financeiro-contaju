@@ -827,17 +827,21 @@ export const ReconciliationView: React.FC = () => {
         interest = adjInterest;
         fine = adjFine;
         discount = adjDiscount;
+        const total = Math.round((p + interest + fine - discount) * 100) / 100;
+        if (Math.abs(total - stmtAbs) >= 0.005) {
+          handleOpenReconcileModal(stmt, title);
+          setErrorMsg(`Valores divergentes: a composição contábil (${formatBRL(total)}) difere do extrato (${formatBRL(stmtAbs)}). Confira e defina se a diferença é Tarifa Bancária ou Desconto no modal antes de conciliar.`);
+          return;
+        }
       } else {
         const diff = Math.round((stmtAbs - titleBal) * 100) / 100;
-        if (Math.abs(diff) < 0.005) {
-          p = titleBal;
-        } else if (diff > 0) {
-          p = titleBal;
-          interest = diff;
-        } else {
-          p = titleBal;
-          discount = Math.abs(diff);
+        if (Math.abs(diff) >= 0.005) {
+          // Bloqueia conciliação cega com divergência de valores: abre o modal para conferência
+          handleOpenReconcileModal(stmt, title);
+          setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do saldo do título (${formatBRL(titleBal)}). Faça a conferência e defina se a diferença é Tarifa Bancária ou Desconto no modal.`);
+          return;
         }
+        p = titleBal;
       }
 
       // Se o título já estiver liquidado, apenas vincula
@@ -1245,77 +1249,13 @@ export const ReconciliationView: React.FC = () => {
       return;
     }
 
-    // Se houver diferença no caso 1x1 ou Nx1 ou 1xN:
-    const today = new Date().toISOString().split('T')[0];
+    // Se houver qualquer diferença no caso 1x1, 1xN ou NxM:
+    // REGRA MANDATÓRIA: Bloqueia conciliação cega de valores divergentes!
+    // Abre obrigatoriamente a janela flutuante para conferência dos valores e separação entre Desconto e Tarifa Bancária.
     const diff = Math.round((totalStmtsAmount - totalTitlesAmount) * 100) / 100;
-
-    if (selectedStmts.length === 1 && selectedTitles.length === 1) {
-      const stmt = selectedStmts[0];
-      const title = selectedTitles[0];
-      const titleBal = title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount;
-
-      let pSettled = titleBal;
-      let interest = 0;
-      let discount = 0;
-
-      if (diff > 0) {
-        // Extrato pagou mais que o saldo: excesso lançado como juros/multa
-        interest = diff;
-      } else if (diff < 0) {
-        // Extrato pagou menos que o saldo: diferença lançada como desconto comercial
-        discount = Math.abs(diff);
-      }
-
-      const res = FinancialEngine.postSettlement({
-        titleId: title.id,
-        settlementDate: stmt.date > today ? today : stmt.date,
-        bankAccountId: stmt.bankAccountId || selectedAccountId,
-        principalSettled: pSettled,
-        interest,
-        discount,
-        fine: 0,
-        bankFee: 0,
-        notes: `Equalizado e conciliado via extrato (${formatBRL(stmt.amount)}). ${interest > 0 ? `Juros: +${formatBRL(interest)}` : ''} ${discount > 0 ? `Desconto: -${formatBRL(discount)}` : ''}`.trim(),
-        voucherRef: stmt.fitId || undefined
-      });
-
-      if (res.success) {
-        const allStmts = storage.getStatementEntries().map(s => {
-          if (s.id === stmt.id) {
-            return {
-              ...s,
-              reconciliationStatus: 'CONCILIADO' as const,
-              matchedTitleId: title.id,
-              reconciliationNote: `Equalizado e conciliado com título ${title.titleNumber} (${diff !== 0 ? `dif: ${formatBRL(diff)}` : 'exato'})`
-            };
-          }
-          return s;
-        });
-        storage.saveStatementEntries(allStmts);
-
-        const allTitles = storage.getTitles().map(t => {
-          if (t.id === title.id) {
-            return {
-              ...t,
-              reconciliationStatus: 'CONCILIADO' as const,
-              reconciliationNote: `Conciliado com extrato "${stmt.description}"`,
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return t;
-        });
-        storage.saveTitles(allTitles);
-
-        setSuccessMsg(`✓ Sucesso! Conciliado e equalizado com sucesso! ${interest > 0 ? `(+${formatBRL(interest)} juros apurados)` : ''} ${discount > 0 ? `(-${formatBRL(discount)} desconto apurado)` : ''}`);
-        setSelectedStmtIds([]);
-        setSelectedTitleIds([]);
-        setRefreshKey(k => k + 1);
-      } else {
-        setErrorMsg(`Não foi possível liquidar o título: ${res.message}`);
-      }
-    } else {
-      executeMultiBatchReconcile();
-    }
+    handleOpenReconcileModal(selectedStmts[0], selectedTitles[0]);
+    setErrorMsg(`Valores divergentes: o total do extrato (${formatBRL(totalStmtsAmount)}) difere dos títulos (${formatBRL(totalTitlesAmount)}) por ${formatBRL(Math.abs(diff))}. Confira e equalize os valores separando Desconto Comercial de Tarifa Bancária para bater 100% antes de confirmar.`);
+    return;
   };
 
   // Dispara a conciliação em lote de todas as sugestões aprovadas
@@ -4352,7 +4292,14 @@ export const ReconciliationView: React.FC = () => {
         candidateTitles={titles}
         chartAccounts={chartAccounts}
         onApplyMatch={(stmt, title) => {
-          executeDirectReconciliation(stmt, title, { autoEqualize: true });
+          const stmtAbs = Math.round(Math.abs(Number(stmt.amount) || 0) * 100) / 100;
+          const titleBal = Math.round((title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount) * 100) / 100;
+          if (Math.abs(stmtAbs - titleBal) >= 0.005) {
+            handleOpenReconcileModal(stmt, title);
+            setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do saldo do título (${formatBRL(titleBal)}). Faça a conferência e defina se a diferença é Tarifa Bancária ou Desconto no modal.`);
+          } else {
+            handleDirectExpressReconcile(stmt, title);
+          }
         }}
         onCreateTitleFromAi={(stmt, sug) => {
           handleCreateTitleFromAiSuggestion(stmt, sug);
