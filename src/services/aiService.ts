@@ -143,6 +143,57 @@ export class AiService {
   }
 
   /**
+   * Executa um teste rápido de prompt com uma IA específica ou com a cadeia configurada
+   */
+  public static async testPrompt(
+    promptText: string,
+    specificModel?: string
+  ): Promise<{
+    success: boolean;
+    content: string;
+    modelUsed: string;
+    latencyMs: number;
+    error?: string;
+  }> {
+    const config = this.getConfig();
+    if (!config.apiKey) {
+      return {
+        success: false,
+        content: '',
+        modelUsed: 'NONE',
+        latencyMs: 0,
+        error: 'Chave da API do OpenCode Go não configurada. Por favor, insira sua chave no campo acima.'
+      };
+    }
+
+    const messages = [
+      {
+        role: 'system' as const,
+        content: 'Você é o consultor de inteligência artificial financeira do ERP ContaJu. Responda de forma clara, profissional, prática e concisa em português do Brasil.'
+      },
+      {
+        role: 'user' as const,
+        content: promptText
+      }
+    ];
+
+    const res = await this.executeWithFailover(messages, {
+      preferredModel: specificModel,
+      featureName: 'Playground de Teste de IA',
+      maxTokens: 600,
+      temperature: 0.3
+    });
+
+    return {
+      success: res.success,
+      content: res.content,
+      modelUsed: res.modelUsed,
+      latencyMs: res.totalDurationMs,
+      error: res.success ? undefined : (res.attempts[res.attempts.length - 1]?.errorMessage || 'Falha ao executar teste.')
+    };
+  }
+
+  /**
    * Executa uma requisição de IA com Failover Automático em Cascata
    * Se o modelo primário falhar (HTTP 429 rate limit, 500, timeout, etc.), tenta o secundário, e assim sucessivamente
    */
@@ -154,6 +205,7 @@ export class AiService {
       jsonMode?: boolean;
       featureName?: string;
       agentRole?: AgentRoleType;
+      preferredModel?: string;
     } = {}
   ): Promise<AiExecutionResult> {
     const config = this.getConfig();
@@ -172,7 +224,7 @@ export class AiService {
           temperature: options.temperature ?? config.temperature ?? 0.2,
           maxTokens: options.maxTokens ?? config.maxTokens ?? 2000,
           jsonMode: options.jsonMode,
-          preferredModel: config.primaryModel,
+          preferredModel: options.preferredModel || config.primaryModel,
           fallbackModels: config.fallbackModels || [],
           customApiKey: config.apiKey || undefined
         })
@@ -236,10 +288,11 @@ export class AiService {
       };
     }
 
-    // Monta a cadeia de contingência: Modelo Primário -> Modelos Secundários
+    // Monta a cadeia de contingência: Modelo Primário (ou preferido) -> Modelos Secundários
+    const primary = options.preferredModel || config.primaryModel || 'deepseek-v4-pro';
     const modelsChain: string[] = [
-      config.primaryModel || 'deepseek-v4-pro',
-      ...(config.fallbackModels || []).filter(m => m !== config.primaryModel)
+      primary,
+      ...(config.fallbackModels || []).filter(m => m !== primary)
     ];
 
     const attempts: AiExecutionAttempt[] = [];

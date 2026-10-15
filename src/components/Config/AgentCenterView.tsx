@@ -27,7 +27,10 @@ import {
   ArrowDown,
   Check,
   Plus,
-  X
+  X,
+  Send,
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
 import { 
   AgentDefinition, 
@@ -71,6 +74,48 @@ export const AgentCenterView: React.FC = () => {
   // Mensagens de ação
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
   const [actionErrorMsg, setActionErrorMsg] = useState('');
+
+  // Estados do Playground de Testes Práticos de IA
+  const [testPlaygroundModel, setTestPlaygroundModel] = useState<string>('');
+  const [testPlaygroundPrompt, setTestPlaygroundPrompt] = useState<string>(
+    'Analise rapidamente a saúde do caixa da ContaJu e dê uma recomendação financeira executiva.'
+  );
+  const [isRunningPlaygroundTest, setIsRunningPlaygroundTest] = useState(false);
+  const [playgroundResult, setPlaygroundResult] = useState<{
+    content: string;
+    modelUsed: string;
+    latencyMs: number;
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
+  const handleRunPlaygroundTest = async () => {
+    if (!testPlaygroundPrompt.trim()) return;
+    setIsRunningPlaygroundTest(true);
+    setPlaygroundResult(null);
+    try {
+      const targetModel = testPlaygroundModel || aiConfig.primaryModel || 'deepseek-v4-pro';
+      const res = await AiService.testPrompt(testPlaygroundPrompt.trim(), targetModel);
+      setPlaygroundResult(res);
+      if (res.success) {
+        setActionSuccessMsg(`Resposta recebida com sucesso via ${res.modelUsed} (${res.latencyMs}ms)!`);
+        setTimeout(() => setActionSuccessMsg(''), 4000);
+      } else {
+        setActionErrorMsg(res.error || 'Falha ao executar teste.');
+        setTimeout(() => setActionErrorMsg(''), 5000);
+      }
+    } catch (err: any) {
+      setPlaygroundResult({
+        success: false,
+        content: '',
+        modelUsed: testPlaygroundModel || 'NONE',
+        latencyMs: 0,
+        error: err.message || 'Erro inesperado na execução do teste.'
+      });
+    } finally {
+      setIsRunningPlaygroundTest(false);
+    }
+  };
 
   // Sincroniza catálogo de modelos em tempo real na montagem
   useEffect(() => {
@@ -773,6 +818,144 @@ export const AgentCenterView: React.FC = () => {
             </div>
           </div>
 
+          {/* Card: Playground de Teste Prático & Imediato de IA */}
+          <div className="p-6 rounded-2xl bg-[var(--surface-card)] border border-amber-500/30 space-y-4 shadow-md bg-gradient-to-b from-amber-500/5 to-transparent">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Playground: Teste Prático & Imediato de IA</span>
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Faça perguntas financeiras ou testes de ping para qualquer modelo e veja o tempo de resposta em milissegundos na hora.
+                </p>
+              </div>
+
+              {/* Seletor de Modelo para Teste */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap">Modelo do Teste:</span>
+                <select
+                  value={testPlaygroundModel || aiConfig.primaryModel}
+                  onChange={(e) => setTestPlaygroundModel(e.target.value)}
+                  className="bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  {catalogModels.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.id}) {m.id === aiConfig.primaryModel ? '⭐ Primário' : ''}
+                    </option>
+                  ))}
+                </select>
+                {testPlaygroundModel && testPlaygroundModel !== aiConfig.primaryModel && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = { ...aiConfig, primaryModel: testPlaygroundModel };
+                      AiService.saveConfig(updated);
+                      setAiConfig(updated);
+                      setActionSuccessMsg(`Modelo primário definido para ${testPlaygroundModel}`);
+                      setTimeout(() => setActionSuccessMsg(''), 4000);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors cursor-pointer shrink-0"
+                    title="Definir este modelo como padrão para todo o sistema"
+                  >
+                    Usar Como Primário
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sugestões Rápidas de Pergunta */}
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="text-[var(--text-secondary)] text-[11px] font-bold uppercase tracking-wider">
+                Exemplos de Teste Rápido:
+              </span>
+              <button
+                type="button"
+                onClick={() => setTestPlaygroundPrompt("Responda apenas: 'IA ContaJu Conectada com Sucesso!' e informe a data/hora e o seu modelo.")}
+                className="px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] text-xs border border-[var(--border-subtle)] transition-colors cursor-pointer"
+              >
+                ⚡ Ping de Conexão
+              </button>
+              <button
+                type="button"
+                onClick={() => setTestPlaygroundPrompt("Analise rapidamente a saúde do caixa da ContaJu e dê uma recomendação financeira executiva.")}
+                className="px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] text-xs border border-[var(--border-subtle)] transition-colors cursor-pointer"
+              >
+                📊 Parecer de Caixa
+              </button>
+              <button
+                type="button"
+                onClick={() => setTestPlaygroundPrompt("Como categorizar no plano de contas um lançamento de extrato: 'DEB TARIFA PIX MENSALIDADE'?")}
+                className="px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] text-[var(--text-primary)] text-xs border border-[var(--border-subtle)] transition-colors cursor-pointer"
+              >
+                🏷️ Teste de Conciliação
+              </button>
+            </div>
+
+            {/* Input da Pergunta e Botão de Executar */}
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <input
+                type="text"
+                value={testPlaygroundPrompt}
+                onChange={(e) => setTestPlaygroundPrompt(e.target.value)}
+                placeholder="Digite uma pergunta para a IA testar (ex: Como classificar tarifa bancária?)..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRunPlaygroundTest();
+                }}
+                className="flex-1 px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleRunPlaygroundTest}
+                disabled={isRunningPlaygroundTest || !testPlaygroundPrompt.trim() || !aiConfig.apiKey}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                {isRunningPlaygroundTest ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Executando IA...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Executar Teste Agora</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Exibição da Resposta do Playground */}
+            {playgroundResult && (
+              <div className={`p-4 rounded-xl border text-xs space-y-2 animate-in fade-in ${
+                playgroundResult.success 
+                  ? 'bg-[var(--surface-elevated)] border-emerald-500/30' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}>
+                <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full font-bold ${
+                      playgroundResult.success ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                    }`}>
+                      {playgroundResult.success ? '✓ Resposta Recebida' : 'Falha na Consulta'}
+                    </span>
+                    <span className="text-[var(--text-secondary)]">
+                      Modelo: <strong className="text-amber-500">{playgroundResult.modelUsed}</strong>
+                    </span>
+                  </div>
+                  {playgroundResult.success && (
+                    <span className="font-mono text-emerald-400 font-bold">
+                      ⚡ Latência: {playgroundResult.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap font-sans text-xs pt-1">
+                  {playgroundResult.success ? playgroundResult.content : playgroundResult.error}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Card 2: Cadeia de Contingência Dinâmica (Failover) */}
           <div className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
@@ -966,15 +1149,29 @@ export const AgentCenterView: React.FC = () => {
                       </div>
 
                       <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-1 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => handleTestSingleModel(item.id)}
-                          disabled={isTesting || !aiConfig.apiKey}
-                          className="p-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer disabled:opacity-40"
-                          title="Testar conectividade com esta IA"
-                        >
-                          {isTesting ? <RefreshCw className="w-3 h-3 animate-spin text-amber-500" /> : <Play className="w-3 h-3" />}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleTestSingleModel(item.id)}
+                            disabled={isTesting || !aiConfig.apiKey}
+                            className="p-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer disabled:opacity-40"
+                            title="Testar ping e conectividade"
+                          >
+                            {isTesting ? <RefreshCw className="w-3 h-3 animate-spin text-amber-500" /> : <Play className="w-3 h-3" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestPlaygroundModel(item.id);
+                              window.scrollTo({ top: 250, behavior: 'smooth' });
+                            }}
+                            className="px-1.5 py-1 rounded-md border border-[var(--border-subtle)] hover:bg-[var(--surface-card)] text-[var(--text-secondary)] hover:text-amber-500 cursor-pointer text-[10px] flex items-center gap-1"
+                            title="Carregar este modelo no Playground de teste"
+                          >
+                            <MessageSquare className="w-2.5 h-2.5" />
+                            <span>Testar</span>
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1.5 ml-auto">
                           {isPrimary ? (
