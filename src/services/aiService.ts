@@ -46,42 +46,48 @@ export class AiService {
       endpoint = 'https://opencode.ai/zen/go/v1';
     }
 
-    if (!apiKey) {
-      // Tenta testar via Serverless Gateway (usando credencial do servidor sem expor ao client)
-      try {
-        const startTime = Date.now();
-        const serverlessRes = await fetch('/api/agents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentRole: 'CFO_EXECUTIVO',
-            action: 'ping_test',
-            messages: [{ role: 'user', content: 'Ping' }],
-            preferredModel: modelId,
-            temperature: 0.1,
-            maxTokens: 5
-          })
-        });
-        const latencyMs = Date.now() - startTime;
-        if (serverlessRes.ok) {
-          const data = await serverlessRes.json();
+    // 1. Tenta testar prioritariamente via Serverless Gateway (evita bloqueio de CORS do navegador)
+    try {
+      const startTime = Date.now();
+      const serverlessRes = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentRole: 'CFO_EXECUTIVO',
+          action: 'ping_test',
+          messages: [{ role: 'user', content: 'Ping' }],
+          preferredModel: modelId,
+          fallbackModels: [],
+          customApiKey: apiKey || undefined,
+          temperature: 0.1,
+          maxTokens: 5
+        })
+      });
+      const latencyMs = Date.now() - startTime;
+      if (serverlessRes.ok) {
+        const data = await serverlessRes.json();
+        if (data.success) {
           return {
             success: true,
             latencyMs,
             statusCode: 200,
-            message: `Conexão bem-sucedida via Gateway Seguro com ${data.modelUsed || modelId} (${latencyMs}ms)`
+            message: `Conexão bem-sucedida com ${data.modelUsed || modelId} (${latencyMs}ms)`
           };
         } else {
           return {
             success: false,
             latencyMs,
             statusCode: serverlessRes.status,
-            message: `Gateway HTTP ${serverlessRes.status}. Configure OPENCODE_API_KEY no servidor ou informe uma chave.`
+            message: data.error || (data.attempts?.[0]?.errorMessage) || `Erro HTTP ${serverlessRes.status}`
           };
         }
-      } catch {
-        return { success: false, latencyMs: 0, message: 'Chave de API não informada e Gateway offline.' };
       }
+    } catch {
+      // Gateway offline, tenta fallback direto abaixo
+    }
+
+    if (!apiKey) {
+      return { success: false, latencyMs: 0, message: 'Chave de API não informada e Gateway offline.' };
     }
 
     const startTime = Date.now();

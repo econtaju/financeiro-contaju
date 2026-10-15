@@ -979,6 +979,93 @@ export const ReconciliationView: React.FC = () => {
     setRefreshKey(k => k + 1);
   };
 
+  // Equaliza e concilia imediatamente com resolução automática de diferenças (juros, multas ou descontos)
+  const handleEqualizeAndReconcile = () => {
+    if (selectedStmts.length === 0 || selectedTitles.length === 0) return;
+
+    // Se os valores já forem 100% iguais ou lote padrão, executa diretamente
+    if (isMultiExact) {
+      if (selectedStmts.length === 1 && selectedTitles.length === 1) {
+        handleDirectExpressReconcile(selectedStmts[0], selectedTitles[0]);
+      } else {
+        executeMultiBatchReconcile();
+      }
+      return;
+    }
+
+    // Se houver diferença no caso 1x1 ou Nx1 ou 1xN:
+    const today = new Date().toISOString().split('T')[0];
+    const diff = Math.round((totalStmtsAmount - totalTitlesAmount) * 100) / 100;
+
+    if (selectedStmts.length === 1 && selectedTitles.length === 1) {
+      const stmt = selectedStmts[0];
+      const title = selectedTitles[0];
+      const titleBal = title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount;
+
+      let pSettled = titleBal;
+      let interest = 0;
+      let discount = 0;
+
+      if (diff > 0) {
+        // Extrato pagou mais que o saldo: excesso lançado como juros/multa
+        interest = diff;
+      } else if (diff < 0) {
+        // Extrato pagou menos que o saldo: diferença lançada como desconto comercial
+        discount = Math.abs(diff);
+      }
+
+      const res = FinancialEngine.postSettlement({
+        titleId: title.id,
+        settlementDate: stmt.date > today ? today : stmt.date,
+        bankAccountId: stmt.bankAccountId || selectedAccountId,
+        principalSettled: pSettled,
+        interest,
+        discount,
+        fine: 0,
+        bankFee: 0,
+        notes: `Equalizado e conciliado via extrato (${formatBRL(stmt.amount)}). ${interest > 0 ? `Juros: +${formatBRL(interest)}` : ''} ${discount > 0 ? `Desconto: -${formatBRL(discount)}` : ''}`.trim(),
+        voucherRef: stmt.fitId || undefined
+      });
+
+      if (res.success) {
+        const allStmts = storage.getStatementEntries().map(s => {
+          if (s.id === stmt.id) {
+            return {
+              ...s,
+              reconciliationStatus: 'CONCILIADO' as const,
+              matchedTitleId: title.id,
+              reconciliationNote: `Equalizado e conciliado com título ${title.titleNumber} (${diff !== 0 ? `dif: ${formatBRL(diff)}` : 'exato'})`
+            };
+          }
+          return s;
+        });
+        storage.saveStatementEntries(allStmts);
+
+        const allTitles = storage.getTitles().map(t => {
+          if (t.id === title.id) {
+            return {
+              ...t,
+              reconciliationStatus: 'CONCILIADO' as const,
+              reconciliationNote: `Conciliado com extrato "${stmt.description}"`,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return t;
+        });
+        storage.saveTitles(allTitles);
+
+        setSuccessMsg(`✓ Sucesso! Conciliado e equalizado com sucesso! ${interest > 0 ? `(+${formatBRL(interest)} juros apurados)` : ''} ${discount > 0 ? `(-${formatBRL(discount)} desconto apurado)` : ''}`);
+        setSelectedStmtIds([]);
+        setSelectedTitleIds([]);
+        setRefreshKey(k => k + 1);
+      } else {
+        setErrorMsg(`Não foi possível liquidar o título: ${res.message}`);
+      }
+    } else {
+      executeMultiBatchReconcile();
+    }
+  };
+
   // Dispara a conciliação em lote de todas as sugestões aprovadas
   const handleTriggerBatchReconcileAllSuggestions = () => {
     setErrorMsg('');
@@ -2447,423 +2534,63 @@ export const ReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* ======================================================== */}
-      {/* PAINEL DE CONFRONTO LADO A LADO UNIVERSAL (1x1, 1xN, Nx1, NxM) */}
-      {/* ======================================================== */}
-
-      {/* CASO A: PELO MENOS 1 EXTRATO E PELO MENOS 1 TÍTULO -> CONFRONTO DIRETO LADO A LADO COM O CONECTOR CIRCULAR CENTRAL */}
-      {selectedStmts.length >= 1 && selectedTitles.length >= 1 && (
-        <div className="sticky top-20 z-40 mb-6 bg-slate-900/98 dark:bg-[#131720]/98 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 shadow-2xl p-4 sm:p-5 text-white transition-all animate-in fade-in slide-in-from-top-3 duration-200">
-          {/* Topo do Painel: Identificação Clara do Tipo de Paridade e Limpar Seleção */}
-          <div className="flex flex-wrap items-center justify-between pb-3 mb-3 border-b border-slate-800 gap-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-              <span className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                {selectedStmts.length === 1 && selectedTitles.length === 1 && "Confronto Par a Par (1 Extrato ⇄ 1 Título)"}
-                {selectedStmts.length === 1 && selectedTitles.length > 1 && `Confronto 1 para Vários (1 Pagamento no Extrato ⇄ ${selectedTitles.length} Despesas/Receitas)`}
-                {selectedStmts.length > 1 && selectedTitles.length === 1 && `Confronto Vários para 1 (${selectedStmts.length} Pagamentos no Extrato ⇄ 1 Despesa/Receita)`}
-                {selectedStmts.length > 1 && selectedTitles.length > 1 && `Confronto em Lote (${selectedStmts.length} Extratos ⇄ ${selectedTitles.length} Despesas/Receitas)`}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleClearSelection}
-              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition-colors px-2.5 py-1 rounded-lg hover:bg-white/10 cursor-pointer"
-              title="Desmarcar todos os itens selecionados"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Desmarcar Todos ({selectedStmts.length + selectedTitles.length})</span>
-            </button>
-          </div>
-
-          {/* Grid dos 2 Cards Alinhados Lado a Lado com o Círculo Central */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-            
-            {/* ======================================================== */}
-            {/* CARD ESQUERDO: EXTRATOS BANCÁRIOS (1x1 ou 1xN / Nx1)      */}
-            {/* ======================================================== */}
-            <div className="lg:col-span-5 bg-slate-950/70 dark:bg-[#0B0E14]/80 rounded-xl p-3.5 border border-sky-500/30 hover:border-sky-500/50 transition-all relative group flex flex-col justify-between min-h-[150px] shadow-inner">
-              {selectedStmts.length === 1 ? (
-                // 1 Extrato Único
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 flex items-center gap-1">
-                      <Landmark className="w-3 h-3 text-sky-400" />
-                      Extrato Oficial ({accounts.find(a => a.id === selectedAccountId)?.name || 'Banco'})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStmtIds([])}
-                      className="text-slate-400 hover:text-rose-400 transition-colors p-1"
-                      title="Desmarcar extrato"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <h4 className="text-sm font-bold text-white line-clamp-2" title={selectedStmts[0].description}>
-                    {selectedStmts[0].description}
-                  </h4>
-                  <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
-                    <span>📅 {formatDateBR(selectedStmts[0].date)}</span>
-                    {selectedStmts[0].fitId && (
-                      <span className="font-mono text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-300 truncate max-w-[150px]">
-                        ID: {selectedStmts[0].fitId}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                // Múltiplos Extratos (Nx1 ou NxM)
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 flex items-center gap-1">
-                      <Layers className="w-3 h-3 text-sky-400" />
-                      {selectedStmts.length} Extratos Selecionados
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStmtIds([])}
-                      className="text-slate-400 hover:text-rose-400 transition-colors p-1"
-                      title="Limpar extratos selecionados"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Lista rolável dos extratos que compõem a soma */}
-                  <div className="max-h-24 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                    {selectedStmts.map((s, idx) => (
-                      <div key={s.id} className="flex items-center justify-between text-xs bg-slate-900/60 p-1.5 rounded border border-slate-800">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[10px] font-mono text-slate-400 font-bold">#{idx + 1}</span>
-                          <span className="truncate text-slate-200 text-[11px]" title={s.description}>{s.description}</span>
-                          <span className="text-[10px] text-slate-400 shrink-0">({formatDateBR(s.date)})</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 ml-2">
-                          <span className="font-mono font-bold text-white text-[11px]">{formatBRL(s.amount)}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedStmtIds(prev => prev.filter(id => id !== s.id))}
-                            className="text-slate-500 hover:text-rose-400 p-0.5"
-                            title="Remover este extrato da seleção"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Rodapé do Card Esquerdo com o Total Somado */}
-              <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-slate-400">
-                  {selectedStmts.length === 1 
-                    ? (selectedStmts[0].amount >= 0 ? 'Entrada / Crédito' : 'Saída / Débito') 
-                    : `Total dos ${selectedStmts.length} Extratos`}
-                </span>
-                <span className={`text-xl sm:text-2xl font-black font-mono ${
-                  totalStmtsAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                }`}>
-                  {formatBRL(totalStmtsAmount)}
-                </span>
-              </div>
-            </div>
-
-            {/* ======================================================== */}
-            {/* ELEMENTO CENTRAL CIRCULAR DE DESTAQUE PREMIUM (lg:col-span-2) */}
-            {/* ======================================================== */}
-            <div className="lg:col-span-2 flex flex-col items-center justify-center py-2 relative">
-              {/* Linhas Conectoras Luminosas Horizontais */}
-              <div className="hidden lg:block absolute left-0 top-1/2 -translate-y-1/2 w-5 h-[2px] bg-gradient-to-r from-sky-500/50 via-amber-400 to-amber-500" />
-              <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 w-5 h-[2px] bg-gradient-to-l from-amber-500/50 via-amber-400 to-amber-500" />
-
-              {/* CÍRCULO CENTRAL PREMIUM COM DUPLO ANEL E GLOW */}
-              <div className={`w-20 h-20 rounded-full relative flex flex-col items-center justify-center p-1.5 transition-all duration-300 ${
-                isMultiExact
-                  ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-emerald-950 border-2 border-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.35)] ring-4 ring-emerald-500/20'
-                  : 'bg-gradient-to-br from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)] ring-4 ring-amber-500/20'
-              }`}>
-                {/* Efeito sutil de anel rotativo */}
-                <div className="absolute inset-0 rounded-full border border-dashed border-white/15 animate-spin-slow pointer-events-none" />
-                
-                <div className="flex items-center justify-center">
-                  {isMultiExact ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  )}
-                </div>
-                <span className={`text-base font-black font-mono leading-none my-0.5 ${
-                  isMultiExact ? 'text-emerald-300' : 'text-amber-300'
-                }`}>
-                  {selectedStmts.length === 1 && selectedTitles.length === 1 ? `${currentPairScore}%` : (isMultiExact ? '100%' : 'LOTE')}
-                </span>
-                <span className="text-[8px] font-black tracking-widest uppercase text-slate-300 leading-none">
-                  {isMultiExact ? 'EXATO' : 'PARIDADE'}
-                </span>
-              </div>
-
-              {/* Status de Assertividade / Diferença */}
-              <div className="mt-2 text-center w-full">
-                {isMultiExact ? (
-                  <span className="inline-block text-[10px] font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full">
-                    ✓ 100% Equalizado
-                  </span>
-                ) : (
-                  <span className="inline-block text-[10px] font-bold text-rose-300 bg-rose-500/20 border border-rose-500/40 px-2 py-0.5 rounded-full font-mono">
-                    Dif: {formatBRL(multiDifference)}
-                  </span>
-                )}
-              </div>
-
-              {/* Botão de Ação Primária Central */}
-              <div className="mt-2 w-full flex flex-col gap-1 items-center">
-                {isMultiExact ? (
-                  <button
-                    type="button"
-                    onClick={handleConfirmPairing}
-                    className="w-full px-3 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:brightness-110 text-slate-950 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all text-center"
-                    title="Conciliar e Baixar Imediatamente (Valores 100% Conferidos)"
-                  >
-                    <Zap className="w-3.5 h-3.5 fill-slate-950 shrink-0" />
-                    <span className="truncate">
-                      {selectedStmts.length === 1 && selectedTitles.length === 1 && "⚡ 1-CLIQUE"}
-                      {selectedStmts.length === 1 && selectedTitles.length > 1 && `⚡ CONCILIAR (1x${selectedTitles.length})`}
-                      {selectedStmts.length > 1 && selectedTitles.length === 1 && `⚡ CONCILIAR (${selectedStmts.length}x1)`}
-                      {selectedStmts.length > 1 && selectedTitles.length > 1 && `⚡ CONCILIAR LOTE`}
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleConfirmPairing}
-                    className="w-full px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all"
-                    title="Conciliar com Diferença ou Equalizar"
-                  >
-                    <Sliders className="w-3 h-3" />
-                    <span>Conciliar c/ Dif</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenReconcileModal(selectedStmts[0], selectedTitles[0])}
-                  className="text-[10px] text-slate-400 hover:text-amber-300 underline cursor-pointer"
-                >
-                  Janela Detalhada
-                </button>
-              </div>
-            </div>
-
-            {/* ======================================================== */}
-            {/* CARD DIREITO: DESPESAS / RECEITAS DO ERP (1x1 ou 1xN / Nx1) */}
-            {/* ======================================================== */}
-            <div className="lg:col-span-5 bg-slate-950/70 dark:bg-[#0B0E14]/80 rounded-xl p-3.5 border border-amber-500/30 hover:border-amber-500/50 transition-all relative group flex flex-col justify-between min-h-[150px] shadow-inner">
-              {selectedTitles.length === 1 ? (
-                // 1 Título Único
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                      <FileText className="w-3 h-3 text-amber-400" />
-                      Título ERP #{selectedTitles[0].titleNumber}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTitleIds([])}
-                      className="text-slate-400 hover:text-rose-400 transition-colors p-1"
-                      title="Desmarcar este título"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <h4 className="text-sm font-bold text-white line-clamp-2" title={selectedTitles[0].description}>
-                    {selectedTitles[0].description || selectedTitles[0].entityName || 'Título Financeiro'}
-                  </h4>
-                  <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
-                    <span>📅 Venc: {formatDateBR(selectedTitles[0].dueDate)}</span>
-                    {selectedTitles[0].entityName && (
-                      <span className="truncate max-w-[160px] text-slate-300">
-                        👤 {selectedTitles[0].entityName}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                // Múltiplos Títulos (1xN ou NxM)
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                      <Layers className="w-3 h-3 text-amber-400" />
-                      {selectedTitles.length} Despesas/Receitas Selecionadas
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTitleIds([])}
-                      className="text-slate-400 hover:text-rose-400 transition-colors p-1"
-                      title="Limpar títulos selecionados"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Lista rolável dos títulos que compõem a soma */}
-                  <div className="max-h-24 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                    {selectedTitles.map((t, idx) => {
-                      const tVal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
-                      return (
-                        <div key={t.id} className="flex items-center justify-between text-xs bg-slate-900/60 p-1.5 rounded border border-slate-800">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-[10px] font-mono text-amber-400 font-bold">#{idx + 1}</span>
-                            <span className="truncate text-slate-200 text-[11px] max-w-[160px]" title={t.description || t.entityName}>
-                              {t.titleNumber} - {t.description || t.entityName}
-                            </span>
-                            <span className="text-[10px] text-slate-400 shrink-0">({formatDateBR(t.dueDate)})</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
-                            <span className="font-mono font-bold text-amber-300 text-[11px]">{formatBRL(tVal)}</span>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedTitleIds(prev => prev.filter(id => id !== t.id))}
-                              className="text-slate-500 hover:text-rose-400 p-0.5"
-                              title="Remover este título da seleção"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Rodapé do Card Direito com o Total Somado */}
-              <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-slate-400">
-                  {selectedTitles.length === 1 
-                    ? (selectedTitles[0].type === 'RECEBER' ? 'A Receber' : 'A Pagar') 
-                    : `Total das ${selectedTitles.length} Despesas/Receitas`}
-                </span>
-                <span className="text-xl sm:text-2xl font-black font-mono text-amber-400">
-                  {formatBRL(totalTitlesAmount)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Equalização Rápida de Centavos quando houver divergência no caso 1x1 */}
-          {selectedStmts.length === 1 && selectedTitles.length === 1 && !isMultiExact && (
-            <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Equalizar centavos na hora:</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {multiDifference > 0 ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleApplyDiffAsInterest}
-                      className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[11px] font-bold cursor-pointer"
-                    >
-                      + Juros ({formatBRL(multiDifference)})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleApplyDiffAsFine}
-                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold cursor-pointer"
-                    >
-                      + Multa ({formatBRL(multiDifference)})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleApplyStatementAsPrincipal}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] font-bold cursor-pointer"
-                    >
-                      Ajustar Principal
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleApplyDiffAsDiscount}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold cursor-pointer"
-                    >
-                      - Desconto ({formatBRL(Math.abs(multiDifference))})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleApplyStatementAsPrincipal}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] font-bold cursor-pointer"
-                    >
-                      Ajustar Principal
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* CASO B: APENAS EXTRATO(S) MARCADO(S) (SEM TÍTULO AINDA) -> GUIA AMIGÁVEL PARA COMPLETAR O PAR */}
-      {selectedStmts.length >= 1 && selectedTitles.length === 0 && (
-        <div className="mb-4 bg-slate-900/90 dark:bg-[#1B212D]/90 backdrop-blur-xs text-white px-4 py-2.5 rounded-xl border border-sky-500/30 shadow-md flex items-center justify-between gap-3 text-xs animate-in fade-in duration-150">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shrink-0" />
-            <span className="truncate">
-              <strong className="text-sky-300">
-                {selectedStmts.length === 1 ? '1 Extrato Selecionado' : `${selectedStmts.length} Extratos Selecionados`}:
-              </strong>{' '}
-              {selectedStmts.length === 1 ? `"${selectedStmts[0].description}"` : 'Soma Total'}{' '}
-              <strong className="font-mono text-amber-300">({formatBRL(totalStmtsAmount)})</strong> &mdash;{' '}
-              <span className="text-slate-300">
-                Selecione {selectedStmts.length === 1 ? 'uma ou mais despesas/receitas' : 'a despesa ou receita'} correspondente à direita para ativar o confronto lado a lado.
-              </span>
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleClearSelection}
-            className="text-[10px] text-slate-400 hover:text-white shrink-0 px-2 py-0.5 rounded hover:bg-white/10 cursor-pointer"
-          >
-            Limpar ({selectedStmts.length})
-          </button>
-        </div>
-      )}
-
-      {/* CASO C: APENAS TÍTULO(S) MARCADO(S) (SEM EXTRATO AINDA) -> GUIA AMIGÁVEL PARA COMPLETAR O PAR */}
-      {selectedStmts.length === 0 && selectedTitles.length >= 1 && (
-        <div className="mb-4 bg-slate-900/90 dark:bg-[#1B212D]/90 backdrop-blur-xs text-white px-4 py-2.5 rounded-xl border border-amber-500/30 shadow-md flex items-center justify-between gap-3 text-xs animate-in fade-in duration-150">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-            <span className="truncate">
-              <strong className="text-amber-300">
-                {selectedTitles.length === 1 ? '1 Despesa/Título Selecionado' : `${selectedTitles.length} Despesas/Títulos Selecionados`}:
-              </strong>{' '}
-              {selectedTitles.length === 1 ? `#${selectedTitles[0].titleNumber} - ${selectedTitles[0].description || selectedTitles[0].entityName}` : 'Soma Total'}{' '}
-              <strong className="font-mono text-amber-300">({formatBRL(totalTitlesAmount)})</strong> &mdash;{' '}
-              <span className="text-slate-300">
-                Selecione {selectedTitles.length === 1 ? 'um ou mais lançamentos do extrato' : 'o pagamento no extrato'} correspondente à esquerda para ativar o confronto lado a lado.
-              </span>
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleClearSelection}
-            className="text-[10px] text-slate-400 hover:text-white shrink-0 px-2 py-0.5 rounded hover:bg-white/10 cursor-pointer"
-          >
-            Limpar ({selectedTitles.length})
-          </button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {/* GRID PRINCIPAL: 2 COLUNAS COM EQUALIZADOR INTEGRADO NO MEIO */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start relative">
         
+        {/* BOTÃO E MEDALHÃO CENTRAL DE EQUALIZAÇÃO ENTRE AS COLUNAS (DESKTOP) */}
+        {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
+          <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 top-48 z-30 flex-col items-center pointer-events-auto">
+            {/* Linhas Conectoras e Medalhão Central Circular */}
+            <div className="flex items-center justify-center">
+              <div className="w-8 h-1 bg-gradient-to-r from-sky-500 to-amber-500 shadow-md rounded-full" />
+              
+              <div 
+                className={`w-16 h-16 rounded-full flex flex-col items-center justify-center shadow-2xl border-2 transition-all backdrop-blur-md ${
+                  isMultiExact
+                    ? 'bg-slate-950/95 border-emerald-500 ring-4 ring-emerald-500/25 text-emerald-400 shadow-emerald-500/20'
+                    : 'bg-slate-950/95 border-amber-500 ring-4 ring-amber-500/30 text-amber-400 shadow-amber-500/30'
+                }`}
+              >
+                {isMultiExact ? (
+                  <>
+                    <Check className="w-6 h-6 text-emerald-400 stroke-[2.5]" />
+                    <span className="text-[8px] font-black uppercase tracking-wider text-emerald-400">100%</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5 text-amber-400 animate-pulse stroke-[2.5]" />
+                    <span className="text-[8px] font-black uppercase tracking-wider text-amber-300">
+                      {multiDifference > 0 ? '+JUROS' : '-DESC'}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="w-8 h-1 bg-gradient-to-r from-amber-500 to-purple-500 shadow-md rounded-full" />
+            </div>
+
+            {/* Botão de Equalizar & Conciliar */}
+            <div className="mt-2.5 flex flex-col items-center">
+              <button
+                type="button"
+                onClick={handleEqualizeAndReconcile}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-2xl hover:shadow-amber-500/50 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-amber-200"
+                title="Equalizar e conciliar as operações selecionadas com apuração automática de juros/descontos"
+              >
+                <Zap className="w-4 h-4 fill-current text-slate-950" />
+                <span>⚡ Equalizar & Conciliar</span>
+              </button>
+
+              <span className="mt-1 px-3 py-0.5 rounded-full text-[10px] font-bold bg-slate-950/95 border border-slate-700 text-slate-200 shadow-lg">
+                {isMultiExact 
+                  ? 'Diferença: R$ 0,00' 
+                  : `Diferença: ${multiDifference > 0 ? '+' : ''}${formatBRL(multiDifference)}`
+                }
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ======================================================== */}
         {/* COLUNA ESQUERDA: EXTRATO BANCÁRIO / OFX                  */}
         {/* ======================================================== */}
@@ -3045,19 +2772,70 @@ export const ReconciliationView: React.FC = () => {
             </div>
           )}
 
-          {/* Barra de resumo de extratos selecionados */}
+          {/* PAINEL PREMIUM DE SELEÇÃO INTEGRADA DO EXTRATO BANCÁRIO */}
           {selectedStmtIds.length > 0 && (
-            <div className="px-4 py-2 bg-slate-900 text-amber-300 border-b border-amber-500/30 text-xs flex items-center justify-between">
-              <span className="font-semibold flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-amber-400" />
-                <span><strong>{selectedStmtIds.length}</strong> extrato(s) marcado(s) • Total: <strong>{formatBRL(totalStmtsAmount)}</strong></span>
-              </span>
-              <button
-                onClick={() => setSelectedStmtIds([])}
-                className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
-              >
-                Desmarcar todos
-              </button>
+            <div className="p-3.5 bg-gradient-to-br from-slate-950 via-slate-900 to-[#0c162c] border-b-2 border-sky-500/50 text-slate-100 shadow-md">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center gap-1.5 shadow-xs">
+                    <Landmark className="w-3 h-3 text-sky-400" />
+                    <span>Extrato Selecionado ({selectedStmtIds.length})</span>
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {selectedStmts.some(s => s.amount < 0) ? 'Débito / Saída' : 'Crédito / Entrada'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStmtIds([])}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer px-2 py-0.5 rounded hover:bg-slate-800"
+                  title="Desmarcar todos os extratos"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Limpar Seleção</span>
+                </button>
+              </div>
+
+              {/* Destaque do Valor Total */}
+              <div className="mt-2.5 flex items-baseline justify-between">
+                <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Total do Extrato:</span>
+                <span className={`text-xl font-black font-mono tracking-tight ${selectedStmts.some(s => s.amount < 0) ? 'text-sky-300' : 'text-emerald-300'}`}>
+                  {formatBRL(totalStmtsAmount)}
+                </span>
+              </div>
+
+              {/* Lista compacta com chips/cards dos itens selecionados */}
+              <div className="mt-2 max-h-28 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                {selectedStmts.map(stmt => (
+                  <div
+                    key={stmt.id}
+                    className="flex items-center justify-between text-[11px] bg-slate-900/90 border border-slate-800 hover:border-sky-500/40 px-2.5 py-1.5 rounded-lg transition-colors group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">{formatDateBR(stmt.date)}</span>
+                      <span className="font-semibold text-slate-200 truncate" title={stmt.description}>
+                        {stmt.description}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-bold font-mono text-sky-300">
+                        {formatBRL(Math.abs(stmt.amount))}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStmtIds(prev => prev.filter(id => id !== stmt.id));
+                        }}
+                        className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
+                        title="Remover este lançamento"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -3294,6 +3072,35 @@ export const ReconciliationView: React.FC = () => {
           </div>
         </div>
 
+        {/* CONECTOR RESPONSIVO MOBILE ENTRE AS COLUNAS (TELAS MENORES) */}
+        {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
+          <div className="lg:hidden p-3.5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 rounded-2xl shadow-xl flex flex-col items-center gap-2.5">
+            <div className="flex items-center justify-between w-full text-xs">
+              <span className="font-bold text-sky-300">Extrato: {formatBRL(totalStmtsAmount)}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                isMultiExact ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+              }`}>
+                {isMultiExact ? '100% Equalizado' : (multiDifference > 0 ? '+Juros' : '-Desconto')}
+              </span>
+              <span className="font-bold text-amber-300">ERP: {formatBRL(totalTitlesAmount)}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleEqualizeAndReconcile}
+              className="w-full py-2.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer border border-amber-200"
+            >
+              <Zap className="w-4 h-4 fill-current text-slate-950" />
+              <span>⚡ Equalizar & Conciliar Agora</span>
+            </button>
+
+            {!isMultiExact && (
+              <span className="text-[10px] text-slate-400 font-medium">
+                Divergência de {multiDifference > 0 ? `+${formatBRL(multiDifference)} em juros/multa` : `-${formatBRL(Math.abs(multiDifference))} em desconto comercial`} será apurada automaticamente.
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ======================================================== */}
         {/* COLUNA DIREITA: TÍTULOS DO ERP OU CRIAR NOVO LANÇAMENTO  */}
@@ -3438,19 +3245,80 @@ export const ReconciliationView: React.FC = () => {
                 )}
               </div>
 
-              {/* Barra de resumo de múltiplos títulos marcados */}
+              {/* PAINEL PREMIUM DE SELEÇÃO INTEGRADA DE TÍTULOS DO ERP */}
               {selectedTitleIds.length > 0 && (
-                <div className="px-4 py-2 bg-slate-900 text-amber-300 border-b border-amber-500/30 text-xs flex items-center justify-between">
-                  <span className="font-semibold flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5 text-amber-400" />
-                    <span><strong>{selectedTitleIds.length}</strong> título(s) marcado(s) • Total: <strong>{formatBRL(totalTitlesAmount)}</strong></span>
-                  </span>
-                  <button
-                    onClick={() => setSelectedTitleIds([])}
-                    className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
-                  >
-                    Desmarcar todos
-                  </button>
+                <div className="p-3.5 bg-gradient-to-br from-slate-950 via-slate-900 to-[#1f152b] border-b-2 border-amber-500/50 text-slate-100 shadow-md">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-xs">
+                        <FileText className="w-3 h-3 text-amber-400" />
+                        <span>Títulos ERP Selecionados ({selectedTitleIds.length})</span>
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-400">
+                        {selectedTitles.some(t => t.type === 'PAGAR') ? 'Contas a Pagar' : 'Contas a Receber'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTitleIds([])}
+                      className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer px-2 py-0.5 rounded hover:bg-slate-800"
+                      title="Desmarcar todos os títulos"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Limpar Seleção</span>
+                    </button>
+                  </div>
+
+                  {/* Destaque do Valor Total */}
+                  <div className="mt-2.5 flex items-baseline justify-between">
+                    <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Total do ERP:</span>
+                    <span className="text-xl font-black font-mono tracking-tight text-amber-300">
+                      {formatBRL(totalTitlesAmount)}
+                    </span>
+                  </div>
+
+                  {/* Lista compacta com chips/cards dos títulos selecionados */}
+                  <div className="mt-2 max-h-28 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                    {selectedTitles.map(title => {
+                      const val = title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount;
+                      const person = counterpartyMap.get(title.counterpartyId);
+                      const entityName = person?.name || 'Sem favorecido';
+                      return (
+                        <div
+                          key={title.id}
+                          className="flex items-center justify-between text-[11px] bg-slate-900/90 border border-slate-800 hover:border-amber-500/40 px-2.5 py-1.5 rounded-lg transition-colors group"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            <span className="text-[10px] font-bold text-amber-400 font-mono shrink-0">#{title.titleNumber}</span>
+                            <span className="font-semibold text-slate-200 truncate" title={entityName}>
+                              {entityName}
+                            </span>
+                            {title.category && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 truncate hidden sm:inline">
+                                {title.category}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-bold font-mono text-amber-300">
+                              {formatBRL(val)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTitleIds(prev => prev.filter(id => id !== title.id));
+                              }}
+                              className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
+                              title="Remover este título"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -4154,6 +4022,64 @@ export const ReconciliationView: React.FC = () => {
                 <span>Confirmar Desconciliação</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* BARRA FIXA FLUTUANTE INFERIOR DE EQUALIZAÇÃO (SEMPRE VISÍVEL MESMO COM ROLAGEM) */}
+      {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-950/95 border-2 border-amber-500/60 shadow-2xl rounded-2xl px-5 py-3 backdrop-blur-md flex items-center gap-4 text-white max-w-[94vw] animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">
+                Extrato ({selectedStmtIds.length}):
+              </div>
+              <div className="text-sm font-black font-mono text-sky-300">
+                {formatBRL(totalStmtsAmount)}
+              </div>
+            </div>
+
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center border font-bold text-xs ${
+              isMultiExact 
+                ? 'bg-emerald-950 border-emerald-500 text-emerald-400' 
+                : 'bg-amber-950 border-amber-500 text-amber-400'
+            }`}>
+              {isMultiExact ? '✓' : '≠'}
+            </div>
+
+            <div>
+              <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                ERP ({selectedTitleIds.length}):
+              </div>
+              <div className="text-sm font-black font-mono text-amber-300">
+                {formatBRL(totalTitlesAmount)}
+              </div>
+            </div>
+          </div>
+
+          <div className="h-7 w-px bg-slate-800 hidden sm:block" />
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleEqualizeAndReconcile}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg hover:shadow-amber-500/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-amber-300"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>⚡ Equalizar & Conciliar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedStmtIds([]);
+                setSelectedTitleIds([]);
+              }}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Cancelar seleções"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

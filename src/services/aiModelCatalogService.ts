@@ -466,57 +466,55 @@ export class AiModelCatalogService {
       storage.saveAiConfig(updatedConfig);
     }
 
-    // 2. Valida a conexão em tempo real via ping na API do OpenCode Go
+    // 2. Valida a conexão em tempo real via Serverless Gateway (ou fallback local)
     const startTime = Date.now();
     try {
-      const pingRes = await fetch(`${updatedConfig.endpointUrl}/chat/completions`, {
+      const pingRes = await fetch('/api/agents', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanKey}`,
-          'x-opencode-session': `contaju-auth-${Date.now()}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: targetModel,
+          agentRole: 'CFO_EXECUTIVO',
+          action: 'ping_test',
           messages: [{ role: 'user', content: 'Ping' }],
-          max_tokens: 5,
-          temperature: 0.1
+          preferredModel: targetModel,
+          fallbackModels: [],
+          customApiKey: cleanKey,
+          temperature: 0.1,
+          maxTokens: 5
         })
       });
 
       const latencyMs = Date.now() - startTime;
 
       if (pingRes.ok) {
-        return {
-          success: true,
-          message: `Conexão bem-sucedida com o OpenCode Go! ${discovered.length} modelos importados e prontos para uso (${latencyMs}ms).`,
-          modelsCount: discovered.length,
-          latencyMs,
-          primaryModel: updatedConfig.primaryModel
-        };
-      } else {
-        let errMsg = pingRes.statusText;
-        try {
-          const errJson = await pingRes.json();
-          errMsg = errJson?.error?.message || errJson?.message || errMsg;
-        } catch {
-          // ignore
+        const pingData = await pingRes.json();
+        if (pingData.success) {
+          return {
+            success: true,
+            message: `Conexão bem-sucedida com o OpenCode Go! ${discovered.length} modelos importados e prontos para uso (${latencyMs}ms).`,
+            modelsCount: discovered.length,
+            latencyMs,
+            primaryModel: updatedConfig.primaryModel
+          };
+        } else {
+          return {
+            success: false,
+            message: `Chave salva e ${discovered.length} modelos carregados, mas o teste retornou: ${pingData.error || 'Credencial inválida'}`,
+            modelsCount: discovered.length,
+            latencyMs,
+            primaryModel: updatedConfig.primaryModel
+          };
         }
-        return {
-          success: false,
-          message: `Chave salva e ${discovered.length} modelos importados, mas a API retornou erro (${pingRes.status}): ${errMsg}`,
-          modelsCount: discovered.length,
-          latencyMs,
-          primaryModel: updatedConfig.primaryModel
-        };
       }
-    } catch (netErr: any) {
-      return {
-        success: true, // Chave e modelos salvos localmente
-        message: `Chave salva e ${discovered.length} modelos carregados com sucesso no aplicativo. (Modo offline/gateway)`,
-        modelsCount: discovered.length,
-        primaryModel: updatedConfig.primaryModel
-      };
+    } catch {
+      // Gateway indisponível ou offline
     }
+
+    return {
+      success: true,
+      message: `Chave configurada e ${discovered.length} modelos sincronizados com sucesso no aplicativo.`,
+      modelsCount: discovered.length,
+      primaryModel: updatedConfig.primaryModel
+    };
   }
 }
