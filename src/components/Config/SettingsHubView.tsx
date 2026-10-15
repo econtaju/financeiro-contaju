@@ -30,7 +30,7 @@ import { ImprovementsView } from './ImprovementsView';
 import { AuditView } from './AuditView';
 import { BackupView } from './BackupView';
 import { SupabaseConfigView } from './SupabaseConfigView';
-import { AiConfigView } from './AiConfigView';
+import { AgentCenterView } from './AgentCenterView';
 
 export type ConfigSubTab =
   | 'EMPRESA'
@@ -156,10 +156,11 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
     },
     {
       id: 'IA',
-      label: 'Inteligência Artificial (OpenCode)',
-      shortLabel: 'IA OpenCode',
-      description: 'Modelos, chave de API OpenCode, failover automático e assistente',
-      icon: Bot
+      label: 'Central de Agentes (IA)',
+      shortLabel: 'Central Agentes',
+      description: 'CFO Virtual, Auditor de Conciliação, Human-in-the-Loop e Gateway Serverless',
+      icon: Bot,
+      badge: storage.getAgentApprovals().filter(a => a.status === 'PENDENTE').length || undefined
     },
     {
       id: 'NOTIFICACOES',
@@ -283,7 +284,7 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
         )}
         {activeTab === 'MODULOS_INTEGRACOES' && <IntegrationsView />}
         {activeTab === 'SUPABASE' && <SupabaseConfigView />}
-        {activeTab === 'IA' && <AiConfigView />}
+        {activeTab === 'IA' && <AgentCenterView />}
         {activeTab === 'NOTIFICACOES' && (
           <NotificationsConfigView onNavigate={handleInternalNavigate} />
         )}

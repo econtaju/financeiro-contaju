@@ -478,7 +478,91 @@ CREATE TABLE IF NOT EXISTS contaju_bank_balance_closings (
 );
 
 -- ==============================================================================
--- 21. TRIGGERS PARA ATUALIZAÇÃO AUTOMÁTICA DE updated_at
+-- 21. TABELAS DA CENTRAL DE AGENTES DE IA (FINANCIAL AI AGENTS)
+-- ==============================================================================
+
+-- 21.1 DEFINIÇÃO DOS AGENTES
+CREATE TABLE IF NOT EXISTS contaju_agent_definitions (
+  id TEXT PRIMARY KEY,
+  role TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  avatar_icon TEXT,
+  default_model TEXT NOT NULL,
+  is_autonomous BOOLEAN DEFAULT FALSE,
+  requires_approval BOOLEAN DEFAULT TRUE,
+  system_prompt TEXT,
+  allowed_tools JSONB DEFAULT '[]',
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 21.2 HISTÓRICO DE EXECUÇÕES (RUNS)
+CREATE TABLE IF NOT EXISTS contaju_agent_runs (
+  id TEXT PRIMARY KEY,
+  agent_role TEXT NOT NULL,
+  task_type TEXT NOT NULL,
+  requested_by TEXT NOT NULL,
+  company_id TEXT REFERENCES contaju_companies(id) ON DELETE CASCADE,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'PENDENTE',
+  model_used TEXT NOT NULL,
+  latency_ms INT DEFAULT 0,
+  failover_occurred BOOLEAN DEFAULT FALSE,
+  tokens_used INT,
+  input_summary TEXT,
+  output_summary TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_runs_company ON contaju_agent_runs(company_id);
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_runs_role ON contaju_agent_runs(agent_role);
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_runs_status ON contaju_agent_runs(status);
+
+-- 21.3 PROPOSTAS E APROVAÇÕES HUMAN-IN-THE-LOOP
+CREATE TABLE IF NOT EXISTS contaju_agent_approvals (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  agent_role TEXT NOT NULL,
+  company_id TEXT REFERENCES contaju_companies(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  proposed_action TEXT NOT NULL,
+  action_payload JSONB NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'PENDENTE',
+  confidence_score NUMERIC(5, 2) DEFAULT 0,
+  reasoning TEXT,
+  resolved_at TIMESTAMPTZ,
+  resolved_by TEXT,
+  resolution_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_approvals_company ON contaju_agent_approvals(company_id);
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_approvals_status ON contaju_agent_approvals(status);
+
+-- 21.4 EVENTOS DE AUDITORIA DE AGENTES
+CREATE TABLE IF NOT EXISTS contaju_agent_audit_events (
+  id TEXT PRIMARY KEY,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  agent_role TEXT NOT NULL,
+  action TEXT NOT NULL,
+  company_id TEXT REFERENCES contaju_companies(id) ON DELETE CASCADE,
+  details TEXT NOT NULL,
+  user_id TEXT,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_audit_company ON contaju_agent_audit_events(company_id);
+CREATE INDEX IF NOT EXISTS idx_contaju_agent_audit_timestamp ON contaju_agent_audit_events(timestamp);
+
+-- ==============================================================================
+-- 22. TRIGGERS PARA ATUALIZAÇÃO AUTOMÁTICA DE updated_at
 -- ==============================================================================
 DO $$
 DECLARE
@@ -491,7 +575,7 @@ BEGIN
       'contaju_financial_titles', 'contaju_settlements', 'contaju_financial_movements', 
       'contaju_statement_entries', 'contaju_credit_cards', 'contaju_card_purchases', 
       'contaju_period_closures', 'contaju_budget_plans', 'contaju_reconciliation_rules', 
-      'contaju_bank_balance_closings'
+      'contaju_bank_balance_closings', 'contaju_agent_definitions', 'contaju_agent_approvals'
     ])
   LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS trg_update_timestamp ON %I;', t);
@@ -501,7 +585,7 @@ END;
 $$;
 
 -- ==============================================================================
--- 22. CONFIGURAÇÃO DE ROW LEVEL SECURITY (RLS)
+-- 23. CONFIGURAÇÃO DE ROW LEVEL SECURITY (RLS)
 -- ==============================================================================
 -- Habilita RLS em todas as tabelas contaju_* para proteção de dados financeiros.
 -- Em produção, o acesso é restrito ao contexto autenticado (auth.role() = 'authenticated')
@@ -517,7 +601,9 @@ BEGIN
       'contaju_financial_titles', 'contaju_settlements', 'contaju_financial_movements', 
       'contaju_statement_entries', 'contaju_credit_cards', 'contaju_card_purchases', 
       'contaju_period_closures', 'contaju_audit_logs', 'contaju_budget_plans', 
-      'contaju_reconciliation_rules', 'contaju_bank_balance_closings'
+      'contaju_reconciliation_rules', 'contaju_bank_balance_closings',
+      'contaju_agent_definitions', 'contaju_agent_runs', 'contaju_agent_approvals', 
+      'contaju_agent_audit_events'
     ])
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', t);

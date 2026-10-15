@@ -32,7 +32,11 @@ import {
   ClientDelinquencySetting,
   ReconciliationRule,
   BankBalanceClosingRecord,
-  AiProviderConfig
+  AiProviderConfig,
+  AgentDefinition,
+  AgentRunRecord,
+  AgentApprovalItem,
+  AgentAuditEvent
 } from '../types';
 import { 
   INITIAL_COMPANY, 
@@ -58,9 +62,14 @@ import {
   INITIAL_CASH_COUNTS 
 } from '../data/creditCardsData';
 import { INITIAL_RECONCILIATION_RULES } from '../data/reconciliationRulesData';
+import { INITIAL_AGENT_DEFINITIONS } from '../data/initialAgentsData';
 import { advanceCompetence, addMonthsSafe } from '../utils/dateUtils';
 
 const STORAGE_KEYS = {
+  AGENT_DEFINITIONS: 'contaju_agent_definitions',
+  AGENT_RUNS: 'contaju_agent_runs',
+  AGENT_APPROVALS: 'contaju_agent_approvals',
+  AGENT_AUDIT_EVENTS: 'contaju_agent_audit_events',
   COMPANY: 'contaju_company_profile',
   USERS: 'contaju_users',
   CURRENT_USER_ID: 'contaju_current_user_id',
@@ -2686,6 +2695,87 @@ class StorageService {
   public saveBankClosingRecords(records: BankBalanceClosingRecord[]): void {
     localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify(records));
     this.notify();
+  }
+
+  // ==========================================
+  // CENTRAL DE AGENTES DE IA (FINANCIAL AI AGENTS)
+  // ==========================================
+  public getAgentDefinitions(): AgentDefinition[] {
+    const list = this.get<AgentDefinition[]>(STORAGE_KEYS.AGENT_DEFINITIONS, INITIAL_AGENT_DEFINITIONS);
+    if (!list || list.length === 0) {
+      this.saveAgentDefinitions(INITIAL_AGENT_DEFINITIONS);
+      return INITIAL_AGENT_DEFINITIONS;
+    }
+    return list;
+  }
+
+  public saveAgentDefinitions(defs: AgentDefinition[]): void {
+    this.set(STORAGE_KEYS.AGENT_DEFINITIONS, defs);
+  }
+
+  public getAgentRuns(): AgentRunRecord[] {
+    return this.get<AgentRunRecord[]>(STORAGE_KEYS.AGENT_RUNS, []);
+  }
+
+  public addAgentRun(run: AgentRunRecord): void {
+    const runs = this.getAgentRuns();
+    this.set(STORAGE_KEYS.AGENT_RUNS, [run, ...runs.slice(0, 99)]);
+  }
+
+  public getAgentApprovals(): AgentApprovalItem[] {
+    return this.get<AgentApprovalItem[]>(STORAGE_KEYS.AGENT_APPROVALS, []);
+  }
+
+  public saveAgentApprovals(items: AgentApprovalItem[]): void {
+    this.set(STORAGE_KEYS.AGENT_APPROVALS, items);
+  }
+
+  public addAgentApproval(item: AgentApprovalItem): void {
+    const items = this.getAgentApprovals();
+    this.saveAgentApprovals([item, ...items.filter(i => i.id !== item.id)]);
+  }
+
+  public resolveAgentApproval(id: string, status: 'APROVADO' | 'REJEITADO', notes?: string): boolean {
+    const items = this.getAgentApprovals();
+    const target = items.find(i => i.id === id);
+    if (!target) return false;
+
+    const currentUser = this.getCurrentUser();
+    const updated = items.map(i => {
+      if (i.id === id) {
+        return {
+          ...i,
+          status,
+          resolvedAt: new Date().toISOString(),
+          resolvedBy: currentUser.name,
+          resolutionNotes: notes
+        };
+      }
+      return i;
+    });
+    this.saveAgentApprovals(updated);
+
+    this.addAgentAuditEvent({
+      id: `audit-appr-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      agentRole: target.agentRole,
+      action: `PROPOSTA_${status}`,
+      companyId: target.companyId || 'comp-1',
+      details: `Ação "${target.title}" proposta pelo agente ${target.agentRole} foi ${status.toLowerCase()} por ${currentUser.name}.${notes ? ` Justificativa: ${notes}` : ''}`,
+      userId: currentUser.id,
+      status: status === 'APROVADO' ? 'APROVADO' : 'REJEITADO'
+    });
+
+    return true;
+  }
+
+  public getAgentAuditEvents(): AgentAuditEvent[] {
+    return this.get<AgentAuditEvent[]>(STORAGE_KEYS.AGENT_AUDIT_EVENTS, []);
+  }
+
+  public addAgentAuditEvent(event: AgentAuditEvent): void {
+    const events = this.getAgentAuditEvents();
+    this.set(STORAGE_KEYS.AGENT_AUDIT_EVENTS, [event, ...events.slice(0, 199)]);
   }
 }
 

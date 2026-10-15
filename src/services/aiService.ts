@@ -8,7 +8,8 @@ import {
   BankStatementEntry,
   FinancialTitle,
   ChartAccount,
-  Counterparty 
+  Counterparty,
+  AgentRoleType
 } from '../types';
 import { storage } from './storageService';
 
@@ -171,11 +172,67 @@ export class AiService {
       maxTokens?: number;
       jsonMode?: boolean;
       featureName?: string;
+      agentRole?: AgentRoleType;
     } = {}
   ): Promise<AiExecutionResult> {
     const config = this.getConfig();
-    const endpoint = (config.endpointUrl || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
     const startTimeTotal = Date.now();
+    const role: AgentRoleType = options.agentRole || 'CFO_EXECUTIVO';
+
+    // 1. Tentar primeiro via Vercel Serverless Gateway (/api/agents) com chaves protegidas no servidor
+    try {
+      const serverlessRes = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentRole: role,
+          action: options.featureName || 'general_query',
+          messages,
+          temperature: options.temperature ?? config.temperature ?? 0.2,
+          maxTokens: options.maxTokens ?? config.maxTokens ?? 2000,
+          jsonMode: options.jsonMode,
+          preferredModel: config.primaryModel,
+          customApiKey: config.apiKey || undefined
+        })
+      });
+
+      if (serverlessRes.ok) {
+        const data = await serverlessRes.json();
+        const duration = Date.now() - startTimeTotal;
+
+        // Registra a execução no histórico auditável da Central de Agentes
+        storage.addAgentRun({
+          id: `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          agentRole: role,
+          taskType: options.featureName || 'Consulta IA',
+          requestedBy: storage.getCurrentUser().name,
+          companyId: 'comp-1',
+          startedAt: new Date(startTimeTotal).toISOString(),
+          completedAt: new Date().toISOString(),
+          status: 'SUCESSO',
+          modelUsed: data.modelUsed || config.primaryModel,
+          latencyMs: duration,
+          failoverOccurred: Boolean(data.failoverOccurred),
+          inputSummary: messages[messages.length - 1]?.content?.substring(0, 100) || '',
+          outputSummary: data.content?.substring(0, 150) || ''
+        });
+
+        return {
+          success: true,
+          content: data.content,
+          modelUsed: data.modelUsed,
+          failoverOccurred: Boolean(data.failoverOccurred),
+          attempts: data.attempts || [{ model: data.modelUsed, durationMs: duration, success: true, statusCode: 200 }],
+          totalDurationMs: duration,
+          parsedJson: data.parsedJson
+        };
+      }
+    } catch {
+      // Falha de rede ou offline na rota serverless, tenta fallback
+    }
+
+    // 2. Fallback local direto se houver chave configurada
+    const endpoint = (config.endpointUrl || 'https://api.opencode.ai/v1').replace(/\/+$/, '');
 
     if (!config.apiKey) {
       return {
@@ -187,7 +244,7 @@ export class AiService {
           model: 'NONE',
           durationMs: 0,
           success: false,
-          errorMessage: 'API Key da OpenCode não configurada. Configure em Configurações > Inteligência Artificial.'
+          errorMessage: 'Gateway de IA do servidor não configurado. Adicione OPENCODE_API_KEY na Vercel ou configure uma chave de acesso.'
         }],
         totalDurationMs: 0
       };

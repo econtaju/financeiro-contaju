@@ -879,3 +879,74 @@ export interface AiReconciliationSuggestion {
   hadFailover?: boolean;
 }
 
+// =========================================================================
+// CENTRAL DE AGENTES DO APLICATIVO (FINANCIAL AI AGENTS)
+// =========================================================================
+
+export type AgentRoleType = 
+  | 'CFO_EXECUTIVO' 
+  | 'AUDITOR_CONCILIACAO' 
+  | 'ANALISTA_INADIMPLENCIA' 
+  | 'GUARDIAO_CONTABIL';
+
+export interface AgentDefinition {
+  id: string;
+  role: AgentRoleType;
+  name: string;
+  description: string;
+  avatarIcon: string;
+  defaultModel: string;
+  isAutonomous: boolean;
+  requiresApproval: boolean;
+  systemPrompt: string;
+  allowedTools: string[];
+  isActive: boolean;
+}
+
+export interface AgentRunRecord {
+  id: string;
+  agentRole: AgentRoleType;
+  taskType: string;
+  requestedBy: string;
+  companyId: string;
+  startedAt: string;
+  completedAt?: string;
+  status: 'PENDENTE' | 'PROCESSANDO' | 'SUCESSO' | 'FALHA' | 'AGUARDANDO_APROVACAO';
+  modelUsed: string;
+  latencyMs: number;
+  failoverOccurred: boolean;
+  tokensUsed?: number;
+  inputSummary: string;
+  outputSummary?: string;
+  errorMessage?: string;
+}
+
+export interface AgentApprovalItem {
+  id: string;
+  runId: string;
+  agentRole: AgentRoleType;
+  companyId: string;
+  title: string;
+  description: string;
+  proposedAction: 'BAIXAR_TITULO' | 'CRIAR_TITULO' | 'CONCILIAR_EXTRATO' | 'AJUSTAR_CONTRATO' | 'NOTIFICAR_COBRANCA';
+  actionPayload: any;
+  status: 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'CANCELADO';
+  confidenceScore: number;
+  reasoning: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNotes?: string;
+}
+
+export interface AgentAuditEvent {
+  id: string;
+  timestamp: string;
+  agentRole: AgentRoleType;
+  action: string;
+  companyId: string;
+  details: string;
+  userId?: string;
+  status: 'PROPOSTO' | 'APROVADO' | 'REJEITADO' | 'EXECUTADO';
+}
+
