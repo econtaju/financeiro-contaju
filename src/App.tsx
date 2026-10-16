@@ -345,6 +345,10 @@ function AppContent() {
             setCurrentUser(user);
             setIsAuthenticated(true);
             showSuccess('Acesso Liberado', `Bem-vindo(a), ${user.name}!`);
+            // Garante hidratação completa imediata de todos os dados do banco Supabase
+            storage.initializeDatabaseFirst().then(() => {
+              setDataVersion(v => v + 1);
+            });
           }}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />

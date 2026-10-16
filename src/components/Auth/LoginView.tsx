@@ -95,6 +95,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   }, []);
 
+  // Hidratação em tempo real dos usuários vindos do banco de dados Supabase
+  useEffect(() => {
+    storage.initializeDatabaseFirst().then(() => {
+      setUsers(storage.getUsers());
+    });
+
+    const unsubscribe = storage.subscribe(() => {
+      setUsers(storage.getUsers());
+    });
+    return unsubscribe;
+  }, []);
+
   const handleToggleTheme = () => {
     const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
     storage.setTheme(nextTheme);

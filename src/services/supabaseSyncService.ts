@@ -166,7 +166,7 @@ function mapChartAccountFromDb(row: any): ChartAccount {
 function mapBankAccountToDb(b: BankAccount) {
   return {
     id: b.id,
-    institution: b.institution,
+    institution: b.institution || b.name || 'Outro',
     name: b.name,
     bank_code: b.bankCode || null,
     agency: b.agency || null,
@@ -386,14 +386,34 @@ function mapSaleFromDb(row: any): Sale {
 }
 
 function mapTitleToDb(t: FinancialTitle) {
+  const counterparties = storage.getCounterparties();
+  const existingCounterpartyIds = new Set(counterparties.map(cp => cp.id));
+  
+  const fallbackCounterpartyId = t.type === 'RECEBER'
+    ? (counterparties.find(cp => cp.type === 'CLIENTE' || cp.type === 'AMBOS')?.id || 'cli-1')
+    : (counterparties.find(cp => cp.type === 'FORNECEDOR' || cp.type === 'AMBOS')?.id || 'forn-1');
+
+  const validCounterpartyId = t.counterpartyId && existingCounterpartyIds.has(t.counterpartyId)
+    ? t.counterpartyId
+    : fallbackCounterpartyId;
+
+  const chartAccounts = storage.getChartAccounts();
+  const validAccountIds = new Set(chartAccounts.filter(a => a.isAnalytical).map(a => a.id));
+  const fallbackAccountId = t.type === 'RECEBER'
+    ? (chartAccounts.find(a => a.isAnalytical && a.nature.startsWith('RECEITA'))?.id || 'acc-1.1.01')
+    : (chartAccounts.find(a => a.isAnalytical && a.nature.startsWith('DESPESA'))?.id || 'acc-2.1.01');
+  const validAccountId = t.accountId && validAccountIds.has(t.accountId)
+    ? t.accountId
+    : fallbackAccountId;
+
   return {
     id: t.id,
     company_id: t.companyId || null,
     type: t.type,
     title_number: t.titleNumber,
-    counterparty_id: t.counterpartyId,
+    counterparty_id: validCounterpartyId,
     description: t.description,
-    account_id: t.accountId,
+    account_id: validAccountId,
     launch_date: t.launchDate,
     competence: t.competence,
     issue_date: t.issueDate,
@@ -586,6 +606,180 @@ function mapStatementFromDb(row: any): StatementEntry {
     matchedMovementId: row.matched_movement_id || undefined,
     matchedTitleId: row.matched_title_id || undefined,
     reconciliationNote: row.reconciliation_note || undefined
+  };
+}
+
+function mapCreditCardToDb(c: CreditCard) {
+  return {
+    id: c.id,
+    name: c.name,
+    institution: c.institution,
+    brand: c.brand,
+    last_four_digits: c.lastFourDigits,
+    credit_limit: c.creditLimit,
+    closing_day: c.closingDay,
+    due_day: c.dueDay,
+    color: c.color,
+    default_payment_bank_account_id: c.defaultPaymentBankAccountId || null,
+    status: c.status || 'ATIVO',
+    notes: c.notes || null,
+    created_at: c.createdAt || new Date().toISOString()
+  };
+}
+
+function mapCreditCardFromDb(row: any): CreditCard {
+  return {
+    id: row.id,
+    name: row.name,
+    institution: row.institution,
+    brand: row.brand,
+    lastFourDigits: row.last_four_digits,
+    creditLimit: Number(row.credit_limit || 0),
+    closingDay: Number(row.closing_day || 20),
+    dueDay: Number(row.due_day || 5),
+    color: row.color || '#8B5CF6',
+    defaultPaymentBankAccountId: row.default_payment_bank_account_id || undefined,
+    status: row.status || 'ATIVO',
+    notes: row.notes || undefined,
+    createdAt: row.created_at
+  };
+}
+
+function mapCardPurchaseToDb(p: CreditCardPurchase, fallbackAccountId: string) {
+  return {
+    id: p.id,
+    card_id: p.cardId,
+    purchase_date: p.purchaseDate,
+    description: p.description,
+    counterparty_id: p.counterpartyId || null,
+    counterparty_name: p.counterpartyName || null,
+    chart_account_id: p.chartAccountId || fallbackAccountId,
+    total_amount: p.totalAmount,
+    installments_count: p.installmentsCount || 1,
+    calculation_mode: p.calculationMode || 'TOTAL_DIVIDED',
+    installment_value: p.installmentValue || null,
+    installments: p.installments || [],
+    invoice_month: p.invoiceMonth,
+    notes: p.notes || null,
+    created_at: p.createdAt || new Date().toISOString()
+  };
+}
+
+function mapCardPurchaseFromDb(row: any): CreditCardPurchase {
+  return {
+    id: row.id,
+    cardId: row.card_id,
+    purchaseDate: row.purchase_date,
+    description: row.description,
+    counterpartyId: row.counterparty_id || undefined,
+    counterpartyName: row.counterparty_name || undefined,
+    chartAccountId: row.chart_account_id,
+    totalAmount: Number(row.total_amount || 0),
+    installmentsCount: Number(row.installments_count || 1),
+    calculationMode: row.calculation_mode || 'TOTAL_DIVIDED',
+    installmentValue: row.installment_value ? Number(row.installment_value) : undefined,
+    installments: row.installments || [],
+    invoiceMonth: row.invoice_month,
+    notes: row.notes || undefined,
+    createdAt: row.created_at
+  };
+}
+
+function mapPeriodClosureToDb(fc: PeriodClosure) {
+  return {
+    id: fc.id,
+    year_month: fc.yearMonth || (fc as any).competence || '2026-01',
+    closed_at: fc.closedAt,
+    closed_by: fc.closedBy,
+    notes: fc.notes || null,
+    is_closed: fc.isClosed !== false,
+    reopened_at: fc.reopenedAt || null,
+    reopened_by: fc.reopenedBy || null,
+    reopen_reason: fc.reopenReason || null,
+    bank_snapshots: fc.bankSnapshots || [],
+    checklist_snapshot: fc.checklistSnapshot || null
+  };
+}
+
+function mapPeriodClosureFromDb(row: any): PeriodClosure {
+  return {
+    id: row.id,
+    yearMonth: row.year_month,
+    closedAt: row.closed_at,
+    closedBy: row.closed_by,
+    notes: row.notes || undefined,
+    isClosed: row.is_closed,
+    reopenedAt: row.reopened_at || undefined,
+    reopenedBy: row.reopened_by || undefined,
+    reopenReason: row.reopen_reason || undefined,
+    bankSnapshots: row.bank_snapshots || [],
+    checklistSnapshot: row.checklist_snapshot || undefined
+  };
+}
+
+function mapReconciliationRuleToDb(r: ReconciliationRule) {
+  return {
+    id: r.id,
+    name: r.name,
+    pattern: r.pattern,
+    match_type: r.matchType,
+    transaction_type: r.transactionType,
+    chart_account_id: r.chartAccountId,
+    counterparty_id: r.counterpartyId || null,
+    action: r.action,
+    active: r.active !== false,
+    priority: r.priority || 10,
+    description_template: r.descriptionTemplate || null,
+    tags: r.tags || []
+  };
+}
+
+function mapReconciliationRuleFromDb(row: any): ReconciliationRule {
+  return {
+    id: row.id,
+    name: row.name,
+    pattern: row.pattern,
+    matchType: row.match_type,
+    transactionType: row.transaction_type,
+    chartAccountId: row.chart_account_id,
+    counterpartyId: row.counterparty_id || undefined,
+    action: row.action,
+    active: row.active !== false,
+    priority: row.priority || 10,
+    descriptionTemplate: row.description_template || undefined,
+    tags: row.tags || [],
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString()
+  };
+}
+
+function mapAuditLogToDb(l: AuditLogEntry) {
+  return {
+    id: l.id,
+    timestamp: l.timestamp,
+    user_name: l.userName,
+    user_role: l.userRole,
+    action: l.action,
+    module: l.module,
+    record_id: l.recordId || null,
+    details: l.details,
+    previous_value: l.previousValue || null,
+    new_value: l.newValue || null
+  };
+}
+
+function mapAuditLogFromDb(row: any): AuditLogEntry {
+  return {
+    id: row.id,
+    timestamp: row.timestamp,
+    userName: row.user_name,
+    userRole: row.user_role,
+    action: row.action,
+    module: row.module,
+    recordId: row.record_id || undefined,
+    details: row.details,
+    previousValue: row.previous_value || undefined,
+    newValue: row.new_value || undefined
   };
 }
 
@@ -1218,6 +1412,46 @@ class SupabaseSyncService {
         stats.statements = stmtData.length;
       }
 
+      // 13. Cartões de Crédito
+      const { data: cardsData, error: cardsErr } = await client.from(CONTAJU_TABLES.CREDIT_CARDS).select('*');
+      if (cardsErr) errors.push(`Cartões: ${cardsErr.message}`);
+      else if (cardsData && cardsData.length > 0) {
+        storage.saveCreditCards(cardsData.map(mapCreditCardFromDb));
+        stats.creditCards = cardsData.length;
+      }
+
+      // 14. Compras de Cartão
+      const { data: purchasesData, error: purErr } = await client.from(CONTAJU_TABLES.CARD_PURCHASES).select('*');
+      if (purErr) errors.push(`Compras Cartão: ${purErr.message}`);
+      else if (purchasesData && purchasesData.length > 0) {
+        storage.saveCardPurchases(purchasesData.map(mapCardPurchaseFromDb));
+        stats.cardPurchases = purchasesData.length;
+      }
+
+      // 15. Fechamentos de Período
+      const { data: closuresData, error: clsErr } = await client.from(CONTAJU_TABLES.PERIOD_CLOSURES).select('*');
+      if (clsErr) errors.push(`Fechamentos de Período: ${clsErr.message}`);
+      else if (closuresData && closuresData.length > 0) {
+        storage.savePeriodClosures(closuresData.map(mapPeriodClosureFromDb));
+        stats.periodClosures = closuresData.length;
+      }
+
+      // 16. Regras de Conciliação
+      const { data: rulesData, error: rlsErr } = await client.from(CONTAJU_TABLES.RECONCILIATION_RULES).select('*');
+      if (rlsErr) errors.push(`Regras de Conciliação: ${rlsErr.message}`);
+      else if (rulesData && rulesData.length > 0) {
+        storage.saveReconciliationRules(rulesData.map(mapReconciliationRuleFromDb));
+        stats.reconciliationRules = rulesData.length;
+      }
+
+      // 17. Logs de Auditoria
+      const { data: auditData, error: audErr } = await client.from(CONTAJU_TABLES.AUDIT_LOGS).select('*').order('timestamp', { ascending: false }).limit(200);
+      if (audErr) errors.push(`Auditoria: ${audErr.message}`);
+      else if (auditData && auditData.length > 0) {
+        storage.saveAuditLogs(auditData.map(mapAuditLogFromDb));
+        stats.auditLogs = auditData.length;
+      }
+
       stats.totalRecords = 
         stats.companies +
         stats.users +
@@ -1230,7 +1464,12 @@ class SupabaseSyncService {
         stats.titles +
         stats.settlements +
         stats.movements +
-        stats.statements;
+        stats.statements +
+        stats.creditCards +
+        stats.cardPurchases +
+        stats.periodClosures +
+        stats.reconciliationRules +
+        stats.auditLogs;
 
       const durationMs = Math.round(performance.now() - startTime);
       const nowIso = new Date().toISOString();
@@ -1255,6 +1494,526 @@ class SupabaseSyncService {
         stats,
         durationMs
       };
+    }
+  }
+
+  // ==============================================================================
+  // DIRECT REAL-TIME MUTATIONS (PERSISTÊNCIA DIRETA NO BANCO DE DADOS SUPABASE)
+  // ==============================================================================
+
+  public async saveTitleDirectly(title: FinancialTitle): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase não conectado' };
+    try {
+      const payload = mapTitleToDb(title);
+      const { error } = await client.from(CONTAJU_TABLES.TITLES).upsert([payload], { onConflict: 'id' });
+      if (error) {
+        console.error('[SupabaseDirect] Erro ao salvar título diretamente:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
+      console.error('[SupabaseDirect] Falha de rede ao salvar título:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveTitlesDirectly(titles: FinancialTitle[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || titles.length === 0) return { success: false, error: 'Supabase não conectado ou lista vazia' };
+    try {
+      const chunks = this.chunkArray(titles, 100);
+      for (const chunk of chunks) {
+        const payload = chunk.map(mapTitleToDb);
+        const { error } = await client.from(CONTAJU_TABLES.TITLES).upsert(payload, { onConflict: 'id' });
+        if (error) {
+          console.error('[SupabaseDirect] Erro no lote de títulos:', error);
+          return { success: false, error: error.message };
+        }
+      }
+      return { success: true };
+    } catch (e: any) {
+      console.error('[SupabaseDirect] Falha ao sincronizar títulos:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteTitleDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase não conectado' };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.TITLES).delete().eq('id', id);
+      if (error) {
+        console.error('[SupabaseDirect] Erro ao deletar título:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteTitlesDirectly(ids: string[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || ids.length === 0) return { success: false };
+    try {
+      const chunks = this.chunkArray(ids, 100);
+      for (const chunk of chunks) {
+        const { error } = await client.from(CONTAJU_TABLES.TITLES).delete().in('id', chunk);
+        if (error) {
+          console.error('[SupabaseDirect] Erro ao deletar títulos em lote:', error);
+          return { success: false, error: error.message };
+        }
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveContractDirectly(contract: Contract): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase não conectado' };
+    try {
+      const payload = mapContractToDb(contract);
+      const { error } = await client.from(CONTAJU_TABLES.CONTRACTS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveContractsDirectly(contracts: Contract[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || contracts.length === 0) return { success: false };
+    try {
+      const payload = contracts.map(mapContractToDb);
+      const { error } = await client.from(CONTAJU_TABLES.CONTRACTS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteContractDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.CONTRACTS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCounterpartyDirectly(counterparty: Counterparty): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapCounterpartyToDb(counterparty);
+      const { error } = await client.from(CONTAJU_TABLES.COUNTERPARTIES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCounterpartiesDirectly(counterparties: Counterparty[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || counterparties.length === 0) return { success: false };
+    try {
+      const payload = counterparties.map(mapCounterpartyToDb);
+      const { error } = await client.from(CONTAJU_TABLES.COUNTERPARTIES).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteCounterpartyDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.COUNTERPARTIES).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveSettlementDirectly(settlement: Settlement): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapSettlementToDb(settlement);
+      const { error } = await client.from(CONTAJU_TABLES.SETTLEMENTS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveSettlementsDirectly(settlements: Settlement[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || settlements.length === 0) return { success: false };
+    try {
+      const payload = settlements.map(mapSettlementToDb);
+      const { error } = await client.from(CONTAJU_TABLES.SETTLEMENTS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteSettlementDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.SETTLEMENTS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveMovementDirectly(movement: FinancialMovement): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapMovementToDb(movement);
+      const { error } = await client.from(CONTAJU_TABLES.MOVEMENTS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveMovementsDirectly(movements: FinancialMovement[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || movements.length === 0) return { success: false };
+    try {
+      const payload = movements.map(mapMovementToDb);
+      const { error } = await client.from(CONTAJU_TABLES.MOVEMENTS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteMovementDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.MOVEMENTS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveBankAccountDirectly(bank: BankAccount): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapBankAccountToDb(bank);
+      const { error } = await client.from(CONTAJU_TABLES.BANK_ACCOUNTS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveBankAccountsDirectly(banks: BankAccount[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || banks.length === 0) return { success: false };
+    try {
+      const payload = banks.map(mapBankAccountToDb);
+      const { error } = await client.from(CONTAJU_TABLES.BANK_ACCOUNTS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteBankAccountDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.BANK_ACCOUNTS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCreditCardDirectly(card: CreditCard): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapCreditCardToDb(card);
+      const { error } = await client.from(CONTAJU_TABLES.CREDIT_CARDS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCreditCardsDirectly(cards: CreditCard[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || cards.length === 0) return { success: false };
+    try {
+      const payload = cards.map(mapCreditCardToDb);
+      const { error } = await client.from(CONTAJU_TABLES.CREDIT_CARDS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteCreditCardDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.CREDIT_CARDS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCardPurchaseDirectly(purchase: CreditCardPurchase): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const fallbackId = storage.getChartAccounts().find(a => a.isAnalytical && a.nature.startsWith('DESPESA'))?.id || 'acc-3.2.04';
+      const payload = mapCardPurchaseToDb(purchase, fallbackId);
+      const { error } = await client.from(CONTAJU_TABLES.CARD_PURCHASES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCardPurchasesDirectly(purchases: CreditCardPurchase[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || purchases.length === 0) return { success: false };
+    try {
+      const fallbackId = storage.getChartAccounts().find(a => a.isAnalytical && a.nature.startsWith('DESPESA'))?.id || 'acc-3.2.04';
+      const payload = purchases.map(p => mapCardPurchaseToDb(p, fallbackId));
+      const { error } = await client.from(CONTAJU_TABLES.CARD_PURCHASES).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteCardPurchaseDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.CARD_PURCHASES).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveStatementEntryDirectly(entry: StatementEntry): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapStatementToDb(entry);
+      const { error } = await client.from(CONTAJU_TABLES.STATEMENTS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveStatementEntriesDirectly(entries: StatementEntry[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || entries.length === 0) return { success: false };
+    try {
+      const payload = entries.map(mapStatementToDb);
+      const { error } = await client.from(CONTAJU_TABLES.STATEMENTS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteStatementEntryDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.STATEMENTS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveSaleDirectly(sale: Sale): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapSaleToDb(sale);
+      const { error } = await client.from(CONTAJU_TABLES.SALES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveSalesDirectly(sales: Sale[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || sales.length === 0) return { success: false };
+    try {
+      const payload = sales.map(mapSaleToDb);
+      const { error } = await client.from(CONTAJU_TABLES.SALES).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteSaleDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.SALES).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveCompanyDirectly(comp: CompanyProfile): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapCompanyToDb(comp);
+      const { error } = await client.from(CONTAJU_TABLES.COMPANIES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveUserDirectly(user: User): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapUserToDb(user);
+      const { error } = await client.from(CONTAJU_TABLES.USERS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveUsersDirectly(users: User[]): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client || users.length === 0) return { success: false };
+    try {
+      const payload = users.map(mapUserToDb);
+      const { error } = await client.from(CONTAJU_TABLES.USERS).upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async savePeriodClosureDirectly(closure: PeriodClosure): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapPeriodClosureToDb(closure);
+      const { error } = await client.from(CONTAJU_TABLES.PERIOD_CLOSURES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveReconciliationRuleDirectly(rule: ReconciliationRule): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapReconciliationRuleToDb(rule);
+      const { error } = await client.from(CONTAJU_TABLES.RECONCILIATION_RULES).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteReconciliationRuleDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.RECONCILIATION_RULES).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async deleteUserDirectly(id: string): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const { error } = await client.from(CONTAJU_TABLES.USERS).delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  public async saveAuditLogDirectly(log: AuditLogEntry): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false };
+    try {
+      const payload = mapAuditLogToDb(log);
+      const { error } = await client.from(CONTAJU_TABLES.AUDIT_LOGS).upsert([payload], { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
     }
   }
 

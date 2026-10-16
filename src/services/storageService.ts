@@ -165,6 +165,20 @@ class StorageService {
   private debouncedSyncTimeout: any = null;
   private inMemoryCache: Map<string, any> = new Map();
   private normalizedTitlesCache: FinancialTitle[] | null = null;
+  private isPullingFromCloud = false;
+  private isCloudHydrated = false;
+
+  public startCloudPull() {
+    this.isPullingFromCloud = true;
+  }
+
+  public endCloudPull() {
+    this.isPullingFromCloud = false;
+  }
+
+  public isHydratedFromCloud(): boolean {
+    return this.isCloudHydrated;
+  }
 
   constructor() {
     this.freeUpLocalStorageSpace();
@@ -250,23 +264,35 @@ class StorageService {
   public initIfEmpty(force = false) {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     
-    const DATA_SCHEMA_VERSION = 'v6_restored_persistent';
+    const DATA_SCHEMA_VERSION = 'v7_supabase_database_first';
     const SCHEMA_KEY = 'contaju_schema_version';
+
+    const hasSupabaseUrl = Boolean(
+      localStorage.getItem('contaju_supabase_url') || 
+      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+      (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL : undefined)
+    );
 
     const ensureTable = <T>(key: string, initialData: T[], forceOverwrite = false) => {
       const raw = localStorage.getItem(key);
       if (forceOverwrite || !raw) {
+        // Se o Supabase estiver configurado, nunca polui com dados mockados fictícios ao iniciar limpo!
+        // Deixa a tabela vazia para ser hidratada diretamente do banco de dados Supabase
+        if (hasSupabaseUrl) {
+          localStorage.setItem(key, JSON.stringify([]));
+          return;
+        }
         localStorage.setItem(key, JSON.stringify(initialData));
         return;
       }
       try {
         const parsed = JSON.parse(raw);
-        // Se a chave existe mas está como array vazio e temos initialData rico, restaura para evitar tela em branco
-        if (Array.isArray(parsed) && parsed.length === 0 && initialData.length > 0) {
+        // Só restaura initialData se NÃO tiver Supabase configurado
+        if (!hasSupabaseUrl && Array.isArray(parsed) && parsed.length === 0 && initialData.length > 0) {
           localStorage.setItem(key, JSON.stringify(initialData));
         }
       } catch {
-        localStorage.setItem(key, JSON.stringify(initialData));
+        localStorage.setItem(key, JSON.stringify(hasSupabaseUrl ? [] : initialData));
       }
     };
 
@@ -482,7 +508,7 @@ class StorageService {
     }
   }
 
-  private set<T>(key: string, value: T) {
+  private set<T>(key: string, value: T, options?: { skipRemoteSync?: boolean }) {
     this.inMemoryCache.set(key, value);
     if (key === STORAGE_KEYS.TITLES) {
       this.normalizedTitlesCache = null;
@@ -491,26 +517,124 @@ class StorageService {
     const jsonStr = JSON.stringify(value);
     this.inMemoryFallback[key] = jsonStr;
 
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-      this.notify();
-      return;
-    }
-
-    try {
-      localStorage.setItem(key, jsonStr);
-    } catch (err: any) {
-      console.warn(`[StorageService] Alerta de cota atingida ao salvar "${key}". Liberando espaço...`, err);
-      this.freeUpLocalStorageSpace();
-
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem(key, jsonStr);
-      } catch (secondErr: any) {
-        console.warn(`[StorageService] Não foi possível salvar no localStorage. Mantendo em memória e IndexedDB.`, secondErr);
+      } catch (err: any) {
+        console.warn(`[StorageService] Alerta de cota atingida ao salvar "${key}". Liberando espaço...`, err);
+        this.freeUpLocalStorageSpace();
+
+        try {
+          localStorage.setItem(key, jsonStr);
+        } catch (secondErr: any) {
+          console.warn(`[StorageService] Não foi possível salvar no localStorage. Mantendo em memória e IndexedDB.`, secondErr);
+        }
       }
+      this.saveToIndexedDB(key, value);
     }
 
-    this.saveToIndexedDB(key, value);
     this.notify();
+
+    // Persistência Direta e Imediata no Supabase (Database-First)
+    if (!this.isPullingFromCloud && !options?.skipRemoteSync) {
+      this.syncKeyDirectlyToSupabase(key, value);
+    }
+  }
+
+  private async syncKeyDirectlyToSupabase(key: string, value: any) {
+    try {
+      const { isSupabaseConfigured } = await import('./supabaseClient');
+      if (!isSupabaseConfigured()) return;
+
+      const { supabaseSync } = await import('./supabaseSyncService');
+
+      switch (key) {
+        case STORAGE_KEYS.TITLES:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveTitlesDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.CONTRACTS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveContractsDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.COUNTERPARTIES:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveCounterpartiesDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.SETTLEMENTS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveSettlementsDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.MOVEMENTS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveMovementsDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.BANK_ACCOUNTS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveBankAccountsDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.CREDIT_CARDS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveCreditCardsDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.CARD_PURCHASES:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveCardPurchasesDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.SALES:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveSalesDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.STATEMENT_ENTRIES:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveStatementEntriesDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.PERIOD_CLOSURES:
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              await supabaseSync.savePeriodClosureDirectly(item);
+            }
+          }
+          break;
+        case STORAGE_KEYS.RECONCILIATION_RULES:
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              await supabaseSync.saveReconciliationRuleDirectly(item);
+            }
+          }
+          break;
+        case STORAGE_KEYS.COMPANY:
+          if (value && typeof value === 'object') {
+            await supabaseSync.saveCompanyDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.USERS:
+          if (Array.isArray(value)) {
+            await supabaseSync.saveUsersDirectly(value);
+          }
+          break;
+        case STORAGE_KEYS.AUDIT_LOGS:
+          if (Array.isArray(value) && value.length > 0) {
+            const recent = value.slice(0, 10);
+            for (const log of recent) {
+              await supabaseSync.saveAuditLogDirectly(log);
+            }
+          }
+          break;
+      }
+    } catch (err) {
+      console.warn(`[StorageService] Alerta ao persistir "${key}" no Supabase em tempo real:`, err);
+    }
   }
 
   // Company
@@ -1106,6 +1230,11 @@ class StorageService {
     const updated = users.filter(u => u.id !== userId);
     this.saveUsers(updated);
 
+    // Exclusão direta no banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteUserDirectly(userId);
+    }).catch(() => {});
+
     try {
       this.addAuditLog({
         userName: currentAdmin?.name || 'Administrador Geral',
@@ -1392,6 +1521,11 @@ class StorageService {
 
     this.saveSales(sales.filter(s => s.id !== id));
 
+    // Deleta a venda diretamente do banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteSaleDirectly(id);
+    }).catch(() => {});
+
     // Registrar ID de venda excluída para evitar ressuscitação automática
     const currentDeletedSales = this.get<string[]>(STORAGE_KEYS.DELETED_SALE_IDS, []);
     this.set(STORAGE_KEYS.DELETED_SALE_IDS, Array.from(new Set([...currentDeletedSales, id])));
@@ -1677,6 +1811,11 @@ class StorageService {
     const updatedContracts = contracts.filter(c => c.id !== contractId);
     this.saveContracts(updatedContracts);
 
+    // Deleta o contrato diretamente do banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteContractDirectly(contractId);
+    }).catch(() => {});
+
     let cancelledCount = 0;
     if (options?.cancelPendingTitles) {
       const titles = this.getTitles();
@@ -1788,6 +1927,9 @@ class StorageService {
   // Audit Logs
   public getAuditLogs(): AuditLogEntry[] {
     return this.get(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+  }
+  public saveAuditLogs(logs: AuditLogEntry[]) {
+    this.set(STORAGE_KEYS.AUDIT_LOGS, logs);
   }
   public addAuditLog(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) {
     const logs = this.getAuditLogs();
@@ -2074,6 +2216,11 @@ class StorageService {
     const currentDeleted = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
     const updatedDeleted = Array.from(new Set([...currentDeleted, ...Array.from(validDeleteIds)]));
     this.set(STORAGE_KEYS.DELETED_TITLE_IDS, updatedDeleted);
+
+    // Deleta permanentemente os títulos do banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteTitlesDirectly(Array.from(validDeleteIds));
+    }).catch(() => {});
 
     // 2. Identify linked settlements to reverse balances and clean up
     const linkedSettlements = settlements.filter(s => validDeleteIds.has(s.titleId));
@@ -2769,6 +2916,11 @@ class StorageService {
   public deleteReconciliationRule(id: string): void {
     const rules = this.getReconciliationRules();
     this.saveReconciliationRules(rules.filter(r => r.id !== id));
+
+    // Exclusão direta no banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteReconciliationRuleDirectly(id);
+    }).catch(() => {});
   }
 
   // ==========================================
@@ -2877,10 +3029,10 @@ class StorageService {
   }
 
   // ==========================================
-  // SINCRONIZAÇÃO E RESTAURAÇÃO RESILIENTE NA NUVEM (SUPABASE)
+  // SINCRONIZAÇÃO E RESTAURAÇÃO RESILIENTE NA NUVEM (SUPABASE - DATABASE FIRST)
   // ==========================================
-  public async ensureCloudSync(): Promise<void> {
-    if (typeof window === 'undefined') return;
+  public async initializeDatabaseFirst(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
     try {
       const hasUrl = localStorage.getItem('contaju_supabase_url') || (
         (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -2890,25 +3042,36 @@ class StorageService {
         (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
         (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_ANON_KEY : undefined)
       );
-      if (!hasUrl || !hasKey) return;
+      if (!hasUrl || !hasKey) return false;
 
       const { supabaseSync } = await import('./supabaseSyncService');
-      const titles = this.getTitles();
-      
-      // Se não houver títulos locais (ou após limpeza do navegador), tenta puxar imediatamente do Supabase
-      if (titles.length === 0) {
+
+      this.startCloudPull();
+      try {
         const pullRes = await supabaseSync.pullAllFromSupabase();
-        if (pullRes.success && this.getTitles().length > 0) {
+        if (pullRes.success || (pullRes.stats?.totalRecords || 0) > 0) {
+          this.isCloudHydrated = true;
+          this.inMemoryCache.clear();
+          this.normalizedTitlesCache = null;
+          try {
+            localStorage.setItem('contaju_hydrated_from_supabase', 'true');
+          } catch {}
           this.notify();
-          return;
+          return true;
         }
+      } finally {
+        this.endCloudPull();
       }
 
-      // Se há títulos locais, garante que a nuvem esteja sincronizada
-      await supabaseSync.syncAllToSupabase();
+      return false;
     } catch (e) {
-      console.warn('[Contaju Cloud Sync] Aviso em segundo plano:', e);
+      console.warn('[Contaju Cloud Sync] Aviso ao carregar do Supabase:', e);
+      return false;
     }
+  }
+
+  public async ensureCloudSync(): Promise<void> {
+    await this.initializeDatabaseFirst();
   }
 }
 
