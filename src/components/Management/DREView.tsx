@@ -33,16 +33,20 @@ import {
   Activity,
   CheckCircle2,
   Printer,
-  Network
+  Network,
+  Pencil,
+  Lock
 } from 'lucide-react';
 import { ReportingEngine, DREMatrix, DRELineItem, DRERegime } from '../../services/reportingEngine';
-import { formatBRL, formatDateBR } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
 import { BudgetEngine } from '../../services/budgetEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
 import { exportDREToPDF } from '../../utils/pdfExportUtils';
 import { FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
 import { useGlobalPeriod } from '../../hooks/useGlobalPeriod';
+import { toast } from '../../hooks/useToast';
+import { EditTitleModal } from '../Modals/EditTitleModal';
 import { GlobalPeriodBanner } from '../Common/GlobalPeriodBanner';
 import { DREWhatIfModal, WhatIfScenario } from './DREWhatIfModal';
 import { DREOnePageSummaryModal } from './DREOnePageSummaryModal';
@@ -161,11 +165,12 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
   const [drillDownItem, setDrillDownItem] = useState<{
     line: DRELineItem;
-    monthIdx: number; // -1 for full year
+    monthIdx: number; // -1 for full year/period
     monthName: string;
-    titles: FinancialTitle[];
+    regimeMode: 'COMPETENCIA' | 'CAIXA';
   } | null>(null);
   const [drillDownTab, setDrillDownTab] = useState<'TITLES' | 'CONCENTRATION' | 'CASH_RECONCILIATION'>('TITLES');
+  const [selectedTitleForEdit, setSelectedTitleForEdit] = useState<FinancialTitle | null>(null);
 
   const [regime, setRegime] = useState<DRERegime>('COMPETENCIA');
 
@@ -181,21 +186,141 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
   const allTitles = useMemo(() => storage.getTitles(), [refreshTrigger]);
   const counterparties = useMemo(() => storage.getCounterparties(), [refreshTrigger]);
+  const allSettlements = useMemo(() => storage.getSettlements().filter(s => !s.isReversed), [refreshTrigger]);
 
   // Apuração de Conciliação Caixa x Competência (Sugestão 2)
   const cashReconciliation = useMemo(() => {
     return DRECashReconciliationEngine.generateReconciliation(effectiveYear);
   }, [effectiveYear, allTitles]);
 
+  // Informações completas de quitação e data de pagamento de um título
+  const getTitlePaymentInfo = (title: FinancialTitle) => {
+    const titleSettlements = allSettlements
+      .filter(s => s.titleId === title.id)
+      .sort((a, b) => (b.settlementDate || '').localeCompare(a.settlementDate || ''));
+
+    if (titleSettlements.length > 0) {
+      const latest = titleSettlements[0];
+      const totalPaid = titleSettlements.reduce(
+        (acc, s) => acc + (s.components?.principalSettled || s.components?.netFinancialAmount || 0),
+        0
+      );
+      const isPaid = title.settlementState === 'LIQUIDADO' || totalPaid >= title.originalAmount - 0.01;
+      const isPartial = title.settlementState === 'PARCIAL' || (totalPaid > 0 && !isPaid);
+      return {
+        isPaid,
+        isPartial,
+        paymentDate: latest.settlementDate,
+        paidAmount: totalPaid,
+        settlementsCount: titleSettlements.length
+      };
+    }
+
+    const legacyDate = (title as any).actualPaymentDate || (title as any).paymentDate || (title as any).settlementDate;
+    if (legacyDate) {
+      return {
+        isPaid: title.settlementState === 'LIQUIDADO',
+        isPartial: title.settlementState === 'PARCIAL',
+        paymentDate: legacyDate,
+        paidAmount: title.settledPrincipal || title.originalAmount,
+        settlementsCount: 1
+      };
+    }
+
+    if (title.settlementState === 'LIQUIDADO') {
+      const fallbackDate = title.updatedAt?.split('T')[0] || title.dueDate;
+      return {
+        isPaid: true,
+        isPartial: false,
+        paymentDate: fallbackDate,
+        paidAmount: title.settledPrincipal || title.originalAmount,
+        settlementsCount: 1
+      };
+    }
+
+    return {
+      isPaid: false,
+      isPartial: false,
+      paymentDate: null,
+      paidAmount: 0,
+      settlementsCount: 0
+    };
+  };
+
+  // Filtragem dos meses ativos na visualização
+  const activeMonthIndices = useMemo(() => {
+    if (timeHorizon === 'MES') {
+      return [selectedMonth];
+    }
+    if (timeHorizon === 'SEMESTRE') {
+      return selectedSemester === 1 ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11];
+    }
+    if (timeHorizon === 'TRIMESTRE') {
+      const start = (selectedQuarter - 1) * 3;
+      return [start, start + 1, start + 2];
+    }
+    return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth]);
+
+  // Filtragem estrita dos títulos da linha para o período e regime ativos
+  const filteredDrillDownTitles = useMemo(() => {
+    if (!drillDownItem) return [];
+    const { line, monthIdx, regimeMode } = drillDownItem;
+
+    // 1. Títulos vinculados à rubrica da DRE
+    const lineTitles = allTitles.filter(t => line.matchedTitleIds?.includes(t.id));
+
+    // 2. Meses alvo conforme o clique (mês específico ou acumulado do período selecionado)
+    const targetMonths: string[] = monthIdx >= 0
+      ? [`${effectiveYear}-${(monthIdx + 1).toString().padStart(2, '0')}`]
+      : activeMonthIndices.map(m => `${effectiveYear}-${(m + 1).toString().padStart(2, '0')}`);
+
+    // 3. Filtrar de acordo com o regime (Competência ou Caixa)
+    if (regimeMode === 'CAIXA') {
+      return lineTitles.filter(t => {
+        // Baixas em settlements
+        const tSettlements = allSettlements.filter(s => s.titleId === t.id);
+        if (tSettlements.length > 0) {
+          return tSettlements.some(s => {
+            const sMonth = s.settlementDate?.substring(0, 7) || '';
+            return targetMonths.includes(sMonth);
+          });
+        }
+
+        // Fallbacks diretos no título
+        const payDate = (t as any).actualPaymentDate || (t as any).paymentDate || (t as any).settlementDate || '';
+        if (payDate) {
+          const pMonth = payDate.substring(0, 7);
+          return targetMonths.includes(pMonth) && ((t.settledPrincipal || 0) > 0 || t.settlementState === 'LIQUIDADO');
+        }
+
+        if (t.settlementState === 'LIQUIDADO') {
+          const dueMonth = (t.dueDate || '').substring(0, 7);
+          return targetMonths.includes(dueMonth);
+        }
+
+        return false;
+      });
+    } else {
+      // Regime de Competência
+      return lineTitles.filter(t => {
+        const compStr = t.competence && t.competence.trim().length >= 7
+          ? t.competence.trim().substring(0, 7)
+          : (t.dueDate ? t.dueDate.substring(0, 7) : '');
+        return targetMonths.includes(compStr);
+      });
+    }
+  }, [drillDownItem, allTitles, allSettlements, effectiveYear, activeMonthIndices]);
+
   // Raio-X de Concentração de Favorecidos / Clientes (Melhoria 2)
   const drillDownConcentration = useMemo(() => {
-    if (!drillDownItem || drillDownItem.titles.length === 0) return null;
-    const totalAmount = drillDownItem.titles.reduce((acc, t) => acc + t.originalAmount, 0);
+    if (!drillDownItem || filteredDrillDownTitles.length === 0) return null;
+    const totalAmount = filteredDrillDownTitles.reduce((acc, t) => acc + t.originalAmount, 0);
     if (totalAmount <= 0) return null;
 
     const map = new Map<string, { counterpartyId: string; name: string; document: string; amount: number; count: number }>();
 
-    for (const t of drillDownItem.titles) {
+    for (const t of filteredDrillDownTitles) {
       const cId = t.counterpartyId || 'DESCONHECIDO';
       const cObj = counterparties.find(c => c.id === cId);
       const name = cObj?.name || 'Não identificado / Sem cadastro';
@@ -240,7 +365,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       riskLevel,
       riskWarning
     };
-  }, [drillDownItem, counterparties]);
+  }, [drillDownItem, filteredDrillDownTitles, counterparties]);
 
   // Dados do Planejamento Orçamentário para Análise Orçado vs Realizado (Sugestão 3)
   const budgetData = useMemo(() => {
@@ -268,21 +393,6 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     if (activeMonthIndices.length === 12) return bItem.plannedTotal;
     return activeMonthIndices.reduce((acc, idx) => acc + (bItem.plannedMonthly[idx] || 0), 0);
   };
-
-  // Filtragem dos meses ativos na visualização
-  const activeMonthIndices = useMemo(() => {
-    if (timeHorizon === 'MES') {
-      return [selectedMonth];
-    }
-    if (timeHorizon === 'SEMESTRE') {
-      return selectedSemester === 1 ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11];
-    }
-    if (timeHorizon === 'TRIMESTRE') {
-      const start = (selectedQuarter - 1) * 3;
-      return [start, start + 1, start + 2];
-    }
-    return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-  }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth]);
 
   // Contagem de linhas analíticas sem movimentação no período ativo (Sugestão 4)
   const hiddenZeroCount = useMemo(() => {
@@ -528,23 +638,60 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     };
   }, [dreData, activeMonthIndices, timeHorizon]);
 
-  const handleOpenDrillDown = (line: DRELineItem, monthIdx: number) => {
-    const lineTitles = allTitles.filter(t => line.matchedTitleIds?.includes(t.id));
-    let matchingTitles = [...lineTitles];
-    let monthName = 'Acumulado Período';
+  const handleOpenDrillDown = (
+    line: DRELineItem, 
+    monthIdx: number, 
+    specificRegime?: 'COMPETENCIA' | 'CAIXA'
+  ) => {
+    let defaultRegime: 'COMPETENCIA' | 'CAIXA' = 'COMPETENCIA';
+    if (specificRegime) {
+      defaultRegime = specificRegime;
+    } else if (regime === 'CAIXA') {
+      defaultRegime = 'CAIXA';
+    }
 
+    let monthName = '';
     if (monthIdx >= 0) {
-      const targetMonthStr = `${effectiveYear}-${(monthIdx + 1).toString().padStart(2, '0')}`;
-      matchingTitles = lineTitles.filter(t => (t.competence?.substring(0, 7) || t.dueDate?.substring(0, 7)) === targetMonthStr);
       monthName = `${dreData.months[monthIdx]}/${effectiveYear}`;
+    } else {
+      if (timeHorizon === 'MES') {
+        monthName = `${dreData.months[selectedMonth]}/${effectiveYear} (Mês Selecionado)`;
+      } else if (timeHorizon === 'SEMESTRE') {
+        monthName = `${selectedSemester}º Semestre/${effectiveYear} (${selectedSemester === 1 ? 'Jan-Jun' : 'Jul-Dez'})`;
+      } else if (timeHorizon === 'TRIMESTRE') {
+        const qLabels = ['1º Tri (Jan-Mar)', '2º Tri (Abr-Jun)', '3º Tri (Jul-Set)', '4º Tri (Out-Dez)'];
+        monthName = `${qLabels[selectedQuarter - 1]}/${effectiveYear}`;
+      } else {
+        monthName = `Ano Completo ${effectiveYear} (Jan-Dez)`;
+      }
     }
 
     setDrillDownItem({
       line,
       monthIdx,
       monthName,
-      titles: matchingTitles
+      regimeMode: defaultRegime
     });
+    setDrillDownTab('TITLES');
+  };
+
+  const handleEditTitle = (t: FinancialTitle) => {
+    const compStr = t.competence && t.competence.trim().length >= 7
+      ? t.competence.trim().substring(0, 7)
+      : (t.dueDate ? t.dueDate.substring(0, 7) : '');
+
+    if (compStr && FinancialEngine.isPeriodClosed(compStr)) {
+      toast.error(`Período Contábil Fechado: A competência ${compStr} já foi encerrada e está bloqueada para alterações.`);
+      return;
+    }
+
+    setSelectedTitleForEdit(t);
+  };
+
+  const handleTitleSaved = () => {
+    setSelectedTitleForEdit(null);
+    setRefreshTrigger(k => k + 1);
+    toast.success('Lançamento atualizado com sucesso!');
   };
 
   const handleExportExcel = () => {
@@ -1716,7 +1863,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       return (
                         <td 
                           key={mIdx} 
-                          onClick={() => !isSummary && handleOpenDrillDown(line, mIdx)}
+                          onClick={() => !isSummary && handleOpenDrillDown(line, mIdx, regime === 'COMPARATIVO' ? 'COMPETENCIA' : regime)}
                           title={`${line.name} • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(val)}${monthPct !== null ? ` (${monthPct.toFixed(1)}% da Rec. Bruta)` : ''} (Clique para auditar)`}
                           className={`py-2 px-1 sm:px-1.5 text-right font-mono border-r border-slate-200 dark:border-slate-800 transition-colors tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                             !isSummary ? 'cursor-pointer hover:bg-amber-500/20 hover:text-amber-900 dark:hover:text-amber-200' : ''
@@ -1778,7 +1925,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                         <>
                           {/* Competência */}
                           <td 
-                            onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                            onClick={() => !isSummary && handleOpenDrillDown(line, -1, 'COMPETENCIA')}
                             title={`Competência • ${line.name}: ${formatBRL(compVal)}`}
                             className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/10 dark:bg-amber-500/15 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                               !isSummary ? 'cursor-pointer hover:bg-amber-500/25' : ''
@@ -1788,7 +1935,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           </td>
                           {/* Caixa Realizado */}
                           <td 
-                            onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                            onClick={() => !isSummary && handleOpenDrillDown(line, -1, 'CAIXA')}
                             title={`Caixa Realizado • ${line.name}: ${formatBRL(cashVal)}`}
                             className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-emerald-500/10 dark:bg-emerald-500/15 border-l border-emerald-500/30 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                               !isSummary ? 'cursor-pointer hover:bg-emerald-500/25' : ''
@@ -1821,7 +1968,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       );
                     })() : (
                       <td 
-                        onClick={() => !isSummary && handleOpenDrillDown(line, -1)}
+                        onClick={() => !isSummary && handleOpenDrillDown(line, -1, regime)}
                         title={`Total Exercício • ${line.name}: ${formatBRL(periodTotal)}`}
                         className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/15 dark:bg-amber-500/20 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                           !isSummary ? 'cursor-pointer hover:bg-amber-500/25 hover:text-amber-950 dark:hover:text-amber-200' : ''
@@ -2138,20 +2285,31 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       </div>
 
       {/* Drill-down Modal com Design Moderno */}
+      {/* Drill-down Modal com Design Moderno */}
       {drillDownItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[85vh]">
+          <div className="bg-[var(--surface-card)] rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[88vh]">
             
-            <div className="p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
+            {/* Cabeçalho do Drill-Down */}
+            <div className="p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <span className="text-[10px] font-bold uppercase text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                  Rastreabilidade Contábil (Drill-Down DRE)
-                </span>
-                <h2 className="text-base font-bold text-[var(--text-primary)] mt-1">
-                  {drillDownItem.line.code ? `${drillDownItem.line.code} - ` : ''}{drillDownItem.line.name}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    Rastreabilidade Contábil (Drill-Down DRE)
+                  </span>
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                    drillDownItem.regimeMode === 'COMPETENCIA'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  }`}>
+                    {drillDownItem.regimeMode === 'COMPETENCIA' ? 'Regime de Competência' : 'Regime de Caixa'}
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-[var(--text-primary)] mt-1.5 flex items-center gap-2">
+                  <span>{drillDownItem.line.code ? `${drillDownItem.line.code} - ` : ''}{drillDownItem.line.name}</span>
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-[var(--text-secondary)]">
-                  <span>Período: <strong>{drillDownItem.monthName}</strong> • {drillDownItem.titles.length} lançamentos vinculados</span>
+                  <span>Período: <strong className="text-[var(--text-primary)]">{drillDownItem.monthName}</strong> • {filteredDrillDownTitles.length} lançamento(s) vinculados</span>
                   {drillDownItem.monthIdx > 0 && (() => {
                     const currentVal = drillDownItem.line.valuesByMonth[drillDownItem.monthIdx] || 0;
                     const prevVal = drillDownItem.line.valuesByMonth[drillDownItem.monthIdx - 1] || 0;
@@ -2181,12 +2339,44 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   })()}
                 </div>
               </div>
-              <button 
-                onClick={() => setDrillDownItem(null)} 
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-elevated)] cursor-pointer"
-              >
-                ✕
-              </button>
+
+              {/* Controles do Cabeçalho: Alternância de Regime e Fechar */}
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex items-center bg-black/20 p-0.5 rounded-lg border border-[var(--border-subtle)] text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setDrillDownItem(prev => prev ? ({ ...prev, regimeMode: 'COMPETENCIA' }) : null)}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                      drillDownItem.regimeMode === 'COMPETENCIA'
+                        ? 'bg-amber-500 text-[#0f172a] shadow-xs font-bold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                    title="Filtrar por data de competência contábil"
+                  >
+                    Competência
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDrillDownItem(prev => prev ? ({ ...prev, regimeMode: 'CAIXA' }) : null)}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                      drillDownItem.regimeMode === 'CAIXA'
+                        ? 'bg-emerald-500 text-[#0f172a] shadow-xs font-bold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                    title="Filtrar por data efetiva de pagamento/liquidação em caixa"
+                  >
+                    Caixa Realizado
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => setDrillDownItem(null)} 
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  title="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Abas do Drill-Down (Melhoria 2) */}
@@ -2201,7 +2391,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                Lançamentos Detalhados ({drillDownItem.titles.length})
+                Lançamentos Detalhados ({filteredDrillDownTitles.length})
               </button>
 
               <button
@@ -2354,7 +2544,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
               ) : drillDownTab === 'CASH_RECONCILIATION' ? (
                 /* Visualização de Conciliação Caixa x Competência (Sugestão 2) */
                 (() => {
-                  const titles = drillDownItem.titles;
+                  const titles = filteredDrillDownTitles;
                   const totalCompetence = titles.reduce((acc, t) => acc + t.originalAmount, 0);
                   const settledTitles = titles.filter(t => t.settlementState === 'LIQUIDADO');
                   const settledAmount = settledTitles.reduce((acc, t) => acc + (t.settledAmount || t.originalAmount), 0);
@@ -2461,65 +2651,179 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 })()
               ) : (
                 /* Visualização de Lançamentos Detalhados */
-                drillDownItem.titles.length === 0 ? (
-                  <p className="text-[var(--text-secondary)] p-6 text-center bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]">
-                    Nenhum lançamento individualizado compõe este período.
-                  </p>
-                ) : (
-                  <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] text-[var(--text-secondary)] font-semibold uppercase text-[11px]">
-                        <tr>
-                          <th className="py-2.5 px-3">Título</th>
-                          <th className="py-2.5 px-3">Favorecido / Descrição</th>
-                          <th className="py-2.5 px-3">Competência</th>
-                          <th className="py-2.5 px-3">Vencimento</th>
-                          <th className="py-2.5 px-3 text-right">Valor Econômico</th>
-                          <th className="py-2.5 px-3 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border-subtle)]">
-                        {drillDownItem.titles.map(t => {
-                          const cp = counterparties.find(c => c.id === t.counterpartyId);
-                          return (
-                            <tr key={t.id} className="hover:bg-[var(--surface-elevated)]/50 transition-colors">
-                              <td className="py-2.5 px-3 font-mono font-medium text-[var(--text-primary)]">{t.titleNumber}</td>
-                              <td className="py-2.5 px-3">
-                                <div className="font-medium text-[var(--text-primary)]">{cp?.name || t.description}</div>
-                                <div className="text-[10px] text-[var(--text-secondary)]">{t.description}</div>
-                              </td>
-                              <td className="py-2.5 px-3 font-mono text-amber-400 font-medium">{t.competence}</td>
-                              <td className="py-2.5 px-3 text-[var(--text-secondary)]">{formatDateBR(t.dueDate)}</td>
-                              <td className="py-2.5 px-3 text-right font-bold text-[var(--text-primary)]">{formatBRL(t.originalAmount)}</td>
-                              <td className="py-2.5 px-3 text-center">
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                                  t.settlementState === 'LIQUIDADO' 
-                                    ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/40' 
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
-                                }`}>
-                                  {t.settlementState}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-500/20">
+                    <span className="flex items-center gap-1.5 text-amber-900 dark:text-amber-200">
+                      <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                      Dê <strong>duplo clique</strong> na linha de qualquer lançamento para editar (ou use o ícone de lápis).
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-black/20 text-slate-300">
+                      Filtro: {drillDownItem.regimeMode === 'COMPETENCIA' ? 'Competência' : 'Caixa Realizado'}
+                    </span>
                   </div>
-                )
+
+                  {filteredDrillDownTitles.length === 0 ? (
+                    <p className="text-[var(--text-secondary)] p-8 text-center bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]">
+                      Nenhum lançamento individualizado localizado para este período no regime de {drillDownItem.regimeMode === 'COMPETENCIA' ? 'competência' : 'caixa'}.
+                    </p>
+                  ) : (
+                    <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden shadow-xs">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[var(--surface-elevated)] border-b border-[var(--border-subtle)] text-[var(--text-secondary)] font-semibold uppercase text-[11px]">
+                          <tr>
+                            <th className="py-2.5 px-3">Título</th>
+                            <th className="py-2.5 px-3">Favorecido & Descrição</th>
+                            <th className="py-2.5 px-3 text-center">Competência</th>
+                            <th className="py-2.5 px-3 text-center">Vencimento</th>
+                            <th className="py-2.5 px-3 text-center">Data Pagamento</th>
+                            <th className="py-2.5 px-3 text-right">Valor</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                            <th className="py-2.5 px-3 text-center w-14">Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-subtle)]">
+                          {filteredDrillDownTitles.map(t => {
+                            const cp = counterparties.find(c => c.id === t.counterpartyId);
+                            const paymentInfo = getTitlePaymentInfo(t);
+                            const compStr = t.competence && t.competence.trim().length >= 7 
+                              ? t.competence.trim().substring(0, 7) 
+                              : (t.dueDate ? t.dueDate.substring(0, 7) : '');
+                            const isPeriodClosed = compStr ? FinancialEngine.isPeriodClosed(compStr) : false;
+
+                            return (
+                              <tr 
+                                key={t.id} 
+                                onDoubleClick={() => handleEditTitle(t)}
+                                className="hover:bg-amber-500/10 transition-colors cursor-pointer group"
+                                title={isPeriodClosed ? `Competência ${compStr} encerrada contabilmente (edição bloqueada)` : "Dê duplo clique para editar este lançamento"}
+                              >
+                                {/* Número do Título */}
+                                <td className="py-2.5 px-3 font-mono font-medium text-[var(--text-primary)]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                      t.type === 'RECEBER' 
+                                        ? 'bg-emerald-500/15 text-emerald-400' 
+                                        : 'bg-rose-500/15 text-rose-400'
+                                    }`}>
+                                      {t.type === 'RECEBER' ? 'REC' : 'PAG'}
+                                    </span>
+                                    <span>{t.titleNumber}</span>
+                                  </div>
+                                </td>
+
+                                {/* Favorecido / Cliente & Descrição com destaque e tamanho aprimorado */}
+                                <td className="py-2.5 px-3">
+                                  <div className="text-xs font-bold text-[var(--text-primary)] leading-snug">
+                                    {cp?.name || 'Não identificado'}
+                                  </div>
+                                  <div className="text-[11px] text-[var(--text-secondary)] font-medium truncate max-w-xs mt-0.5">
+                                    {t.description || '-'}
+                                  </div>
+                                </td>
+
+                                {/* Competência */}
+                                <td className="py-2.5 px-3 text-center font-mono font-semibold text-amber-400">
+                                  {t.competence || '-'}
+                                </td>
+
+                                {/* Vencimento */}
+                                <td className="py-2.5 px-3 text-center text-[var(--text-secondary)] font-mono">
+                                  {formatDateBR(t.dueDate)}
+                                </td>
+
+                                {/* Data Pagamento em Destaque */}
+                                <td className="py-2.5 px-3 text-center font-mono">
+                                  {paymentInfo.isPaid && paymentInfo.paymentDate ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                                      {formatDateBR(paymentInfo.paymentDate)}
+                                    </span>
+                                  ) : paymentInfo.isPartial && paymentInfo.paymentDate ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                                      Parcial ({formatDateBR(paymentInfo.paymentDate)})
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-xs">-</span>
+                                  )}
+                                </td>
+
+                                {/* Valor */}
+                                <td className="py-2.5 px-3 text-right font-bold text-[var(--text-primary)] font-mono">
+                                  {formatBRL(t.originalAmount)}
+                                  {drillDownItem.regimeMode === 'CAIXA' && paymentInfo.paidAmount > 0 && Math.abs(paymentInfo.paidAmount - t.originalAmount) > 0.01 && (
+                                    <div className="text-[10px] text-emerald-400 font-normal">
+                                      Liq: {formatBRL(paymentInfo.paidAmount)}
+                                    </div>
+                                  )}
+                                </td>
+
+                                {/* Status */}
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                                    t.settlementState === 'LIQUIDADO' 
+                                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                                      : t.settlementState === 'PARCIAL'
+                                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                      : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                  }`}>
+                                    {t.settlementState}
+                                  </span>
+                                </td>
+
+                                {/* Botão de Ação: Editar ou Bloqueio Contábil */}
+                                <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  {isPeriodClosed ? (
+                                    <span 
+                                      className="inline-flex p-1.5 rounded-md text-slate-500 cursor-not-allowed bg-slate-800/40"
+                                      title={`Competência ${compStr} encerrada contabilmente (bloqueada)`}
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditTitle(t)}
+                                      className="p-1.5 rounded-md text-amber-400 hover:text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                                      title="Editar lançamento (ou clique duplo)"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
-            <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-end">
+            <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
+              <span className="text-[11px] text-[var(--text-secondary)]">
+                Exibindo <strong>{filteredDrillDownTitles.length}</strong> lançamento(s) na rubrica {drillDownItem.line.name}
+              </span>
               <button
                 onClick={() => setDrillDownItem(null)}
-                className="px-4 py-2 bg-amber-500 text-[#0f172a] font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors shadow-xs"
+                className="px-4 py-2 bg-amber-500 text-[#0f172a] font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors shadow-xs cursor-pointer"
               >
                 Fechar Drill-Down
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Edição Rápida de Lançamento */}
+      {selectedTitleForEdit && (
+        <EditTitleModal
+          isOpen={!!selectedTitleForEdit}
+          title={selectedTitleForEdit}
+          onClose={() => setSelectedTitleForEdit(null)}
+          onSaved={handleTitleSaved}
+        />
       )}
 
       {/* Modal de Simulação What-If (Sugestão 1) */}
