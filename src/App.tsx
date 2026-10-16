@@ -107,6 +107,11 @@ function AppContent() {
     // Sincronização inteligente com nuvem (Supabase) em segundo plano
     storage.ensureCloudSync();
 
+    // Inicialização da rotina automática semanal de exportação de backups por e-mail
+    import('./services/automaticBackupService').then(({ automaticBackupService }) => {
+      automaticBackupService.initScheduler();
+    }).catch(() => {});
+
     // Pré-carregamento (Pre-warming) em segundo plano dos módulos mais acessados quando o navegador estiver ocioso
     const prewarmModules = () => {
       import('./components/Financial/PayablesView');

@@ -67,6 +67,29 @@ function devApiServerlessPlugin(): Plugin {
           }
         }
 
+        if (url.pathname === '/api/send-approval' || url.pathname === '/api/send-email') {
+          try {
+            decorateRes(res);
+            const buffers: Buffer[] = [];
+            for await (const chunk of req) {
+              buffers.push(chunk);
+            }
+            const rawBody = Buffer.concat(buffers).toString();
+            try {
+              (req as any).body = rawBody ? JSON.parse(rawBody) : {};
+            } catch {
+              (req as any).body = {};
+            }
+            const mod = await import('./api/send-approval.js');
+            return await mod.default(req, res);
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message }));
+            return;
+          }
+        }
+
         next();
       });
     }

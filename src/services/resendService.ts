@@ -31,34 +31,96 @@ export const resendService = {
     return ADMIN_EMAIL;
   },
 
-  async sendEmail(to: string, subject: string, html: string): Promise<{ success: boolean; error?: string }> {
-    const userCustomApiKey = this.getApiKey();
-
-    // Envio seguro e isolado exclusivamente via Serverless Function (/api/send-approval)
+  async sendViaDirectResendApi(
+    apiKey: string,
+    to: string | string[],
+    subject: string,
+    html: string,
+    attachments?: Array<{ filename: string; content: string }>
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      const serverlessRes = await fetch('/api/send-approval', {
+      const payload: any = {
+        from: 'Contaju Sistema <onboarding@resend.dev>',
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        html
+      };
+      if (attachments && attachments.length > 0) {
+        payload.attachments = attachments;
+      }
+      const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to,
-          subject,
-          html,
-          apiKey: userCustomApiKey || undefined
-        })
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
-
-      const resData = await serverlessRes.json().catch(() => ({}));
-
-      if (serverlessRes.ok && (resData.success || resData.id)) {
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
         return { success: true };
       }
-      
-      const errorMessage = resData.error || resData.message || `Status HTTP ${serverlessRes.status}`;
-      console.warn('Aviso no envio de e-mail institucional:', errorMessage);
-      return { success: false, error: errorMessage };
-    } catch (err: any) {
-      console.warn('Falha na comunicação com o serviço de e-mail:', err?.message || err);
-      return { success: false, error: err?.message || 'Serviço de e-mail temporariamente indisponível' };
+      return { success: false, error: data.message || `Erro Resend: ${response.status}` };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Falha de conexão com a API do Resend' };
+    }
+  },
+
+  async sendEmail(
+    to: string | string[], 
+    subject: string, 
+    html: string, 
+    attachments?: Array<{ filename: string; content: string }>
+  ): Promise<{ success: boolean; error?: string }> {
+    const userCustomApiKey = this.getApiKey();
+    const envApiKey = (
+      (typeof process !== 'undefined' ? process.env?.RESEND_API_KEY : undefined) ||
+      (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_RESEND_API_KEY : undefined)
+    );
+    const effectiveKey = userCustomApiKey || envApiKey;
+
+    // Em ambiente de navegador, tenta a rota serverless /api/send-approval
+    if (typeof window !== 'undefined') {
+      try {
+        const serverlessRes = await fetch('/api/send-approval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to,
+            subject,
+            html,
+            attachments,
+            apiKey: effectiveKey || undefined
+          })
+        });
+
+        const resData = await serverlessRes.json().catch(() => ({}));
+
+        if (serverlessRes.ok && (resData.success || resData.id)) {
+          return { success: true };
+        }
+        
+        // Se a chamada serverless retornar erro mas temos a chave configurada, tenta envio direto
+        if (effectiveKey) {
+          return this.sendViaDirectResendApi(effectiveKey, to, subject, html, attachments);
+        }
+
+        const errorMessage = resData.error || resData.message || `Status HTTP ${serverlessRes.status}`;
+        console.warn('Aviso no envio de e-mail institucional:', errorMessage);
+        return { success: false, error: errorMessage };
+      } catch (err: any) {
+        if (effectiveKey) {
+          return this.sendViaDirectResendApi(effectiveKey, to, subject, html, attachments);
+        }
+        console.warn('Falha na comunicação com o serviço de e-mail:', err?.message || err);
+        return { success: false, error: err?.message || 'Serviço de e-mail temporariamente indisponível' };
+      }
+    } else {
+      // Em ambiente Node.js / scripts
+      if (effectiveKey) {
+        return this.sendViaDirectResendApi(effectiveKey, to, subject, html, attachments);
+      }
+      return { success: false, error: 'Chave RESEND_API_KEY não configurada no ambiente.' };
     }
   },
 
@@ -355,8 +417,127 @@ export const resendService = {
     `;
 
     return this.sendEmail(params.clientEmail, emailSubject, emailHtml);
+  },
+
+  async sendBackupEmail(params: BackupEmailParams): Promise<{ success: boolean; error?: string }> {
+    const isAutomatic = params.triggerType !== 'MANUAL';
+    const emailSubject = `📦 Backup Semanal Contaju (.JSON): ${params.stats.companyName || 'Base Financeira'} • ${new Date().toLocaleDateString('pt-BR')}`;
+    
+    // Converte conteúdo JSON para base64 com suporte total a UTF-8 / acentuação
+    const base64Content = typeof Buffer !== 'undefined'
+      ? Buffer.from(params.backupJsonContent, 'utf-8').toString('base64')
+      : btoa(unescape(encodeURIComponent(params.backupJsonContent)));
+
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0e14; color: #ffffff; margin: 0; padding: 24px; }
+          .card { background-color: #121620; border: 1px solid #242d3d; border-radius: 16px; max-width: 600px; margin: 0 auto; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+          .header { background: linear-gradient(135deg, #19202D 0%, #121620 100%); padding: 24px; border-bottom: 2px solid #d4af37; text-align: center; }
+          .logo { font-size: 24px; font-weight: 900; letter-spacing: 2px; color: #d4af37; margin: 0; }
+          .sublogo { font-size: 11px; text-transform: uppercase; color: #94a3b8; letter-spacing: 1.5px; margin-top: 4px; }
+          .body { padding: 28px; line-height: 1.6; color: #e2e8f0; font-size: 14px; }
+          .badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: bold; background-color: rgba(212, 175, 55, 0.15); color: #fbbf24; border: 1px solid rgba(212, 175, 55, 0.3); }
+          .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #19202d; border-radius: 12px; overflow: hidden; }
+          .info-table td { padding: 12px 16px; border-bottom: 1px solid #242d3d; font-size: 13px; }
+          .info-table tr:last-child td { border-bottom: none; }
+          .label { color: #94a3b8; font-weight: 600; width: 45%; }
+          .value { color: #ffffff; font-weight: bold; }
+          .highlight { color: #10b981; font-weight: 900; }
+          .warning { font-size: 12px; color: #cbd5e1; background-color: rgba(212, 175, 55, 0.1); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 10px; padding: 14px; margin-top: 22px; line-height: 1.5; }
+          .footer { padding: 18px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e2634; background-color: #0d1118; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <h1 class="logo">CONTAJU</h1>
+            <div class="sublogo">Assessoria Contábil & Gestão Financeira</div>
+          </div>
+          <div class="body">
+            <span class="badge">${isAutomatic ? 'Rotina Automática Semanal' : 'Exportação de Backup Sob Demanda'}</span>
+            <h2 style="color: #ffffff; margin-top: 14px; font-size: 18px;">Exportação da Base de Dados Concluída</h2>
+            <p>
+              Segue em anexo o arquivo de segurança em formato <strong>.JSON</strong> contendo o snapshot estruturado e integral da base de dados do sistema Contaju.
+            </p>
+            
+            <table class="info-table">
+              <tr>
+                <td class="label">Empresa / Razão Social:</td>
+                <td class="value">${params.stats.companyName}</td>
+              </tr>
+              <tr>
+                <td class="label">Disponibilidade de Caixa:</td>
+                <td class="value highlight">${params.stats.consolidatedBalanceFormatted}</td>
+              </tr>
+              <tr>
+                <td class="label">Títulos Financeiros (Pagar/Receber):</td>
+                <td class="value">${params.stats.totalTitles} títulos</td>
+              </tr>
+              <tr>
+                <td class="label">Contratos Ativos e Recorrentes:</td>
+                <td class="value">${params.stats.totalContracts} contratos</td>
+              </tr>
+              <tr>
+                <td class="label">Clientes & Fornecedores:</td>
+                <td class="value">${params.stats.totalCounterparties} cadastros</td>
+              </tr>
+              <tr>
+                <td class="label">Contas Bancárias:</td>
+                <td class="value">${params.stats.totalBankAccounts} contas</td>
+              </tr>
+              <tr>
+                <td class="label">Arquivo Anexo (.JSON):</td>
+                <td class="value" style="color: #38bdf8;">${params.backupFilename}</td>
+              </tr>
+              <tr>
+                <td class="label">Data & Hora da Exportação:</td>
+                <td class="value">${new Date().toLocaleString('pt-BR')}</td>
+              </tr>
+            </table>
+
+            <div class="warning">
+              <strong>🔒 Procedimento de Restauração:</strong><br/>
+              O arquivo <code>${params.backupFilename}</code> anexado a este e-mail pode ser utilizado para restauração total a qualquer momento. Basta acessar o sistema Contaju, navegar até <strong>Configurações &gt; Segurança e Backup</strong> e enviar o arquivo .JSON na área de Restauração.
+            </div>
+          </div>
+          <div class="footer">
+            Contaju Contabilidade & Gestão © ${new Date().getFullYear()} • Rotina Automática de Continuidade e Segurança de Dados
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return this.sendEmail(params.toEmail, emailSubject, emailHtml, [
+      {
+        filename: params.backupFilename,
+        content: base64Content
+      }
+    ]);
   }
 };
+
+export interface BackupEmailStats {
+  totalTitles: number;
+  totalContracts: number;
+  totalCounterparties: number;
+  totalMovements: number;
+  totalBankAccounts: number;
+  companyName: string;
+  consolidatedBalanceFormatted: string;
+}
+
+export interface BackupEmailParams {
+  toEmail: string | string[];
+  backupFilename: string;
+  backupJsonContent: string;
+  stats: BackupEmailStats;
+  triggerType?: 'AUTOMATICO_SEMANAL' | 'MANUAL';
+}
 
 export interface ContractAdjustmentEmailParams {
   clientName: string;

@@ -14,9 +14,16 @@ import {
   Wallet, 
   RefreshCw,
   Info,
-  ShieldAlert
+  ShieldAlert,
+  Mail,
+  Send,
+  Calendar,
+  Check,
+  Sparkles,
+  Play
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
+import { automaticBackupService, AutoBackupConfig } from '../../services/automaticBackupService';
 
 export const BackupView: React.FC = () => {
   const [lastBackupInfo, setLastBackupInfo] = useState<{ filename: string; date: string; sizeKb: number } | null>(() => {
@@ -27,6 +34,13 @@ export const BackupView: React.FC = () => {
       return null;
     }
   });
+
+  const [autoConfig, setAutoConfig] = useState<AutoBackupConfig>(() => automaticBackupService.getConfig());
+  const [recipientsInput, setRecipientsInput] = useState<string>(() => autoConfig.recipients.join(', '));
+  const [selectedDay, setSelectedDay] = useState<number>(autoConfig.dayOfWeek);
+  const [selectedTime, setSelectedTime] = useState<string>(autoConfig.timeOfDay);
+  const [isSendingEmailNow, setIsSendingEmailNow] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
@@ -40,10 +54,94 @@ export const BackupView: React.FC = () => {
   const [isRestoring, setIsRestoring] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Escuta atualizações do storage
+  // Escuta atualizações do storage e configurações
   useEffect(() => {
-    return storage.subscribe(() => setRefreshKey(k => k + 1));
+    return storage.subscribe(() => {
+      setRefreshKey(k => k + 1);
+      const latestConfig = automaticBackupService.getConfig();
+      setAutoConfig(latestConfig);
+    });
   }, []);
+
+  const handleToggleAutoBackup = () => {
+    const nextState = !autoConfig.enabled;
+    const updated = automaticBackupService.saveConfig({ enabled: nextState });
+    setAutoConfig(updated);
+    setNotification({
+      type: 'info',
+      text: nextState 
+        ? 'Rotina de backup semanal por e-mail ATIVADA com sucesso! O sistema fará os envios automaticamente.'
+        : 'Rotina de backup semanal por e-mail desativada.'
+    });
+  };
+
+  const handleSaveEmailConfig = () => {
+    setIsSavingConfig(true);
+    const splitRecipients = recipientsInput
+      .split(',')
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e.length > 0 && e.includes('@'));
+
+    if (splitRecipients.length === 0) {
+      setNotification({
+        type: 'error',
+        text: 'Por favor, informe ao menos um e-mail válido para receber o backup.'
+      });
+      setIsSavingConfig(false);
+      return;
+    }
+
+    const updated = automaticBackupService.saveConfig({
+      recipients: splitRecipients,
+      dayOfWeek: selectedDay,
+      timeOfDay: selectedTime
+    });
+    setAutoConfig(updated);
+    setRecipientsInput(updated.recipients.join(', '));
+    setIsSavingConfig(false);
+    setNotification({
+      type: 'success',
+      text: 'Configuração da rotina semanal de backup salva com sucesso!'
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const handleTriggerEmailBackupNow = async () => {
+    setIsSendingEmailNow(true);
+    try {
+      const splitRecipients = recipientsInput
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(e => e.length > 0 && e.includes('@'));
+
+      const res = await automaticBackupService.executeBackupNow(
+        'MANUAL',
+        splitRecipients.length > 0 ? splitRecipients : undefined
+      );
+
+      const latestConfig = automaticBackupService.getConfig();
+      setAutoConfig(latestConfig);
+
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          text: `🎉 Sucesso! Backup "${res.filename}" (${res.sizeKb} KB) enviado com sucesso para ${res.sentTo?.join(', ')}!`
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          text: `Falha ao transmitir backup por e-mail: ${res.message}`
+        });
+      }
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        text: `Erro inesperado: ${err?.message || err}`
+      });
+    } finally {
+      setIsSendingEmailNow(false);
+    }
+  };
 
   // Dados atuais para exibição das estatísticas
   const titles = storage.getTitles();
@@ -324,6 +422,233 @@ export const BackupView: React.FC = () => {
           </button>
         </div>
 
+      </div>
+
+      {/* Seção Nova: Rotina Automática de Exportação Semanal por E-mail (.JSON) */}
+      <div className="bg-white dark:bg-[#131720] p-6 rounded-2xl border border-amber-500/30 dark:border-amber-500/20 shadow-md space-y-6 relative overflow-hidden">
+        {/* Glow de fundo dourado sutil */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-amber-500/10 via-transparent to-transparent rounded-bl-full pointer-events-none" />
+
+        {/* Header do Card */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 dark:border-[#273040] pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 text-amber-500 border border-amber-500/30 shadow-xs">
+              <Mail className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  Rotina Automática de Backup Semanal via E-mail
+                </h2>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  autoConfig.enabled
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                    : 'bg-slate-500/10 text-slate-500 border-slate-500/30'
+                }`}>
+                  {autoConfig.enabled ? 'Ativo na Nuvem' : 'Pausado'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Exporta automaticamente toda a base de dados do sistema em formato <strong>.JSON</strong> e envia anexada por e-mail toda semana.
+              </p>
+            </div>
+          </div>
+
+          {/* Toggle Switch Ativado / Desativado */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {autoConfig.enabled ? 'Rotina Ativada' : 'Rotina Desativada'}
+            </span>
+            <button
+              type="button"
+              onClick={handleToggleAutoBackup}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                autoConfig.enabled ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+              role="switch"
+              aria-checked={autoConfig.enabled}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  autoConfig.enabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Configurações da Rotina */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Coluna 1 & 2: Formulário de Configuração */}
+          <div className="lg:col-span-2 space-y-4">
+            
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>E-mails Destinatários (separados por vírgula):</span>
+                <span className="text-[11px] font-normal text-slate-400">
+                  Ex: econtajuridico@gmail.com, leonardo@empresa.com
+                </span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={recipientsInput}
+                  onChange={(e) => setRecipientsInput(e.target.value)}
+                  placeholder="econtajuridico@gmail.com, seu-email@exemplo.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                💡 O arquivo <span className="font-mono text-amber-500 font-bold">.JSON</span> será enviado como anexo oficial para os endereços informados acima.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                  Dia da Semana para Envio:
+                </label>
+                <select
+                  value={selectedDay}
+                  onChange={(e) => setSelectedDay(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                >
+                  <option value={1}>Segunda-feira (Recomendado - Abertura de Semana)</option>
+                  <option value={2}>Terça-feira</option>
+                  <option value={3}>Quarta-feira</option>
+                  <option value={4}>Quinta-feira</option>
+                  <option value={5}>Sexta-feira (Fechamento Semanal)</option>
+                  <option value={6}>Sábado</option>
+                  <option value={0}>Domingo</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  Horário Preferencial de Disparo:
+                </label>
+                <input
+                  type="time"
+                  value={selectedTime}
+                  onChange={(e) => setSelectedTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleSaveEmailConfig}
+                disabled={isSavingConfig}
+                className="px-4 py-2 bg-slate-900 dark:bg-[#1B212D] hover:bg-slate-800 dark:hover:bg-[#252c3c] text-amber-400 border border-amber-500/40 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Salvar Configuração Semanal</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTriggerEmailBackupNow}
+                disabled={isSendingEmailNow}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSendingEmailNow ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Gerando e Enviando por E-mail...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Disparar Envio Agora (Teste Imediato)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Coluna 3: Painel do Último Envio Realizado */}
+          <div className="bg-slate-50 dark:bg-[#1B212D] p-4 rounded-xl border border-slate-200 dark:border-[#273040] flex flex-col justify-between space-y-3">
+            <div>
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  Status do Último Envio
+                </span>
+                {autoConfig.lastStatus === 'SUCCESS' && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    Entregue com Sucesso
+                  </span>
+                )}
+                {autoConfig.lastStatus === 'ERROR' && (
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/30">
+                    Falha no Envio
+                  </span>
+                )}
+              </div>
+
+              {autoConfig.lastRunAt ? (
+                <div className="space-y-2 text-xs">
+                  <div className="text-[11px] text-slate-500 flex justify-between border-b border-slate-200/50 dark:border-[#273040] pb-1.5">
+                    <span>Data/Hora:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {new Date(autoConfig.lastRunAt).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+
+                  {autoConfig.lastFilename && (
+                    <div className="text-[11px] text-slate-500 flex justify-between border-b border-slate-200/50 dark:border-[#273040] pb-1.5">
+                      <span>Arquivo:</span>
+                      <span className="font-mono font-bold text-sky-600 dark:text-sky-400 truncate max-w-[140px]" title={autoConfig.lastFilename}>
+                        {autoConfig.lastFilename}
+                      </span>
+                    </div>
+                  )}
+
+                  {autoConfig.lastSizeKb && (
+                    <div className="text-[11px] text-slate-500 flex justify-between border-b border-slate-200/50 dark:border-[#273040] pb-1.5">
+                      <span>Tamanho:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {autoConfig.lastSizeKb} KB
+                      </span>
+                    </div>
+                  )}
+
+                  {autoConfig.lastSentRecipients && autoConfig.lastSentRecipients.length > 0 && (
+                    <div className="text-[11px] text-slate-500 pt-1">
+                      <span className="block mb-1 font-semibold text-slate-700 dark:text-slate-300">Enviado para:</span>
+                      <span className="font-mono text-[10px] text-slate-600 dark:text-slate-400 break-all bg-white dark:bg-[#131720] p-1.5 rounded-lg border border-slate-200 dark:border-[#273040] block">
+                        {autoConfig.lastSentRecipients.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {autoConfig.lastError && (
+                    <div className="text-[11px] text-rose-600 dark:text-rose-400 bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
+                      <strong>Erro:</strong> {autoConfig.lastError}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-xs text-slate-400">
+                  <Mail className="w-7 h-7 mx-auto mb-1.5 opacity-40 text-amber-500" />
+                  <p>Nenhum envio registrado ainda.</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Clique em "Disparar Envio Agora" para fazer seu primeiro teste.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/50 dark:border-[#273040] text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>Frequência: Semanal (A cada 7 dias)</span>
+              <span className="font-semibold text-amber-500">Serviço Ativo</span>
+            </div>
+          </div>
+
+        </div>
       </div>
 
       {/* Seção 2: Restauração de Backup */}

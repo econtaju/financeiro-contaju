@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido. Utilize POST.' });
   }
 
-  const { to, subject, html, apiKey } = req.body || {};
+  const { to, subject, html, apiKey, attachments, from } = req.body || {};
   const resendApiKey = process.env.RESEND_API_KEY || apiKey;
 
   if (!resendApiKey) {
@@ -28,32 +28,38 @@ export default async function handler(req, res) {
   }
 
   try {
+    const emailPayload = {
+      from: from || process.env.RESEND_FROM_EMAIL || 'Contaju Sistema <onboarding@resend.dev>',
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html
+    };
+
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      emailPayload.attachments = attachments;
+    }
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        from: 'Contaju Sistema <onboarding@resend.dev>',
-        to: Array.isArray(to) ? to : [to],
-        subject,
-        html
-      })
+      body: JSON.stringify(emailPayload)
     });
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: 'Erro retornado pela API do Resend',
+        error: data.message || 'Erro retornado pela API do Resend',
         details: data
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: 'E-mail de aprovação enviado com sucesso!',
+      message: 'E-mail enviado com sucesso!',
       data
     });
   } catch (error) {
