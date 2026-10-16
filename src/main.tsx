@@ -41,25 +41,34 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Registro do Service Worker para suporte a PWA e operação offline
+// Registro do Service Worker para suporte a PWA e operação offline (Apenas em Produção)
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => {
-        // Verifica se há novas atualizações em segundo plano
-        reg.onupdatefound = () => {
-          const installingWorker = reg.installing;
-          if (installingWorker) {
-            installingWorker.onstatechange = () => {
-              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[PWA] Nova versão disponível em segundo plano.');
-              }
-            };
-          }
-        };
-      })
-      .catch((err) => {
-        console.warn('[PWA] Registro de Service Worker indisponível:', err);
-      });
-  });
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => {
+          // Verifica se há novas atualizações em segundo plano
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[PWA] Nova versão disponível em segundo plano.');
+                }
+              };
+            }
+          };
+        })
+        .catch((err) => {
+          console.warn('[PWA] Registro de Service Worker indisponível:', err);
+        });
+    });
+  } else {
+    // Em ambiente de desenvolvimento (localhost), desregistra qualquer Service Worker ativo para não interceptar o HMR do Vite nem travar carregamento
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        reg.unregister();
+      }
+    }).catch(() => {});
+  }
 }

@@ -2641,7 +2641,12 @@ class StorageService {
     };
 
     const initialList = [initialScenario];
-    this.saveCashSimulationScenarios(initialList);
+    this.inMemoryCache.set(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, initialList);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify(initialList));
+    } catch (e) {
+      // ignore
+    }
     return initialList;
   }
 
@@ -2652,7 +2657,6 @@ class StorageService {
         clientSettings: Array.isArray(s.clientSettings) ? s.clientSettings : []
       })) : [];
       this.set(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, safeList);
-      this.notify();
     } catch (e) {
       console.error('Erro ao salvar cenários de simulação:', e);
     }

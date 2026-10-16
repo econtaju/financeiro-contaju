@@ -215,14 +215,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [effectiveYear, effectiveMonthIdx, dashboardRefreshTrigger]);
 
   // Next dues in next 7 days
-  const upcomingReceivables = receivables
-    .filter(t => t.balancePrincipal > 0 && t.dueDate >= today)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  const upcomingReceivables = (receivables || [])
+    .filter(t => t && (t.balancePrincipal || 0) > 0 && t.dueDate && t.dueDate >= today)
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
     .slice(0, 5);
 
-  const upcomingPayables = payables
-    .filter(t => t.balancePrincipal > 0 && t.dueDate >= today)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  const upcomingPayables = (payables || [])
+    .filter(t => t && (t.balancePrincipal || 0) > 0 && t.dueDate && t.dueDate >= today)
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
     .slice(0, 5);
 
   // Preset Handlers for KPI Configuration

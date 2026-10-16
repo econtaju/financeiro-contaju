@@ -11,26 +11,42 @@ import { NewTitleModal } from './components/Modals/NewTitleModal';
 import { TransferModal } from './components/Modals/TransferModal';
 import { BillingGenerationModal } from './components/Modals/BillingGenerationModal';
 
-// Views carregadas via Code-Splitting / Lazy Loading (reduz o bundle principal em mais de 70% e acelera trocas de abas)
-const DashboardView = lazy(() => import('./components/Dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
-const ClientsView = lazy(() => import('./components/Commercial/ClientsView').then(m => ({ default: m.ClientsView })));
-const ServicesView = lazy(() => import('./components/Commercial/ServicesView').then(m => ({ default: m.ServicesView })));
-const ContractsView = lazy(() => import('./components/Commercial/ContractsView').then(m => ({ default: m.ContractsView })));
-const SalesView = lazy(() => import('./components/Commercial/SalesView').then(m => ({ default: m.SalesView })));
+// View Principal importada diretamente para carregamento instantâneo no primeiro acesso
+import { DashboardView } from './components/Dashboard/DashboardView';
 
-const ReceivablesView = lazy(() => import('./components/Financial/ReceivablesView').then(m => ({ default: m.ReceivablesView })));
-const PayablesView = lazy(() => import('./components/Financial/PayablesView').then(m => ({ default: m.PayablesView })));
-const CreditCardsView = lazy(() => import('./components/Financial/CreditCardsView').then(m => ({ default: m.CreditCardsView })));
-const MovementsView = lazy(() => import('./components/Financial/MovementsView').then(m => ({ default: m.MovementsView })));
-const BankAccountsView = lazy(() => import('./components/Financial/BankAccountsView').then(m => ({ default: m.BankAccountsView })));
-const ReconciliationView = lazy(() => import('./components/Financial/ReconciliationView').then(m => ({ default: m.ReconciliationView })));
+// Helper com retry automático contra falhas transitórias de chunks
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  componentImport: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    try {
+      return await componentImport();
+    } catch (error) {
+      console.warn('[Contaju Lazy] Recarregando módulo após falha transitória...', error);
+      return await componentImport();
+    }
+  });
+}
 
-const DREView = lazy(() => import('./components/Management/DREView').then(m => ({ default: m.DREView })));
-const CashFlowView = lazy(() => import('./components/Management/CashFlowView').then(m => ({ default: m.CashFlowView })));
-const BudgetPlanningView = lazy(() => import('./components/Management/BudgetPlanningView').then(m => ({ default: m.BudgetPlanningView })));
-const CompareDRECashView = lazy(() => import('./components/Management/CompareDRECashView').then(m => ({ default: m.CompareDRECashView })));
-const ReportsView = lazy(() => import('./components/Management/ReportsView').then(m => ({ default: m.ReportsView })));
-const SettingsHubView = lazy(() => import('./components/Config/SettingsHubView').then(m => ({ default: m.SettingsHubView })));
+// Demais Views carregadas sob demanda via Code-Splitting
+const ClientsView = lazyWithRetry(() => import('./components/Commercial/ClientsView').then(m => ({ default: m.ClientsView })));
+const ServicesView = lazyWithRetry(() => import('./components/Commercial/ServicesView').then(m => ({ default: m.ServicesView })));
+const ContractsView = lazyWithRetry(() => import('./components/Commercial/ContractsView').then(m => ({ default: m.ContractsView })));
+const SalesView = lazyWithRetry(() => import('./components/Commercial/SalesView').then(m => ({ default: m.SalesView })));
+
+const ReceivablesView = lazyWithRetry(() => import('./components/Financial/ReceivablesView').then(m => ({ default: m.ReceivablesView })));
+const PayablesView = lazyWithRetry(() => import('./components/Financial/PayablesView').then(m => ({ default: m.PayablesView })));
+const CreditCardsView = lazyWithRetry(() => import('./components/Financial/CreditCardsView').then(m => ({ default: m.CreditCardsView })));
+const MovementsView = lazyWithRetry(() => import('./components/Financial/MovementsView').then(m => ({ default: m.MovementsView })));
+const BankAccountsView = lazyWithRetry(() => import('./components/Financial/BankAccountsView').then(m => ({ default: m.BankAccountsView })));
+const ReconciliationView = lazyWithRetry(() => import('./components/Financial/ReconciliationView').then(m => ({ default: m.ReconciliationView })));
+
+const DREView = lazyWithRetry(() => import('./components/Management/DREView').then(m => ({ default: m.DREView })));
+const CashFlowView = lazyWithRetry(() => import('./components/Management/CashFlowView').then(m => ({ default: m.CashFlowView })));
+const BudgetPlanningView = lazyWithRetry(() => import('./components/Management/BudgetPlanningView').then(m => ({ default: m.BudgetPlanningView })));
+const CompareDRECashView = lazyWithRetry(() => import('./components/Management/CompareDRECashView').then(m => ({ default: m.CompareDRECashView })));
+const ReportsView = lazyWithRetry(() => import('./components/Management/ReportsView').then(m => ({ default: m.ReportsView })));
+const SettingsHubView = lazyWithRetry(() => import('./components/Config/SettingsHubView').then(m => ({ default: m.SettingsHubView })));
 import type { ConfigSubTab } from './components/Config/SettingsHubView';
 
 import { Menu, Minimize2 } from 'lucide-react';
