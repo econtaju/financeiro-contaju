@@ -29,7 +29,7 @@ import {
   UserPlus,
   UserCheck
 } from 'lucide-react';
-import { BankAccount } from '../../types';
+import { BankAccount, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR, getTemporalStatus } from '../../services/financialEngine';
 import { ReportingEngine } from '../../services/reportingEngine';
@@ -40,6 +40,7 @@ import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { PendingAlertsWidget } from './PendingAlertsWidget';
 import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
 import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
+import { EditTitleModal } from '../Modals/EditTitleModal';
 
 interface DashboardViewProps {
   onNavigate: (screen: NavigationScreen) => void;
@@ -59,9 +60,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const { config, toggleKpi, toggleWidget, updateConfig, resetToDefault } = useDashboardConfig();
   const { period } = useModulePeriod('DASHBOARD');
 
+  // Trigger para recálculo instantâneo ao salvar alterações de títulos
+  const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
+
   // Tab: 'DASHBOARD' | 'KPIS_CONFIG'
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'KPIS_CONFIG'>('DASHBOARD');
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+
+  // Modal de edição de títulos aberto por clique nas linhas do dashboard
+  const [selectedTitleForEdit, setSelectedTitleForEdit] = useState<FinancialTitle | null>(null);
+  const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
+
+  const handleOpenEditTitle = (title: FinancialTitle) => {
+    setSelectedTitleForEdit(title);
+    setIsEditTitleModalOpen(true);
+  };
+
+  const handleTitleSaved = () => {
+    setDashboardRefreshTrigger(prev => prev + 1);
+  };
 
   // Extrato bancário aberto por duplo clique
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
@@ -95,7 +112,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       ytdMargin: ytdMarg,
       monthMargin: monthMarg
     };
-  }, [effectiveYear, effectiveMonthIdx]);
+  }, [effectiveYear, effectiveMonthIdx, dashboardRefreshTrigger]);
 
   // 2. Cash Data (Realized Cash Flow) memoizado
   const { cashData, consolidatedCash, currentMonthCashInflow, currentMonthCashOutflow, currentMonthNetCash } = useMemo(() => {
@@ -110,7 +127,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       currentMonthCashOutflow: outflow,
       currentMonthNetCash: inflow - outflow
     };
-  }, [effectiveYear, effectiveMonthIdx]);
+  }, [effectiveYear, effectiveMonthIdx, dashboardRefreshTrigger]);
 
   // 3. Bank Accounts Detailed memoizado
   const { bankAccounts, bankAccountsWithBalance } = useMemo(() => {
@@ -120,7 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       calculatedBalance: FinancialEngine.getAccountBalance(b.id)
     }));
     return { bankAccounts: accounts, bankAccountsWithBalance: withBal };
-  }, []);
+  }, [dashboardRefreshTrigger]);
 
   // 4. Portfolio, Contracts & Billing memoizado
   const { 
@@ -177,12 +194,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       contractsPendingCount: pendingCount,
       totalBilledThisMonth: billedMonth
     };
-  }, [today, currentCompetenceStr]);
+  }, [today, currentCompetenceStr, dashboardRefreshTrigger]);
 
   // 5. Client KPIs & Metrics memoizado
   const clientMetrics = useMemo(() => {
     return FinancialEngine.calculateClientMetrics(effectiveYear, effectiveMonthIdx);
-  }, [effectiveYear, effectiveMonthIdx]);
+  }, [effectiveYear, effectiveMonthIdx, dashboardRefreshTrigger]);
 
   // Next dues in next 7 days
   const upcomingReceivables = receivables
@@ -465,18 +482,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           
           {/* WIDGET SOLICITADO: AVISOS PENDENTES (PRÓXIMOS 3 DIAS) */}
           {(!config.visibleWidgets || config.visibleWidgets.includes('widget_avisos_pendentes')) && (
-            <PendingAlertsWidget titles={titles} onNavigate={onNavigate} />
+            <PendingAlertsWidget 
+              titles={titles} 
+              counterparties={counterparties}
+              onNavigate={onNavigate} 
+              onSelectTitle={handleOpenEditTitle}
+            />
           )}
 
           {/* NOVO WIDGET SOLICITADO: PROJEÇÃO DE CAIXA LÍQUIDO & SIMULAÇÃO DE INADIMPLÊNCIA ESPERADA */}
           <CashLiquiditySimulationWidget
             currentCompetenceStr={currentCompetenceStr}
             nominalCashBalance={consolidatedCash}
-            openReceivablesThisMonth={receivables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)) && t.balancePrincipal > 0).reduce((acc, t) => acc + t.balancePrincipal, 0)}
-            openPayablesThisMonth={payables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)) && t.balancePrincipal > 0).reduce((acc, t) => acc + t.balancePrincipal, 0)}
-            receivablesTitlesThisMonth={receivables.filter(t => (t.competence === currentCompetenceStr || t.dueDate.startsWith(currentCompetenceStr)))}
+            allReceivables={receivables}
+            allPayables={payables}
             contracts={contracts}
             counterparties={counterparties}
+            onSelectTitle={handleOpenEditTitle}
           />
 
           {/* WIDGETS CONFIGURÁVEIS SOLICITADOS: FATURAMENTO & SALDOS BANCÁRIOS CONSOLIDADOS */}
@@ -1046,10 +1068,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           const client = counterparties.find(c => c.id === t.counterpartyId);
                           const tempStatus = getTemporalStatus(t, today);
                           return (
-                            <tr key={t.id} className="hover:bg-slate-50">
-                              <td className="py-2.5 font-medium text-slate-900">{client?.name || t.description}</td>
-                              <td className="py-2.5 text-slate-600">{formatDateBR(t.dueDate)}</td>
-                              <td className="py-2.5 text-right font-bold text-slate-900">{formatBRL(t.balancePrincipal)}</td>
+                            <tr 
+                              key={t.id} 
+                              onClick={() => handleOpenEditTitle(t)}
+                              className="hover:bg-amber-50/60 dark:hover:bg-amber-950/20 cursor-pointer transition-colors group"
+                              title="Clique para abrir e editar este lançamento"
+                            >
+                              <td className="py-2.5 font-medium text-slate-900">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-xs text-slate-900 group-hover:text-amber-500 transition-colors">
+                                    {client?.name || 'Cliente não identificado'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-700 truncate max-w-[200px]">
+                                    {t.description}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 text-slate-600 font-mono">{formatDateBR(t.dueDate)}</td>
+                              <td className="py-2.5 text-right font-bold text-slate-900 font-mono">{formatBRL(t.balancePrincipal)}</td>
                               <td className="py-2.5 text-center">
                                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
                                   tempStatus === 'VENCE_HOJE' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
@@ -1101,10 +1137,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           const supplier = counterparties.find(c => c.id === t.counterpartyId);
                           const tempStatus = getTemporalStatus(t, today);
                           return (
-                            <tr key={t.id} className="hover:bg-slate-50">
-                              <td className="py-2.5 font-medium text-slate-900">{supplier?.name || t.description}</td>
-                              <td className="py-2.5 text-slate-600">{formatDateBR(t.dueDate)}</td>
-                              <td className="py-2.5 text-right font-bold text-rose-700">{formatBRL(t.balancePrincipal)}</td>
+                            <tr 
+                              key={t.id} 
+                              onClick={() => handleOpenEditTitle(t)}
+                              className="hover:bg-rose-50/60 dark:hover:bg-rose-950/20 cursor-pointer transition-colors group"
+                              title="Clique para abrir e editar esta obrigação"
+                            >
+                              <td className="py-2.5 font-medium text-slate-900">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-xs text-slate-900 group-hover:text-rose-600 transition-colors">
+                                    {supplier?.name || 'Fornecedor não identificado'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-700 truncate max-w-[200px]">
+                                    {t.description}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 text-slate-600 font-mono">{formatDateBR(t.dueDate)}</td>
+                              <td className="py-2.5 text-right font-bold text-rose-700 font-mono">{formatBRL(t.balancePrincipal)}</td>
                               <td className="py-2.5 text-center">
                                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
                                   tempStatus === 'VENCE_HOJE' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
@@ -1487,6 +1537,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             setSelectedAccountForStatement(null);
           }}
           account={selectedAccountForStatement}
+        />
+      )}
+
+      {/* Modal de Edição Direta de Título Aberto a partir de qualquer widget do Dashboard */}
+      {isEditTitleModalOpen && (
+        <EditTitleModal
+          isOpen={isEditTitleModalOpen}
+          title={selectedTitleForEdit}
+          onClose={() => {
+            setIsEditTitleModalOpen(false);
+            setSelectedTitleForEdit(null);
+          }}
+          onSaved={handleTitleSaved}
         />
       )}
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   BellRing, 
   ArrowUpRight, 
@@ -11,18 +11,23 @@ import {
   ExternalLink,
   DollarSign
 } from 'lucide-react';
-import { FinancialTitle } from '../../types';
+import { FinancialTitle, Counterparty } from '../../types';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
+import { storage } from '../../services/storageService';
 import { NavigationScreen } from '../Sidebar';
 
 interface PendingAlertsWidgetProps {
   titles: FinancialTitle[];
+  counterparties?: Counterparty[];
   onNavigate: (screen: NavigationScreen) => void;
+  onSelectTitle?: (title: FinancialTitle) => void;
 }
 
 export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
   titles,
-  onNavigate
+  counterparties,
+  onNavigate,
+  onSelectTitle
 }) => {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -30,6 +35,11 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
   const in3Days = new Date(today);
   in3Days.setDate(today.getDate() + 3);
   const in3DaysStr = in3Days.toISOString().split('T')[0];
+
+  const effectiveCounterparties = counterparties || storage.getCounterparties();
+  const counterpartyMap = useMemo(() => {
+    return new Map(effectiveCounterparties.map(c => [c.id, c]));
+  }, [effectiveCounterparties]);
 
   // Filtra títulos ativos com saldo pendente vencendo entre hoje e D+3
   const activePendingTitles = titles.filter(t => 
@@ -54,7 +64,7 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
   const getDueBadge = (dueDate: string) => {
     if (dueDate === todayStr) {
       return (
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800 animate-pulse">
+        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-rose-500/15 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-400 dark:border-rose-800 animate-pulse">
           Vence Hoje
         </span>
       );
@@ -67,26 +77,26 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
 
     if (diffDays === 1) {
       return (
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800">
+        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-amber-500/15 dark:bg-amber-950/60 text-amber-800 dark:text-amber-400 border border-amber-400 dark:border-amber-800">
           Vence Amanhã
         </span>
       );
     }
 
     return (
-      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
         Em {diffDays} dias
       </span>
     );
   };
 
   return (
-    <div className="bg-white dark:bg-[#131720] rounded-2xl border border-slate-200 dark:border-[#273040] shadow-2xs overflow-hidden p-5 space-y-4">
+    <div className="bg-white dark:bg-[#131720] rounded-2xl border border-slate-200 dark:border-[#273040] shadow-sm overflow-hidden p-5 space-y-4">
       
       {/* Header do Widget */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-slate-100 dark:border-[#273040] gap-2">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+        <div className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/30">
             <BellRing className="w-4 h-4" />
           </div>
           <div>
@@ -94,7 +104,7 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
                 Avisos Pendentes (Próximos 3 Dias)
               </h3>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                 totalAlertsCount > 0 
                   ? 'bg-amber-500 text-slate-950 shadow-xs' 
                   : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
@@ -103,7 +113,7 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Contas a pagar e receber com vencimento de {formatDateBR(todayStr)} até {formatDateBR(in3DaysStr)}.
+              Contas a pagar e receber com vencimento de {formatDateBR(todayStr)} até {formatDateBR(in3DaysStr)}. Clique em qualquer linha para abrir o lançamento.
             </p>
           </div>
         </div>
@@ -111,14 +121,14 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => onNavigate('CONTAS_PAGAR')}
-            className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             Contas a Pagar
             <ExternalLink className="w-3 h-3 ml-1" />
           </button>
           <button
             onClick={() => onNavigate('CONTAS_RECEBER')}
-            className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             Contas a Receber
             <ExternalLink className="w-3 h-3 ml-1" />
@@ -196,41 +206,72 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
 
       </div>
 
-      {/* Listagem compacta das contas mais urgentes */}
+      {/* Listagem detalhada das contas com foco maior no tamanho de cliente e descrição */}
       {sortedUpcoming.length > 0 ? (
         <div className="space-y-2 pt-1">
-          <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-            Detalhamento das Contas a Liquidar nos Próximos 3 Dias
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+              Detalhamento das Contas a Liquidar nos Próximos 3 Dias
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium">
+              Clique em qualquer linha para abrir diretamente os detalhes
+            </span>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-[#273040] border border-slate-200 dark:border-[#273040] rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+          <div className="divide-y divide-slate-100 dark:divide-[#273040] border border-slate-200 dark:border-[#273040] rounded-xl overflow-hidden max-h-60 overflow-y-auto">
             {sortedUpcoming.map(t => {
               const isReceber = t.type === 'RECEBER';
+              const cp = counterpartyMap.get(t.counterpartyId);
+              const cpName = cp?.name || t.counterpartyName || 'Cliente / Fornecedor';
+
               return (
                 <div 
                   key={t.id}
-                  onClick={() => onNavigate(isReceber ? 'CONTAS_RECEBER' : 'CONTAS_PAGAR')}
-                  className="p-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-[#1B212D]/60 transition-colors cursor-pointer text-xs"
+                  onClick={() => {
+                    if (onSelectTitle) {
+                      onSelectTitle(t);
+                    } else {
+                      onNavigate(isReceber ? 'CONTAS_RECEBER' : 'CONTAS_PAGAR');
+                    }
+                  }}
+                  className="p-3 sm:p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-[#1B212D]/80 transition-all cursor-pointer text-xs group"
+                  title="Clique para abrir diretamente este lançamento"
                 >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <div className={`p-1.5 rounded-lg shrink-0 ${
-                      isReceber ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                  <div className="flex items-center space-x-3 min-w-0 flex-1">
+                    <div className={`p-2 rounded-xl shrink-0 border ${
+                      isReceber 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
                     }`}>
-                      {isReceber ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {isReceber ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
                     </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                        {t.counterpartyName}
+
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      {/* FOCO MAIOR NO TAMANHO: Nome do Cliente/Fornecedor em Destaque */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-white group-hover:text-amber-500 dark:group-hover:text-amber-400 transition-colors">
+                          {cpName}
+                        </span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          {t.titleNumber}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        {t.description || t.titleNumber}
+
+                      {/* Descrição e Competência juntas para fácil identificação */}
+                      <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 truncate">
+                        <span className="truncate font-medium">{t.description || 'Sem descrição'}</span>
+                        {t.competence && (
+                          <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 shrink-0 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                            • Ref: {t.competence}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3 shrink-0 ml-3">
+                  <div className="flex items-center space-x-3.5 shrink-0 ml-3">
                     <div className="text-right">
-                      <div className={`font-mono font-bold ${
-                        isReceber ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+                      <div className={`text-sm sm:text-base font-mono font-black ${
+                        isReceber ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                       }`}>
                         {formatBRL(t.balancePrincipal)}
                       </div>
@@ -238,7 +279,7 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
                         {formatDateBR(t.dueDate)}
                       </div>
                     </div>
-                    <div>
+                    <div className="shrink-0">
                       {getDueBadge(t.dueDate)}
                     </div>
                   </div>
