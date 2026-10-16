@@ -134,13 +134,21 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
     adjustment: null
   });
 
-  const contracts = storage.getContracts();
+  const [dataVersion, setDataVersion] = useState(0);
+
+  useEffect(() => {
+    return storage.subscribe(() => {
+      setDataVersion(v => v + 1);
+    });
+  }, []);
+
+  const contracts = useMemo(() => storage.getContracts(), [dataVersion]);
   const counterparties = useMemo(() => {
     return storage.getCounterparties().filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
-  }, [clientsRefreshTrigger, isModalOpen]);
-  const services = storage.getServices();
-  const bankAccounts = storage.getBankAccounts();
-  const allTitles = storage.getTitles();
+  }, [clientsRefreshTrigger, isModalOpen, dataVersion]);
+  const services = useMemo(() => storage.getServices(), [dataVersion]);
+  const bankAccounts = useMemo(() => storage.getBankAccounts(), [dataVersion]);
+  const allTitles = useMemo(() => storage.getTitles(), [dataVersion]);
 
   // Fechar modal com tecla Escape para maior comodidade e responsividade
   useEffect(() => {
@@ -160,29 +168,31 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
   const outOfPortfolioContracts = useMemo(() => contracts.filter(c => c.status === 'CANCELADO' || c.status === 'INATIVO'), [contracts]);
   const outOfPortfolioTotal = useMemo(() => outOfPortfolioContracts.reduce((acc, c) => acc + (c.monthlyTotal || 0), 0), [outOfPortfolioContracts]);
 
-  const filteredContracts = contracts.filter(c => {
-    const client = counterparties.find(cp => cp.id === c.customerId);
-    const searchMatch = matchesSearch([
-      client?.name,
-      client?.tradeName,
-      c.contractNumber,
-      c.description,
-      c.notes,
-      c.cancellationReason,
-      c.cancellationNotes
-    ], searchTerm);
-    
-    if (!searchMatch) return false;
-    if (channelFilter !== 'ALL' && c.acquisitionChannel !== channelFilter) return false;
-    if (statusTab === 'ATIVO' && c.status !== 'ATIVO') return false;
-    if (statusTab === 'CANCELADO' && c.status !== 'CANCELADO') return false;
-    if (statusTab === 'INATIVO' && c.status !== 'INATIVO') return false;
-    if (statusTab === 'SUSPENSO_ENCERRADO' && c.status !== 'SUSPENSO' && c.status !== 'ENCERRADO') return false;
-    return true;
-  });
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const client = counterparties.find(cp => cp.id === c.customerId);
+      const searchMatch = matchesSearch([
+        client?.name,
+        client?.tradeName,
+        c.contractNumber,
+        c.description,
+        c.notes,
+        c.cancellationReason,
+        c.cancellationNotes
+      ], searchTerm);
+      
+      if (!searchMatch) return false;
+      if (channelFilter !== 'ALL' && c.acquisitionChannel !== channelFilter) return false;
+      if (statusTab === 'ATIVO' && c.status !== 'ATIVO') return false;
+      if (statusTab === 'CANCELADO' && c.status !== 'CANCELADO') return false;
+      if (statusTab === 'INATIVO' && c.status !== 'INATIVO') return false;
+      if (statusTab === 'SUSPENSO_ENCERRADO' && c.status !== 'SUSPENSO' && c.status !== 'ENCERRADO') return false;
+      return true;
+    });
+  }, [contracts, counterparties, searchTerm, channelFilter, statusTab]);
 
-  const mrr = FinancialEngine.calculateMRR();
-  const activeAvgTicket = activeContracts.length > 0 ? mrr / activeContracts.length : 0;
+  const mrr = useMemo(() => FinancialEngine.calculateMRR(), [contracts]);
+  const activeAvgTicket = useMemo(() => activeContracts.length > 0 ? mrr / activeContracts.length : 0, [activeContracts, mrr]);
 
   const handleReactivate = (c: Contract) => {
     if (confirm(`Deseja reativar o contrato ${c.contractNumber} (${formatBRL(c.monthlyTotal)}/mês) para a Carteira Ativa?`)) {

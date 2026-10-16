@@ -67,18 +67,17 @@ function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => storage.isAuthenticated());
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('DASHBOARD');
   const [isPendingScreen, startScreenTransition] = useTransition();
-  const [currentUser, setCurrentUser] = useState<User>(storage.getCurrentUser());
+  const [dataVersion, setDataVersion] = useState(0);
+  const [currentUser, setCurrentUser] = useState<User>(() => storage.getCurrentUser());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
 
-  // Transição de tela suave sem congelar a interface
+  // Navegação ultra-rápida instantânea (0ms latency)
   const handleNavigate = (screen: NavigationScreen) => {
-    startScreenTransition(() => {
-      setCurrentScreen(screen);
-    });
+    setCurrentScreen(screen);
   };
 
-  // Badges de pendências para navegação mobile memoizados
+  // Badges de pendências para navegação mobile - depende exclusivamente de atualizações nos dados, NUNCA da troca de tela
   const { overduePayablesCount, overdueReceivablesCount } = useMemo(() => {
     const titles = storage.getTitles();
     const todayStr = new Date().toISOString().split('T')[0];
@@ -86,7 +85,7 @@ function AppContent() {
       overduePayablesCount: titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate < todayStr).length,
       overdueReceivablesCount: titles.filter(t => t.type === 'RECEBER' && t.balancePrincipal > 0 && t.dueDate < todayStr).length
     };
-  }, [currentScreen]);
+  }, [dataVersion]);
 
   // Sair do Modo Foco ao pressionar a tecla ESC
   useEffect(() => {
@@ -99,7 +98,7 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFocusMode]);
 
-  // Initialize theme on root
+  // Initialize theme, sync & background prefetch on root
   useEffect(() => {
     const currentTheme = storage.getTheme();
     document.documentElement.classList.toggle('light', currentTheme === 'light');
@@ -108,12 +107,30 @@ function AppContent() {
     // Sincronização inteligente com nuvem (Supabase) em segundo plano
     storage.ensureCloudSync();
 
+    // Pré-carregamento (Pre-warming) em segundo plano dos módulos mais acessados quando o navegador estiver ocioso
+    const prewarmModules = () => {
+      import('./components/Financial/PayablesView');
+      import('./components/Financial/ReceivablesView');
+      import('./components/Financial/CreditCardsView');
+      import('./components/Financial/MovementsView');
+      import('./components/Financial/BankAccountsView');
+      import('./components/Commercial/ContractsView');
+      import('./components/Commercial/ClientsView');
+      import('./components/Management/DREView');
+    };
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(prewarmModules, { timeout: 1500 });
+    } else {
+      setTimeout(prewarmModules, 800);
+    }
+
     const unsubscribe = storage.subscribe(() => {
       const updatedTheme = storage.getTheme();
       document.documentElement.classList.toggle('light', updatedTheme === 'light');
       document.documentElement.classList.toggle('dark', updatedTheme === 'dark');
       setCurrentUser(storage.getCurrentUser());
       setIsAuthenticated(storage.isAuthenticated());
+      setDataVersion(v => v + 1);
     });
     return unsubscribe;
   }, []);
@@ -201,11 +218,6 @@ function AppContent() {
     handleNavigate(screen);
   };
 
-  // Refresh user state if changed in storage
-  useEffect(() => {
-    const user = storage.getCurrentUser();
-    setCurrentUser(user);
-  }, [currentScreen]);
 
   const handleOpenNewTitleModal = (type: 'RECEBER' | 'PAGAR') => {
     setNewTitleType(type);

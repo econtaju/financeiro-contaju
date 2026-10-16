@@ -33,12 +33,15 @@ interface CreditCardsViewProps {
 }
 
 export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPayables }) => {
-  const [cards, setCards] = useState<CreditCardType[]>([]);
-  const [purchases, setPurchases] = useState<CreditCardPurchase[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
-  const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>([]);
-  const [selectedCardId, setSelectedCardId] = useState<string>('');
+  const [cards, setCards] = useState<CreditCardType[]>(() => storage.getCreditCards());
+  const [purchases, setPurchases] = useState<CreditCardPurchase[]>(() => storage.getCardPurchases());
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => storage.getBankAccounts());
+  const [counterparties, setCounterparties] = useState<Counterparty[]>(() => storage.getCounterparties());
+  const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>(() => storage.getChartAccounts());
+  const [selectedCardId, setSelectedCardId] = useState<string>(() => {
+    const loadedCards = storage.getCreditCards();
+    return loadedCards.length > 0 ? loadedCards[0].id : '';
+  });
   const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>('');
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -70,11 +73,9 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
   };
 
   useEffect(() => {
-    loadData();
-    const unsubscribe = storage.subscribe(() => {
+    return storage.subscribe(() => {
       loadData();
     });
-    return () => unsubscribe();
   }, []);
 
   const activeCard = useMemo(() => {

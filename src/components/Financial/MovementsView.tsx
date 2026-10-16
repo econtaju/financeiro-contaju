@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeftRight, 
   Search, 
@@ -46,24 +46,36 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ initialSearch = ''
   const [movAccountId, setMovAccountId] = useState('');
   const [movDirection, setMovDirection] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
 
-  const accounts = storage.getBankAccounts();
-  const movements = storage.getMovements().sort((a, b) => b.date.localeCompare(a.date));
-  const titles = storage.getTitles();
-  const settlements = storage.getSettlements();
-  const chartAccounts = storage.getChartAccounts().filter(a => a.isAnalytical && a.isActive);
+  useEffect(() => {
+    return storage.subscribe(() => {
+      setRefreshKey(k => k + 1);
+    });
+  }, []);
 
-  const filteredMovements = movements.filter(m => {
-    if (selectedAccountId !== 'ALL' && m.bankAccountId !== selectedAccountId) return false;
-    if (directionFilter !== 'ALL' && m.direction !== directionFilter) return false;
-    if (searchTerm) {
-      const match = matchesSearch([
-        m.description,
-        m.originReferenceId
-      ], searchTerm);
-      if (!match) return false;
-    }
-    return true;
-  });
+  const accounts = useMemo(() => storage.getBankAccounts(), [refreshKey]);
+  const movements = useMemo(() => {
+    return [...storage.getMovements()].sort((a, b) => b.date.localeCompare(a.date));
+  }, [refreshKey]);
+  const titles = useMemo(() => storage.getTitles(), [refreshKey]);
+  const settlements = useMemo(() => storage.getSettlements(), [refreshKey]);
+  const chartAccounts = useMemo(() => {
+    return storage.getChartAccounts().filter(a => a.isAnalytical && a.isActive);
+  }, [refreshKey]);
+
+  const filteredMovements = useMemo(() => {
+    return movements.filter(m => {
+      if (selectedAccountId !== 'ALL' && m.bankAccountId !== selectedAccountId) return false;
+      if (directionFilter !== 'ALL' && m.direction !== directionFilter) return false;
+      if (searchTerm) {
+        const match = matchesSearch([
+          m.description,
+          m.originReferenceId
+        ], searchTerm);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [movements, selectedAccountId, directionFilter, searchTerm]);
 
   // Handler for double clicking or clicking edit on a movement row
   const handleOpenEdit = (m: FinancialMovement) => {

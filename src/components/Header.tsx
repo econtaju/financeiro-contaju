@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Building2, 
   Wallet, 
@@ -106,7 +106,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   const company = useMemo(() => storage.getCompany(), []);
   const users = useMemo(() => storage.getUsers(), []);
-  const consolidatedCash = useMemo(() => FinancialEngine.getConsolidatedCashBalance(), [currentScreen]);
+  const [consolidatedCash, setConsolidatedCash] = useState<number>(() => {
+    try {
+      return FinancialEngine.getConsolidatedCashBalance();
+    } catch {
+      return 0;
+    }
+  });
 
   // Keyboard shortcut Ctrl+K / Cmd+K para abrir busca global
   useEffect(() => {
@@ -120,28 +126,50 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Contagem de notificações em tempo real memoizada
-  const { expiringContractsCount, payablesTodayCount, pendingReconciliationCount, totalAlerts } = useMemo(() => {
-    const titles = storage.getTitles();
-    const todayStr = new Date().toISOString().split('T')[0];
-    const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
-    const nowTime = new Date().getTime();
-    const expiring = contracts.filter(c => {
-      if (!c.endDate) return false;
-      const diffDays = Math.ceil((new Date(c.endDate).getTime() - nowTime) / (1000 * 3600 * 24));
-      return diffDays >= 0 && diffDays <= 30;
-    }).length;
-    const payToday = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === todayStr).length;
-    const pendingReconcile = storage.getStatementEntries().filter(
-      s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO'
-    ).length;
-    return {
-      expiringContractsCount: expiring,
-      payablesTodayCount: payToday,
-      pendingReconciliationCount: pendingReconcile,
-      totalAlerts: expiring + payToday + pendingReconcile
-    };
-  }, [currentScreen]);
+  // Contagem de notificações em tempo real desacoplada da troca de abas
+  const computeNotifications = useCallback(() => {
+    try {
+      const titles = storage.getTitles();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const contracts = storage.getContracts().filter(c => c.status === 'ATIVO');
+      const nowTime = new Date().getTime();
+      const expiring = contracts.filter(c => {
+        if (!c.endDate) return false;
+        const diffDays = Math.ceil((new Date(c.endDate).getTime() - nowTime) / (1000 * 3600 * 24));
+        return diffDays >= 0 && diffDays <= 30;
+      }).length;
+      const payToday = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === todayStr).length;
+      const pendingReconcile = storage.getStatementEntries().filter(
+        s => s.reconciliationStatus === 'PENDENTE' || s.reconciliationStatus === 'SUGESTAO'
+      ).length;
+      return {
+        expiringContractsCount: expiring,
+        payablesTodayCount: payToday,
+        pendingReconciliationCount: pendingReconcile,
+        totalAlerts: expiring + payToday + pendingReconcile
+      };
+    } catch {
+      return {
+        expiringContractsCount: 0,
+        payablesTodayCount: 0,
+        pendingReconciliationCount: 0,
+        totalAlerts: 0
+      };
+    }
+  }, []);
+
+  const [notificationAlerts, setNotificationAlerts] = useState(computeNotifications);
+
+  useEffect(() => {
+    return storage.subscribe(() => {
+      try {
+        setConsolidatedCash(FinancialEngine.getConsolidatedCashBalance());
+      } catch {}
+      setNotificationAlerts(computeNotifications());
+    });
+  }, [computeNotifications]);
+
+  const { expiringContractsCount, payablesTodayCount, pendingReconciliationCount, totalAlerts } = notificationAlerts;
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';

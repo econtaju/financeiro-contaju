@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Landmark, Plus, ArrowLeftRight, Edit2, Wallet, CheckCircle2, Building, Calculator, Coins, FileText, Scale } from 'lucide-react';
 import { BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -20,9 +20,16 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
   const [isStatementOpen, setIsStatementOpen] = useState(false);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [closingAccount, setClosingAccount] = useState<BankAccount | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
 
-  const accounts = storage.getBankAccounts();
-  const consolidated = FinancialEngine.getConsolidatedCashBalance();
+  useEffect(() => {
+    return storage.subscribe(() => {
+      setDataVersion(v => v + 1);
+    });
+  }, []);
+
+  const accounts = useMemo(() => storage.getBankAccounts(), [dataVersion]);
+  const consolidated = useMemo(() => FinancialEngine.getConsolidatedCashBalance(), [dataVersion]);
 
   const handleOpenStatement = (acc: BankAccount) => {
     setStatementAccount(acc);
