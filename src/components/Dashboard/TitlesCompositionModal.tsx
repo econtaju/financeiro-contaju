@@ -36,8 +36,8 @@ export const TitlesCompositionModal: React.FC<TitlesCompositionModalProps> = ({
   onClose,
   type,
   periodStr,
-  allTitles,
-  counterparties,
+  allTitles = [],
+  counterparties = [],
   onSelectTitle,
   initialFilterMode = 'DUE_DATE'
 }) => {
@@ -46,7 +46,7 @@ export const TitlesCompositionModal: React.FC<TitlesCompositionModalProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'SETTLED'>('OPEN');
 
   const counterpartyMap = useMemo(() => {
-    return new Map(counterparties.map(c => [c.id, c]));
+    return new Map((counterparties || []).map(c => [c.id, c]));
   }, [counterparties]);
 
   // Formata o período para exibição amigável
@@ -63,7 +63,7 @@ export const TitlesCompositionModal: React.FC<TitlesCompositionModalProps> = ({
 
   // Filtra os títulos do tipo solicitado
   const targetTitles = useMemo(() => {
-    return allTitles.filter(t => t.type === type && t.documentState === 'CONFIRMADO');
+    return (allTitles || []).filter(t => t && t.type === type && t.documentState === 'CONFIRMADO');
   }, [allTitles, type]);
 
   // Aplica o filtro de período de acordo com o modo

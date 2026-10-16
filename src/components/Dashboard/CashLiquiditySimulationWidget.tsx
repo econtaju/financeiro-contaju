@@ -43,11 +43,11 @@ interface CashLiquiditySimulationWidgetProps {
 
 export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidgetProps> = ({
   currentCompetenceStr,
-  nominalCashBalance,
-  allReceivables,
-  allPayables,
-  contracts,
-  counterparties,
+  nominalCashBalance = 0,
+  allReceivables = [],
+  allPayables = [],
+  contracts = [],
+  counterparties = [],
   onSelectTitle
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,11 +67,11 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
 
   // Cenários do storage
   const scenarios = useMemo(() => {
-    return storage.getCashSimulationScenarios();
+    return storage.getCashSimulationScenarios() || [];
   }, [refreshKey]);
 
   const activeScenario = useMemo(() => {
-    return scenarios.find(s => s.isActive) || scenarios[0] || null;
+    return (scenarios || []).find(s => s.isActive) || (scenarios || [])[0] || null;
   }, [scenarios]);
 
   const [isSimulationEnabled, setIsSimulationEnabled] = useState(true);
@@ -79,8 +79,8 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
 
   // Títulos a Receber do período com base no critério selecionado
   const receivablesTitlesThisMonth = useMemo(() => {
-    return allReceivables.filter(t => {
-      if (t.documentState !== 'CONFIRMADO') return false;
+    return (allReceivables || []).filter(t => {
+      if (!t || t.documentState !== 'CONFIRMADO') return false;
       const isDue = t.dueDate && t.dueDate.startsWith(currentCompetenceStr);
       const isComp = t.competence && t.competence.startsWith(currentCompetenceStr);
       if (dateFilterMode === 'DUE_DATE') return isDue;
@@ -91,8 +91,8 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
 
   // Títulos a Pagar do período com base no critério selecionado
   const payablesTitlesThisMonth = useMemo(() => {
-    return allPayables.filter(t => {
-      if (t.documentState !== 'CONFIRMADO') return false;
+    return (allPayables || []).filter(t => {
+      if (!t || t.documentState !== 'CONFIRMADO') return false;
       const isDue = t.dueDate && t.dueDate.startsWith(currentCompetenceStr);
       const isComp = t.competence && t.competence.startsWith(currentCompetenceStr);
       if (dateFilterMode === 'DUE_DATE') return isDue;
@@ -103,11 +103,11 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
 
   // Títulos em aberto para a soma
   const openReceivablesTitles = useMemo(() => {
-    return receivablesTitlesThisMonth.filter(t => t.balancePrincipal > 0);
+    return receivablesTitlesThisMonth.filter(t => (t.balancePrincipal || 0) > 0);
   }, [receivablesTitlesThisMonth]);
 
   const openPayablesTitles = useMemo(() => {
-    return payablesTitlesThisMonth.filter(t => t.balancePrincipal > 0);
+    return payablesTitlesThisMonth.filter(t => (t.balancePrincipal || 0) > 0);
   }, [payablesTitlesThisMonth]);
 
   const openReceivablesThisMonth = useMemo(() => {
@@ -127,11 +127,11 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
   // Helper para obter o honorário base do cliente no mês
   const getClientExpectedBase = (clientId: string): number => {
     const clientTitles = openReceivablesTitles.filter(t => t.counterpartyId === clientId);
-    const sumTitles = clientTitles.reduce((acc, t) => acc + t.balancePrincipal, 0);
+    const sumTitles = clientTitles.reduce((acc, t) => acc + (t.balancePrincipal || 0), 0);
     if (sumTitles > 0) return sumTitles;
 
-    const clientContract = contracts.find(c => c.customerId === clientId);
-    if (clientContract) return clientContract.monthlyTotal;
+    const clientContract = (contracts || []).find(c => c && c.customerId === clientId);
+    if (clientContract) return clientContract.monthlyTotal || 0;
 
     return 1500;
   };
@@ -139,8 +139,9 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
   // Cálculo das deduções por cliente
   const clientDeductions = useMemo(() => {
     if (!activeScenario || !isSimulationEnabled) return [];
+    const clientSettings = Array.isArray(activeScenario.clientSettings) ? activeScenario.clientSettings : [];
 
-    return activeScenario.clientSettings.map(cs => {
+    return clientSettings.map(cs => {
       const baseValue = getClientExpectedBase(cs.clientId);
       let deduction = 0;
 
@@ -161,7 +162,7 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
   }, [activeScenario, isSimulationEnabled, openReceivablesTitles, contracts]);
 
   const totalExpectedDelinquency = useMemo(() => {
-    return clientDeductions.reduce((sum, item) => sum + item.deduction, 0);
+    return clientDeductions.reduce((sum, item) => sum + (item.deduction || 0), 0);
   }, [clientDeductions]);
 
   // Totais do Nível 1: Nominal

@@ -60,6 +60,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const { config, toggleKpi, toggleWidget, updateConfig, resetToDefault } = useDashboardConfig();
   const { period } = useModulePeriod('DASHBOARD');
 
+  // Arrays seguros para evitar quebras por valores legados no localStorage
+  const safeVisibleKpis = useMemo(() => {
+    return Array.isArray(config?.visibleKpis) && config.visibleKpis.length > 0
+      ? config.visibleKpis
+      : ['faturamento_bruto', 'resultado_liquido', 'mrr', 'clientes_ativos', 'crescimento_clientes', 'inadimplencia', 'saldo_disponivel', 'entradas_caixa', 'saidas_caixa'];
+  }, [config?.visibleKpis]);
+
+  const safeVisibleWidgets = useMemo(() => {
+    return Array.isArray(config?.visibleWidgets) && config.visibleWidgets.length > 0
+      ? config.visibleWidgets
+      : ['widget_avisos_pendentes', 'widget_faturamento_resumo', 'widget_saldos_consolidados', 'widget_resumo_clientes', 'widget_dre_economico', 'widget_posicao_caixa', 'widget_proximos_vencimentos'];
+  }, [config?.visibleWidgets]);
+
   // Trigger para recálculo instantâneo ao salvar alterações de títulos
   const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
@@ -455,12 +468,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               }`}
             >
               <Sliders className="w-3.5 h-3.5 mr-1.5 text-slate-950" />
-              Personalizar KPIs & Widgets ({config.visibleKpis.length} ativos)
+              Personalizar KPIs & Widgets ({safeVisibleKpis.length} ativos)
             </button>
           </div>
 
           <div className="text-[11px] text-[var(--text-secondary)] hidden sm:block">
-            {config.visibleKpis.length} KPIs e {config.visibleWidgets.length} Widgets ativos no painel
+            {safeVisibleKpis.length} KPIs e {safeVisibleWidgets.length} Widgets ativos no painel
           </div>
         </div>
       </div>
@@ -470,8 +483,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         moduleType="DASHBOARD"
         titlePrefix="Período de Apuração"
         filterSubtitle="Painel Executivo e DRE"
-        matchedCount={titles.filter(t => t.competence?.startsWith(String(effectiveYear))).length}
-        totalCount={titles.length}
+        matchedCount={(titles || []).filter(t => t.competence?.startsWith(String(effectiveYear))).length}
+        totalCount={(titles || []).length}
       />
 
       {/* ========================================================================= */}
@@ -481,10 +494,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="space-y-6 animate-in fade-in duration-200">
           
           {/* WIDGET SOLICITADO: AVISOS PENDENTES (PRÓXIMOS 3 DIAS) */}
-          {(!config.visibleWidgets || config.visibleWidgets.includes('widget_avisos_pendentes')) && (
+          {safeVisibleWidgets.includes('widget_avisos_pendentes') && (
             <PendingAlertsWidget 
-              titles={titles} 
-              counterparties={counterparties}
+              titles={titles || []} 
+              counterparties={counterparties || []}
               onNavigate={onNavigate} 
               onSelectTitle={handleOpenEditTitle}
             />
@@ -505,7 +518,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             {/* WIDGET 1: RESUMO RÁPIDO DE FATURAMENTO MENSAL */}
-            {config.visibleWidgets.includes('widget_faturamento_resumo') && (
+            {safeVisibleWidgets.includes('widget_faturamento_resumo') && (
               <div className="bg-gradient-to-br from-[#121620] via-[#19202D] to-[#0B0E14] text-white p-5 rounded-2xl border border-amber-500/30 shadow-xs relative overflow-hidden">
                 <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
                 
@@ -582,7 +595,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             )}
 
             {/* WIDGET 2: SALDOS BANCÁRIOS CONSOLIDADOS */}
-            {config.visibleWidgets.includes('widget_saldos_consolidados') && (
+            {safeVisibleWidgets.includes('widget_saldos_consolidados') && (
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -671,7 +684,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             )}
 
             {/* WIDGET 3: PANORAMA & MÉTRICAS DE CLIENTES (SOLICITADO) */}
-            {config.visibleWidgets.includes('widget_resumo_clientes') && (
+            {safeVisibleWidgets.includes('widget_resumo_clientes') && (
               <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs col-span-1 lg:col-span-2 flex flex-col justify-between">
                 <div>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[var(--border-subtle)] gap-3">
@@ -815,7 +828,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* GRID DE KPIS DINÂMICOS CONFORME CONFIGURAÇÃO DO USUÁRIO */}
-          {config.visibleKpis.length > 0 && (
+          {safeVisibleKpis.length > 0 && (
             <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-3">
               <div className="flex justify-between items-center border-b border-[var(--border-subtle)] pb-2.5">
                 <div className="flex items-center space-x-2">
@@ -835,7 +848,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
                 {KPI_CATALOG
-                  .filter(kpi => config.visibleKpis.includes(kpi.id))
+                  .filter(kpi => safeVisibleKpis.includes(kpi.id))
                   .map(kpi => {
                     const IconComponent = kpi.icon;
                     const navTarget: NavigationScreen | null = 
@@ -873,7 +886,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
 
           {/* BLOCO 1: RESULTADO POR COMPETÊNCIA (DRE ECONÔMICO) */}
-          {config.visibleWidgets.includes('widget_dre_economico') && (
+          {safeVisibleWidgets.includes('widget_dre_economico') && (
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center space-x-2">
@@ -956,7 +969,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
 
           {/* BLOCO 2: POSIÇÃO FINANCEIRA DE CAIXA E CARTEIRA */}
-          {config.visibleWidgets.includes('widget_posicao_caixa') && (
+          {safeVisibleWidgets.includes('widget_posicao_caixa') && (
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center space-x-2">
@@ -1030,7 +1043,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
 
           {/* WIDGET 6: PRÓXIMOS VENCIMENTOS */}
-          {config.visibleWidgets.includes('widget_proximos_vencimentos') && (
+          {safeVisibleWidgets.includes('widget_proximos_vencimentos') && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Contas a Receber Próximas */}
@@ -1267,13 +1280,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </p>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-800 rounded-full font-mono">
-                {config.visibleKpis.length} de {KPI_CATALOG.length} selecionados
+                {safeVisibleKpis.length} de {KPI_CATALOG.length} selecionados
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {KPI_CATALOG.map(kpi => {
-                const isSelected = config.visibleKpis.includes(kpi.id);
+                const isSelected = safeVisibleKpis.includes(kpi.id);
                 const IconComponent = kpi.icon;
 
                 return (
@@ -1336,7 +1349,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_faturamento_resumo')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_faturamento_resumo')
+                  safeVisibleWidgets.includes('widget_faturamento_resumo')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1351,9 +1364,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_faturamento_resumo') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_faturamento_resumo') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_faturamento_resumo') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_faturamento_resumo') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1361,7 +1374,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_saldos_consolidados')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_saldos_consolidados')
+                  safeVisibleWidgets.includes('widget_saldos_consolidados')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1376,9 +1389,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_saldos_consolidados') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_saldos_consolidados') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_saldos_consolidados') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_saldos_consolidados') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1386,7 +1399,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_resumo_clientes')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_resumo_clientes')
+                  safeVisibleWidgets.includes('widget_resumo_clientes')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1401,9 +1414,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_resumo_clientes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_resumo_clientes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_resumo_clientes') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_resumo_clientes') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1411,7 +1424,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_avisos_pendentes')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_avisos_pendentes')
+                  safeVisibleWidgets.includes('widget_avisos_pendentes')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1426,9 +1439,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_avisos_pendentes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_avisos_pendentes') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_avisos_pendentes') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_avisos_pendentes') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1436,7 +1449,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_dre_economico')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_dre_economico')
+                  safeVisibleWidgets.includes('widget_dre_economico')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1451,9 +1464,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_dre_economico') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_dre_economico') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_dre_economico') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_dre_economico') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1461,7 +1474,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_posicao_caixa')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_posicao_caixa')
+                  safeVisibleWidgets.includes('widget_posicao_caixa')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1476,9 +1489,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_posicao_caixa') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_posicao_caixa') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_posicao_caixa') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_posicao_caixa') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 
@@ -1486,7 +1499,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div 
                 onClick={() => toggleWidget('widget_proximos_vencimentos')}
                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex justify-between items-start ${
-                  config.visibleWidgets.includes('widget_proximos_vencimentos')
+                  safeVisibleWidgets.includes('widget_proximos_vencimentos')
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-slate-200 bg-white opacity-70 hover:opacity-100'
                 }`}
@@ -1501,9 +1514,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                  config.visibleWidgets.includes('widget_proximos_vencimentos') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
+                  safeVisibleWidgets.includes('widget_proximos_vencimentos') ? 'bg-amber-500 text-white' : 'border border-slate-300 bg-white'
                 }`}>
-                  {config.visibleWidgets.includes('widget_proximos_vencimentos') && <Check className="w-3 h-3 stroke-[3]" />}
+                  {safeVisibleWidgets.includes('widget_proximos_vencimentos') && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
               </div>
 

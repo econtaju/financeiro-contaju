@@ -18,19 +18,21 @@ export function useDashboardConfig() {
 
   const toggleKpi = (kpiId: string) => {
     const current = storage.getDashboardConfig();
-    const exists = current.visibleKpis.includes(kpiId);
+    const visibleKpis = Array.isArray(current?.visibleKpis) ? current.visibleKpis : [];
+    const exists = visibleKpis.includes(kpiId);
     const updated = exists 
-      ? current.visibleKpis.filter(id => id !== kpiId)
-      : [...current.visibleKpis, kpiId];
+      ? visibleKpis.filter(id => id !== kpiId)
+      : [...visibleKpis, kpiId];
     storage.saveDashboardConfig({ ...current, visibleKpis: updated });
   };
 
   const toggleWidget = (widgetId: string) => {
     const current = storage.getDashboardConfig();
-    const exists = current.visibleWidgets.includes(widgetId);
+    const visibleWidgets = Array.isArray(current?.visibleWidgets) ? current.visibleWidgets : [];
+    const exists = visibleWidgets.includes(widgetId);
     const updated = exists 
-      ? current.visibleWidgets.filter(id => id !== widgetId)
-      : [...current.visibleWidgets, widgetId];
+      ? visibleWidgets.filter(id => id !== widgetId)
+      : [...visibleWidgets, widgetId];
     storage.saveDashboardConfig({ ...current, visibleWidgets: updated });
   };
 

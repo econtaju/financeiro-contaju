@@ -146,6 +146,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
   const [showSparklines, setShowSparklines] = useState<boolean>(true);
   const [showBudgetVariance, setShowBudgetVariance] = useState<boolean>(false);
   const [showHorizontalAnalysis, setShowHorizontalAnalysis] = useState<boolean>(false); // Sugestão 4: Análise Horizontal MoM %
+  const [showColumnPercentages, setShowColumnPercentages] = useState<boolean>(false); // Opção de % nas colunas mensais (Análise Vertical)
   const [pdfToast, setPdfToast] = useState<string | null>(null);
 
   // Sugestão 1: Simulação What-If (Stress Testing & Cenários de Sensibilidade)
@@ -486,9 +487,13 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     return activeMonthIndices.reduce((acc, mIdx) => acc + ((dreData.cashNetResults && dreData.cashNetResults[mIdx]) || 0), 0);
   };
 
+  // Linha de Receita Bruta base para cálculos de Análise Vertical (global e mensal)
+  const grossRevLine = useMemo(() => {
+    return dreData.lines.find(l => l.name.includes('RECEITA BRUTA') || l.code === '1') || dreData.lines[0];
+  }, [dreData.lines]);
+
   // KPIs Executivos do DRE calculados para o período ativo
   const kpis = useMemo(() => {
-    const grossRevLine = dreData.lines.find(l => l.name.includes('RECEITA BRUTA') || l.code === '1');
     const deducLine = dreData.lines.find(l => l.name.includes('DEDUÇÕES') || l.code === '2');
     const netRevLine = dreData.lines.find(l => l.name.includes('RECEITA LÍQUIDA') || l.name.includes('RECEITA OPERACIONAL LÍQUIDA'));
     const costsLine = dreData.lines.find(l => l.name.includes('CUSTOS') || l.code === '3');
@@ -1262,6 +1267,21 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
               <span>{showHorizontalAnalysis ? 'Análise AH Ativa' : 'Análise AH (MoM)'}</span>
             </button>
 
+            {/* Opção Solicitada: Ativar % nas Colunas (Análise Vertical por Mês / Linha de Resultado) */}
+            <button
+              type="button"
+              onClick={() => setShowColumnPercentages(prev => !prev)}
+              className={`px-2.5 py-1 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                showColumnPercentages
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                  : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-400/40'
+              }`}
+              title="Ativar % nas colunas: exibe a porcentagem (%) sobre a receita bruta de cada mês para cada linha e resultado"
+            >
+              <Percent className="w-3.5 h-3.5 text-current" />
+              <span>{showColumnPercentages ? '% nas Colunas Ativo' : '% nas Colunas (AV)'}</span>
+            </button>
+
             {/* Simulação What-If / Sensibilidade (Sugestão 1) */}
             <button
               type="button"
@@ -1408,6 +1428,24 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
           </div>
         )}
 
+        {/* Banner Informativo de % nas Colunas (Análise Vertical por Mês) */}
+        {showColumnPercentages && (
+          <div className="bg-amber-500/10 border-b border-amber-500/30 p-2.5 px-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <Percent className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="font-bold text-slate-900 dark:text-slate-100">
+                Percentual nas Colunas Mensais (Análise Vertical por Mês) Ativado:
+              </span>
+              <span className="text-[11px] text-[var(--text-secondary)]">
+                Exibindo a representatividade (%) de cada conta e linha de resultado (Lucro Bruto, EBITDA, Margem Operacional e Resultado Líquido) calculada sobre a Receita Bruta do respectivo mês.
+              </span>
+            </div>
+            <div className="text-[11px] font-mono text-amber-800 dark:text-amber-300 font-bold">
+              Base AV Mensal: 100% Receita Bruta
+            </div>
+          </div>
+        )}
+
         {/* Banner Executivo de Aderência Orçamentária */}
         {showBudgetVariance && budgetData && (
           <div className="bg-amber-500/10 border-b border-amber-500/30 p-3 px-4 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1478,6 +1516,11 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       }`}
                     >
                       <span className="block truncate text-slate-900 dark:text-slate-100 font-extrabold">{mName}</span>
+                      {showColumnPercentages && (
+                        <span className="block text-[9px] text-amber-700 dark:text-amber-400 font-mono font-bold tracking-normal leading-none mt-0.5">
+                          R$ / %
+                        </span>
+                      )}
                     </th>
                   );
                 })}
@@ -1667,12 +1710,14 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       const isEven = mIdx % 2 === 0;
                       const prevVal = mIdx > 0 ? (line.valuesByMonth[mIdx - 1] || 0) : null;
                       const mom = prevVal !== null ? calculateVarianceAH(val, prevVal, isLineDebitNature(line)) : null;
+                      const monthGrossRev = grossRevLine ? (grossRevLine.valuesByMonth[mIdx] || 0) : 0;
+                      const monthPct = monthGrossRev > 0 ? (val / monthGrossRev) * 100 : null;
 
                       return (
                         <td 
                           key={mIdx} 
                           onClick={() => !isSummary && handleOpenDrillDown(line, mIdx)}
-                          title={`${line.name} • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(val)} (Clique para auditar)`}
+                          title={`${line.name} • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(val)}${monthPct !== null ? ` (${monthPct.toFixed(1)}% da Rec. Bruta)` : ''} (Clique para auditar)`}
                           className={`py-2 px-1 sm:px-1.5 text-right font-mono border-r border-slate-200 dark:border-slate-800 transition-colors tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                             !isSummary ? 'cursor-pointer hover:bg-amber-500/20 hover:text-amber-900 dark:hover:text-amber-200' : ''
                           } ${
@@ -1682,6 +1727,20 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           }`}
                         >
                           <div>{formatCellValue(val)}</div>
+                          {showColumnPercentages && (
+                            <div 
+                              className={`text-[9px] sm:text-[10px] font-mono mt-0.5 leading-none ${
+                                monthPct === null || monthPct === 0
+                                  ? 'text-slate-400 dark:text-slate-500'
+                                  : isSummary
+                                  ? 'text-amber-800 dark:text-amber-300 font-extrabold'
+                                  : 'text-slate-600 dark:text-slate-400 font-medium'
+                              }`}
+                              title={monthGrossRev > 0 ? `${monthPct!.toFixed(1)}% da Receita Bruta de ${dreData.months[mIdx]}` : 'Sem receita apurada neste mês'}
+                            >
+                              {monthPct !== null ? `${monthPct.toFixed(1)}%` : '-'}
+                            </div>
+                          )}
                           {showHorizontalAnalysis && (
                             <div 
                               className={`text-[9px] sm:text-[10px] font-mono font-bold flex items-center justify-end gap-0.5 mt-0.5 leading-none ${
@@ -1888,16 +1947,32 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                   const net = dreData.netResults[mIdx] || 0;
                   const prevNet = mIdx > 0 ? (dreData.netResults[mIdx - 1] || 0) : null;
                   const mom = prevNet !== null ? calculateVarianceAH(net, prevNet, false) : null;
+                  const monthGrossRev = grossRevLine ? (grossRevLine.valuesByMonth[mIdx] || 0) : 0;
+                  const netMonthPct = monthGrossRev > 0 ? (net / monthGrossRev) * 100 : null;
 
                   return (
                     <td 
                       key={mIdx} 
-                      title={`Resultado Líquido • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(net)}`}
+                      title={`Resultado Líquido • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(net)}${netMonthPct !== null ? ` (Margem Líquida: ${netMonthPct.toFixed(1)}%)` : ''}`}
                       className={`py-2.5 px-1 sm:px-1.5 text-right font-mono font-bold border-r border-amber-500/30 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
                         net >= 0 ? 'text-amber-950 dark:text-amber-300' : 'text-rose-700 dark:text-rose-400'
                       }`}
                     >
                       <div>{net !== 0 ? (net > 0 ? `+${formatCellValue(net)}` : formatCellValue(net)) : '-'}</div>
+                      {showColumnPercentages && (
+                        <div 
+                          className={`text-[9px] sm:text-[10px] font-mono font-black mt-0.5 leading-none ${
+                            netMonthPct === null || netMonthPct === 0
+                              ? 'text-slate-400 dark:text-slate-500'
+                              : netMonthPct >= 0
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : 'text-rose-700 dark:text-rose-400'
+                          }`}
+                          title={monthGrossRev > 0 ? `Margem Líquida em ${dreData.months[mIdx]}: ${netMonthPct!.toFixed(1)}%` : 'Sem receita apurada neste mês'}
+                        >
+                          {netMonthPct !== null ? `${netMonthPct >= 0 ? '+' : ''}${netMonthPct.toFixed(1)}%` : '-'}
+                        </div>
+                      )}
                       {showHorizontalAnalysis && (
                         <div 
                           className={`text-[9px] sm:text-[10px] font-mono font-bold flex items-center justify-end gap-0.5 mt-0.5 leading-none ${

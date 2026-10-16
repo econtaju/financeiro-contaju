@@ -24,8 +24,8 @@ interface PendingAlertsWidgetProps {
 }
 
 export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
-  titles,
-  counterparties,
+  titles = [],
+  counterparties = [],
   onNavigate,
   onSelectTitle
 }) => {
@@ -36,15 +36,19 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
   in3Days.setDate(today.getDate() + 3);
   const in3DaysStr = in3Days.toISOString().split('T')[0];
 
-  const effectiveCounterparties = counterparties || storage.getCounterparties();
+  const effectiveCounterparties = Array.isArray(counterparties) && counterparties.length > 0 
+    ? counterparties 
+    : storage.getCounterparties();
   const counterpartyMap = useMemo(() => {
-    return new Map(effectiveCounterparties.map(c => [c.id, c]));
+    return new Map((effectiveCounterparties || []).map(c => [c.id, c]));
   }, [effectiveCounterparties]);
 
   // Filtra títulos ativos com saldo pendente vencendo entre hoje e D+3
-  const activePendingTitles = titles.filter(t => 
+  const activePendingTitles = (titles || []).filter(t => 
+    t &&
     t.documentState === 'CONFIRMADO' &&
-    t.balancePrincipal > 0 &&
+    (t.balancePrincipal || 0) > 0 &&
+    t.dueDate &&
     t.dueDate >= todayStr &&
     t.dueDate <= in3DaysStr
   );
@@ -52,16 +56,24 @@ export const PendingAlertsWidget: React.FC<PendingAlertsWidgetProps> = ({
   const pendingReceivables = activePendingTitles.filter(t => t.type === 'RECEBER');
   const pendingPayables = activePendingTitles.filter(t => t.type === 'PAGAR');
 
-  const totalReceivableAmount = pendingReceivables.reduce((sum, t) => sum + t.balancePrincipal, 0);
-  const totalPayableAmount = pendingPayables.reduce((sum, t) => sum + t.balancePrincipal, 0);
+  const totalReceivableAmount = pendingReceivables.reduce((sum, t) => sum + (t.balancePrincipal || 0), 0);
+  const totalPayableAmount = pendingPayables.reduce((sum, t) => sum + (t.balancePrincipal || 0), 0);
   const netProjected = totalReceivableAmount - totalPayableAmount;
 
   const totalAlertsCount = activePendingTitles.length;
 
   // Títulos ordenados por vencimento iminente
-  const sortedUpcoming = [...activePendingTitles].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const sortedUpcoming = [...activePendingTitles].sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
 
-  const getDueBadge = (dueDate: string) => {
+  const getDueBadge = (dueDate?: string) => {
+    if (!dueDate) {
+      return (
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+          Sem data
+        </span>
+      );
+    }
+
     if (dueDate === todayStr) {
       return (
         <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-rose-500/15 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-400 dark:border-rose-800 animate-pulse">

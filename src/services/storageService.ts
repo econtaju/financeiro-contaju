@@ -1923,7 +1923,15 @@ class StorageService {
 
   // Dashboard Config
   public getDashboardConfig(): DashboardConfig {
-    return this.get(STORAGE_KEYS.DASHBOARD_CONFIG, DEFAULT_DASHBOARD_CONFIG);
+    const raw = this.get<DashboardConfig>(STORAGE_KEYS.DASHBOARD_CONFIG, DEFAULT_DASHBOARD_CONFIG);
+    return {
+      visibleKpis: Array.isArray(raw?.visibleKpis) && raw.visibleKpis.length > 0 
+        ? raw.visibleKpis 
+        : DEFAULT_DASHBOARD_CONFIG.visibleKpis,
+      visibleWidgets: Array.isArray(raw?.visibleWidgets) && raw.visibleWidgets.length > 0 
+        ? raw.visibleWidgets 
+        : DEFAULT_DASHBOARD_CONFIG.visibleWidgets
+    };
   }
 
   public saveDashboardConfig(config: DashboardConfig) {
@@ -2592,12 +2600,12 @@ class StorageService {
   // ==========================================
   public getCashSimulationScenarios(): SavedCashSimulationScenario[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
+      const data = this.get<SavedCashSimulationScenario[]>(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, []);
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map(s => ({
+          ...s,
+          clientSettings: Array.isArray(s.clientSettings) ? s.clientSettings : []
+        }));
       }
     } catch (e) {
       console.error('Erro ao ler cenários de simulação:', e);
@@ -2639,7 +2647,11 @@ class StorageService {
 
   public saveCashSimulationScenarios(scenarios: SavedCashSimulationScenario[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify(scenarios));
+      const safeList = Array.isArray(scenarios) ? scenarios.map(s => ({
+        ...s,
+        clientSettings: Array.isArray(s.clientSettings) ? s.clientSettings : []
+      })) : [];
+      this.set(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, safeList);
       this.notify();
     } catch (e) {
       console.error('Erro ao salvar cenários de simulação:', e);
