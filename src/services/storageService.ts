@@ -2569,6 +2569,7 @@ class StorageService {
     });
 
     this.notify();
+    this.ensureCloudSync();
     return {
       importedContracts: newContracts.length,
       createdClients
