@@ -105,6 +105,9 @@ function AppContent() {
     document.documentElement.classList.toggle('light', currentTheme === 'light');
     document.documentElement.classList.toggle('dark', currentTheme === 'dark');
 
+    // Sincronização inteligente com nuvem (Supabase) em segundo plano
+    storage.ensureCloudSync();
+
     const unsubscribe = storage.subscribe(() => {
       const updatedTheme = storage.getTheme();
       document.documentElement.classList.toggle('light', updatedTheme === 'light');

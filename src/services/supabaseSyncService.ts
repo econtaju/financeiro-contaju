@@ -813,8 +813,23 @@ class SupabaseSyncService {
 
       // 12. Extrato Bancário
       const statements = storage.getStatementEntries();
+      const validMovementIds = new Set(movements.map(m => m.id));
+      const validTitleIds = new Set(titles.map(t => t.id));
       if (statements.length > 0) {
-        const chunks = this.chunkArray(statements.map(mapStatementToDb), 100);
+        const mappedStatements = statements.map(st => {
+          const mapped = mapStatementToDb(st);
+          if (mapped.matched_movement_id && !validMovementIds.has(mapped.matched_movement_id)) {
+            mapped.matched_movement_id = null;
+          }
+          if (mapped.matched_title_id && !validTitleIds.has(mapped.matched_title_id)) {
+            mapped.matched_title_id = null;
+          }
+          if (mapped.suggested_title_id && !validTitleIds.has(mapped.suggested_title_id)) {
+            mapped.suggested_title_id = null;
+          }
+          return mapped;
+        });
+        const chunks = this.chunkArray(mappedStatements, 100);
         let stmtErrors = 0;
         for (const chunk of chunks) {
           const { error } = await client.from(CONTAJU_TABLES.STATEMENTS).upsert(chunk, { onConflict: 'id' });
@@ -852,6 +867,8 @@ class SupabaseSyncService {
 
       // 14. Compras de Cartão
       const cardPurchases = storage.getCardPurchases();
+      const validAccountIds = new Set(storage.getChartAccounts().map(a => a.id));
+      const fallbackExpenseAccountId = storage.getChartAccounts().find(a => a.isAnalytical && a.nature.startsWith('DESPESA'))?.id || 'acc-3.2.04';
       if (cardPurchases.length > 0) {
         const mappedPurchases = cardPurchases.map(p => ({
           id: p.id,
@@ -860,7 +877,7 @@ class SupabaseSyncService {
           description: p.description,
           counterparty_id: p.counterpartyId || null,
           counterparty_name: p.counterpartyName || null,
-          chart_account_id: p.chartAccountId,
+          chart_account_id: validAccountIds.has(p.chartAccountId) ? p.chartAccountId : fallbackExpenseAccountId,
           total_amount: p.totalAmount,
           installments_count: p.installmentsCount || 1,
           calculation_mode: p.calculationMode,
@@ -905,7 +922,7 @@ class SupabaseSyncService {
           pattern: r.pattern,
           match_type: r.matchType,
           transaction_type: r.transactionType,
-          chart_account_id: r.chartAccountId,
+          chart_account_id: validAccountIds.has(r.chartAccountId) ? r.chartAccountId : fallbackExpenseAccountId,
           counterparty_id: r.counterpartyId || null,
           action: r.action,
           active: r.active,

@@ -250,88 +250,85 @@ class StorageService {
   public initIfEmpty(force = false) {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     
-    const DATA_SCHEMA_VERSION = 'v5_clean_zero_state';
+    const DATA_SCHEMA_VERSION = 'v6_restored_persistent';
     const SCHEMA_KEY = 'contaju_schema_version';
-    const currentSchema = localStorage.getItem(SCHEMA_KEY);
 
-    if (force || currentSchema !== DATA_SCHEMA_VERSION) {
-      // Limpeza de todos os dados mockados/transacionais para estado 100% zerado
-      localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.STATEMENT_ENTRIES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.PERIOD_CLOSURES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.IMPROVEMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.BUDGET_VERSIONS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CARD_INVOICE_PAYMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CONTRACTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.COUNTERPARTIES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.BANK_ACCOUNTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.RECONCILIATION_RULES, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.DELETED_TITLE_IDS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.DELETED_SALE_IDS, JSON.stringify([]));
+    const ensureTable = <T>(key: string, initialData: T[], forceOverwrite = false) => {
+      const raw = localStorage.getItem(key);
+      if (forceOverwrite || !raw) {
+        localStorage.setItem(key, JSON.stringify(initialData));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        // Se a chave existe mas está como array vazio e temos initialData rico, restaura para evitar tela em branco
+        if (Array.isArray(parsed) && parsed.length === 0 && initialData.length > 0) {
+          localStorage.setItem(key, JSON.stringify(initialData));
+        }
+      } catch {
+        localStorage.setItem(key, JSON.stringify(initialData));
+      }
+    };
 
-      // Garantir perfis essenciais e cadastros base (usuários para login e plano de contas)
-      if (!localStorage.getItem(STORAGE_KEYS.COMPANY) || force) {
-        localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(INITIAL_COMPANY));
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.USERS) || force) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, INITIAL_USERS[0].id);
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.CHART_ACCOUNTS) || force) {
-        localStorage.setItem(STORAGE_KEYS.CHART_ACCOUNTS, JSON.stringify(INITIAL_CHART_ACCOUNTS));
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.MODULES) || force) {
-        localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(INITIAL_MODULES));
-      }
-
-      localStorage.setItem(SCHEMA_KEY, DATA_SCHEMA_VERSION);
-      this.notify();
-    }
-    // ensure budget plans exists even if already initialized
-    if (!localStorage.getItem(STORAGE_KEYS.BUDGET_PLANS)) {
-      localStorage.setItem(STORAGE_KEYS.BUDGET_PLANS, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CREDIT_CARDS)) {
-      localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CARD_PURCHASES)) {
-      localStorage.setItem(STORAGE_KEYS.CARD_PURCHASES, JSON.stringify([]));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CASH_COUNTS)) {
-      localStorage.setItem(STORAGE_KEYS.CASH_COUNTS, JSON.stringify([]));
+    // 1. Perfis e Cadastros Base
+    if (!localStorage.getItem(STORAGE_KEYS.COMPANY) || force) {
+      localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(INITIAL_COMPANY));
     }
 
-    // Sync any newly added initial titles or settlements to existing storage ONLY on first initialization or if not deleted
+    if (!localStorage.getItem(STORAGE_KEYS.USERS) || force) {
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
+    } else {
+      try {
+        const currentUsers: User[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
+        if (!currentUsers.some(u => u.email === 'leonardoricardoarantes@gmail.com' || u.id === 'usr-master-1')) {
+          currentUsers.unshift(INITIAL_USERS[0]);
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(currentUsers));
+        }
+      } catch {}
+    }
+
+    if (!localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID)) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, INITIAL_USERS[0].id);
+    }
+
+    if (!localStorage.getItem(STORAGE_KEYS.CHART_ACCOUNTS) || force) {
+      localStorage.setItem(STORAGE_KEYS.CHART_ACCOUNTS, JSON.stringify(INITIAL_CHART_ACCOUNTS));
+    }
+
+    if (!localStorage.getItem(STORAGE_KEYS.MODULES) || force) {
+      localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(INITIAL_MODULES));
+    }
+
+    // 2. Entidades Financeiras com Dados Ricos Preservados
+    ensureTable(STORAGE_KEYS.BANK_ACCOUNTS, INITIAL_BANK_ACCOUNTS, force);
+    ensureTable(STORAGE_KEYS.COUNTERPARTIES, INITIAL_COUNTERPARTIES, force);
+    ensureTable(STORAGE_KEYS.SERVICES, INITIAL_SERVICES, force);
+    ensureTable(STORAGE_KEYS.CONTRACTS, INITIAL_CONTRACTS, force);
+    ensureTable(STORAGE_KEYS.TITLES, INITIAL_TITLES, force);
+    ensureTable(STORAGE_KEYS.SETTLEMENTS, INITIAL_SETTLEMENTS, force);
+    ensureTable(STORAGE_KEYS.MOVEMENTS, INITIAL_MOVEMENTS, force);
+    ensureTable(STORAGE_KEYS.STATEMENT_ENTRIES, INITIAL_STATEMENT_ENTRIES, force);
+    ensureTable(STORAGE_KEYS.CREDIT_CARDS, INITIAL_CREDIT_CARDS, force);
+    ensureTable(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES, force);
+    ensureTable(STORAGE_KEYS.BUDGET_PLANS, INITIAL_BUDGET_PLANS, force);
+    ensureTable(STORAGE_KEYS.RECONCILIATION_RULES, INITIAL_RECONCILIATION_RULES, force);
+    ensureTable(STORAGE_KEYS.CASH_COUNTS, INITIAL_CASH_COUNTS, force);
+    ensureTable(STORAGE_KEYS.PERIOD_CLOSURES, INITIAL_PERIOD_CLOSURES, force);
+    ensureTable(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS, force);
+    ensureTable(STORAGE_KEYS.IMPROVEMENTS, INITIAL_IMPROVEMENTS, force);
+
+    // 3. Chaves complementares sem initial mock
+    if (!localStorage.getItem(STORAGE_KEYS.SALES)) localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.BANK_CLOSINGS)) localStorage.setItem(STORAGE_KEYS.BANK_CLOSINGS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS)) localStorage.setItem(STORAGE_KEYS.CASH_SIMULATION_SCENARIOS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.CARD_INVOICE_PAYMENTS)) localStorage.setItem(STORAGE_KEYS.CARD_INVOICE_PAYMENTS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.DELETED_TITLE_IDS)) localStorage.setItem(STORAGE_KEYS.DELETED_TITLE_IDS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.DELETED_SALE_IDS)) localStorage.setItem(STORAGE_KEYS.DELETED_SALE_IDS, JSON.stringify([]));
+
+    localStorage.setItem(SCHEMA_KEY, DATA_SCHEMA_VERSION);
+
     try {
-      const isAlreadyInitialized = !!localStorage.getItem(STORAGE_KEYS.COMPANY);
       const deletedIds = new Set(this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []));
-
-      // Se o sistema já foi inicializado anteriormente pelo usuário, NÃO ressuscitar títulos que foram deletados
-      if (!isAlreadyInitialized) {
-        const existingTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
-        const missingTitles = INITIAL_TITLES.filter(it => !existingTitles.some(et => et.id === it.id) && !deletedIds.has(it.id));
-        if (missingTitles.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify([...existingTitles, ...missingTitles]));
-        }
-
-        const existingSettlements = this.get<Settlement[]>(STORAGE_KEYS.SETTLEMENTS, []);
-        const missingSettlements = INITIAL_SETTLEMENTS.filter(is => !existingSettlements.some(es => es.id === is.id));
-        if (missingSettlements.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.SETTLEMENTS, JSON.stringify([...existingSettlements, ...missingSettlements]));
-        }
-      }
-
       // Also ensure initial credit card purchase titles are synced to TITLES (Contas a Pagar) ONLY if not deleted
       const currentTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
       const purchases = this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES);
@@ -676,6 +673,7 @@ class StorageService {
         }));
         localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, masterUser.id);
         this.notify();
+        this.ensureCloudSync();
         return { success: true, user: masterUser };
       }
       return { success: false, error: 'Usuário não cadastrado com este e-mail corporativo.' };
@@ -775,6 +773,7 @@ class StorageService {
 
     this.rememberUser(user);
     this.notify();
+    this.ensureCloudSync();
     return { success: true, user };
   }
 
@@ -832,6 +831,7 @@ class StorageService {
 
     this.rememberUser(user);
     this.notify();
+    this.ensureCloudSync();
     return { success: true, user };
   }
 
@@ -2874,6 +2874,42 @@ class StorageService {
     const events = this.getAgentAuditEvents();
     this.set(STORAGE_KEYS.AGENT_AUDIT_EVENTS, [event, ...events.slice(0, 199)]);
   }
+
+  // ==========================================
+  // SINCRONIZAÇÃO E RESTAURAÇÃO RESILIENTE NA NUVEM (SUPABASE)
+  // ==========================================
+  public async ensureCloudSync(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      const hasUrl = localStorage.getItem('contaju_supabase_url') || (
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+        (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL : undefined)
+      );
+      const hasKey = localStorage.getItem('contaju_supabase_anon_key') || (
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+        (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_ANON_KEY : undefined)
+      );
+      if (!hasUrl || !hasKey) return;
+
+      const { supabaseSync } = await import('./supabaseSyncService');
+      const titles = this.getTitles();
+      
+      // Se não houver títulos locais (ou após limpeza do navegador), tenta puxar imediatamente do Supabase
+      if (titles.length === 0) {
+        const pullRes = await supabaseSync.pullAllFromSupabase();
+        if (pullRes.success && this.getTitles().length > 0) {
+          this.notify();
+          return;
+        }
+      }
+
+      // Se há títulos locais, garante que a nuvem esteja sincronizada
+      await supabaseSync.syncAllToSupabase();
+    } catch (e) {
+      console.warn('[Contaju Cloud Sync] Aviso em segundo plano:', e);
+    }
+  }
 }
 
 export const storage = new StorageService();
+
