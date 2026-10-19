@@ -160,6 +160,134 @@ export class AiService {
   }
 
   /**
+   * Executa teste no modo Sandbox com System Prompt, Modelo e Pergunta customizados
+   * com diagnóstico inteligente de erros (Opção 1)
+   */
+  public static async testAgentCustomSandbox(options: {
+    systemPrompt: string;
+    userPrompt: string;
+    model: string;
+    agentRole?: AgentRoleType;
+    allowedTools?: string[];
+    temperature?: number;
+  }): Promise<{
+    success: boolean;
+    content: string;
+    modelUsed: string;
+    latencyMs: number;
+    error?: string;
+    errorDiagnostic?: {
+      code: string;
+      title: string;
+      suggestion: string;
+    };
+  }> {
+    const config = this.getConfig();
+    const apiKey = config.apiKey?.trim();
+
+    if (!apiKey) {
+      return {
+        success: false,
+        content: '',
+        modelUsed: options.model,
+        latencyMs: 0,
+        error: 'Chave de API do OpenCode Go não configurada.',
+        errorDiagnostic: {
+          code: 'AUTH_MISSING_KEY',
+          title: 'Chave de API Ausente',
+          suggestion: 'Insira sua chave de API na aba "Catálogo de Modelos & Conexão" para autorizar requisições aos modelos de IA.'
+        }
+      };
+    }
+
+    if (!options.userPrompt.trim()) {
+      return {
+        success: false,
+        content: '',
+        modelUsed: options.model,
+        latencyMs: 0,
+        error: 'Pergunta do teste não pode ficar em branco.',
+        errorDiagnostic: {
+          code: 'PROMPT_EMPTY',
+          title: 'Pergunta em Branco',
+          suggestion: 'Digite uma pergunta ou selecione um dos exemplos rápidos para testar a resposta do agente.'
+        }
+      };
+    }
+
+    let contextualSystem = options.systemPrompt.trim();
+    if (options.allowedTools && options.allowedTools.length > 0) {
+      contextualSystem += `\n\n[CAPACIDADES AUTORIZADAS NO ERP]: ${options.allowedTools.join(', ')}. Respeite estritamente esses limites operacionais e contábeis.`;
+    }
+
+    const messages: AiChatMessage[] = [
+      { role: 'system', content: contextualSystem },
+      { role: 'user', content: options.userPrompt.trim() }
+    ];
+
+    const startTime = Date.now();
+    const res = await this.executeWithFailover(messages, {
+      preferredModel: options.model,
+      featureName: `Sandbox: ${options.agentRole || 'Agente Customizado'}`,
+      agentRole: options.agentRole || 'CFO_EXECUTIVO',
+      temperature: options.temperature ?? 0.3,
+      maxTokens: 1000
+    });
+    const latencyMs = Date.now() - startTime;
+
+    if (!res.success) {
+      const rawError = res.attempts[res.attempts.length - 1]?.errorMessage || 'Erro inesperado na chamada da IA.';
+      let diag = {
+        code: 'EXECUTION_FAILED',
+        title: 'Falha na Execução do Modelo',
+        suggestion: 'Verifique se o modelo selecionado está disponível no seu plano ou tente selecionar outro modelo como DeepSeek ou Claude.'
+      };
+
+      if (rawError.includes('429') || rawError.toLowerCase().includes('rate limit')) {
+        diag = {
+          code: 'RATE_LIMIT',
+          title: 'Limite de Requisições Atingido (Rate Limit - HTTP 429)',
+          suggestion: 'O provedor deste modelo está momentaneamente saturado. Ative a cadeia de contingência ou selecione outro modelo.'
+        };
+      } else if (rawError.includes('401') || rawError.toLowerCase().includes('unauthorized') || rawError.toLowerCase().includes('invalid key')) {
+        diag = {
+          code: 'UNAUTHORIZED',
+          title: 'Chave Inválida ou Expirada (HTTP 401)',
+          suggestion: 'A chave OpenCode Go informada não foi aceita pelo servidor. Revise e salve uma chave válida na Central de Agentes.'
+        };
+      } else if (rawError.includes('404') || rawError.toLowerCase().includes('model not found')) {
+        diag = {
+          code: 'MODEL_NOT_FOUND',
+          title: 'Modelo Não Encontrado (HTTP 404)',
+          suggestion: 'Este modelo específico não está liberado para a sua conta. Escolha outro modelo no catálogo disponível.'
+        };
+      } else if (rawError.toLowerCase().includes('conexão') || rawError.toLowerCase().includes('fetch')) {
+        diag = {
+          code: 'NETWORK_GATEWAY',
+          title: 'Falha de Conexão com o Gateway',
+          suggestion: 'Não foi possível alcançar o servidor da API. Verifique sua conexão com a internet ou o status do gateway.'
+        };
+      }
+
+      return {
+        success: false,
+        content: '',
+        modelUsed: res.modelUsed,
+        latencyMs,
+        error: rawError,
+        errorDiagnostic: diag
+      };
+    }
+
+    return {
+      success: true,
+      content: res.content,
+      modelUsed: res.modelUsed,
+      latencyMs: res.totalDurationMs || latencyMs
+    };
+  }
+
+  /**
    * Executa uma requisição de IA com Failover Automático em Cascata
    * Se o modelo primário falhar (HTTP 429 rate limit, 500, timeout, etc.), tenta o secundário, e assim sucessivamente
    */

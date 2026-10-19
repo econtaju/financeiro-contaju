@@ -20,11 +20,17 @@ import {
   Sliders,
   Settings,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Play,
+  Send,
+  CheckCircle2,
+  RefreshCw,
+  Terminal
 } from 'lucide-react';
 import { AgentDefinition, AgentRoleType, AiModelChainItem } from '../../types';
 import { INITIAL_AGENT_DEFINITIONS } from '../../data/initialAgentsData';
 import { DEFAULT_DYNAMIC_CATALOG } from '../../services/aiModelCatalogService';
+import { AiService } from '../../services/aiService';
 
 export const AVAILABLE_AGENT_TOOLS: { id: string; name: string; description: string; category: string }[] = [
   { id: 'consultar_fluxo_caixa', name: 'Fluxo de Caixa', description: 'Consulta extratos, saldos bancários e movimentações financeiras', category: 'Tesouraria' },
@@ -73,11 +79,82 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
   const [isAutonomous, setIsAutonomous] = useState(agent.isAutonomous);
 
   // Estados de navegação interna do modal
-  const [activeModalTab, setActiveModalTab] = useState<'PROMPT' | 'MODELO' | 'CAPACIDADES' | 'GERAL'>('PROMPT');
+  const [activeModalTab, setActiveModalTab] = useState<'PROMPT' | 'MODELO' | 'CAPACIDADES' | 'TESTAR' | 'GERAL'>('PROMPT');
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [selectedProviderFilter, setSelectedProviderFilter] = useState<string>('ALL');
   const [customToolInput, setCustomToolInput] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Estados da Sandbox de Teste Individual do Agente (Opção 1)
+  const [sandboxQuestion, setSandboxQuestion] = useState(() => {
+    switch (agent.role) {
+      case 'CFO_EXECUTIVO':
+        return 'Qual é o diagnóstico do fluxo de caixa e quais alertas a diretoria deve observar hoje?';
+      case 'AUDITOR_CONCILIACAO':
+        return 'Como conciliar uma tarifa bancária de débito de R$ 14,90 no plano de contas?';
+      case 'ANALISTA_INADIMPLENCIA':
+        return 'Elabore uma notificação cordial para cliente corporativo com título vencido há 5 dias.';
+      case 'GUARDIAO_CONTABIL':
+        return 'Quais são os requisitos contábeis para realizar uma liquidação com desconto condicional?';
+      default:
+        return 'Apresente suas funções e como você pode auxiliar a gestão financeira.';
+    }
+  });
+  const [isExecutingSandbox, setIsExecutingSandbox] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<{
+    success: boolean;
+    content: string;
+    modelUsed: string;
+    latencyMs: number;
+    error?: string;
+    errorDiagnostic?: {
+      code: string;
+      title: string;
+      suggestion: string;
+    };
+  } | null>(null);
+
+  const handleRunSandboxTest = async () => {
+    if (!sandboxQuestion.trim()) {
+      setFeedbackMsg({ type: 'error', text: 'Por favor, digite uma pergunta para testar o agente.' });
+      setTimeout(() => setFeedbackMsg(null), 3500);
+      return;
+    }
+
+    setIsExecutingSandbox(true);
+    setSandboxResult(null);
+
+    try {
+      const res = await AiService.testAgentCustomSandbox({
+        systemPrompt: systemPrompt.trim(),
+        userPrompt: sandboxQuestion.trim(),
+        model: defaultModel,
+        agentRole: agent.role,
+        allowedTools
+      });
+
+      setSandboxResult(res);
+      if (res.success) {
+        setFeedbackMsg({ type: 'success', text: `Resposta gerada via ${res.modelUsed} em ${res.latencyMs}ms!` });
+        setTimeout(() => setFeedbackMsg(null), 4000);
+      }
+    } catch (err: any) {
+      setSandboxResult({
+        success: false,
+        content: '',
+        modelUsed: defaultModel,
+        latencyMs: 0,
+        error: err.message || 'Falha inesperada na execução do teste.',
+        errorDiagnostic: {
+          code: 'CLIENT_EXCEPTION',
+          title: 'Erro de Execução Local',
+          suggestion: 'Verifique se a aplicação está em execução e conectada à internet.'
+        }
+      });
+    } finally {
+      setIsExecutingSandbox(false);
+    }
+  };
 
   // Modelos unificados (catálogo dinâmico + catálogo padrão)
   const allModelsList: AiModelChainItem[] = React.useMemo(() => {
@@ -292,6 +369,22 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
           >
             <Wrench className="w-4 h-4" />
             <span>Capacidades & Ferramentas ({allowedTools.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveModalTab('TESTAR')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeModalTab === 'TESTAR'
+                ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30 shadow-xs'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>Testar Agente (Sandbox)</span>
+            {sandboxResult && (
+              <span className={`w-2 h-2 rounded-full ${sandboxResult.success ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+            )}
           </button>
 
           <button
@@ -655,7 +748,204 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
             </div>
           )}
 
-          {/* ABA 4: GOVERNANÇA E IDENTIDADE */}
+          {/* ABA 4: SANDBOX DE TESTE & DIAGNÓSTICO (OPÇÃO 1) */}
+          {activeModalTab === 'TESTAR' && (
+            <div className="space-y-4">
+              <div className="pb-2 border-b border-[var(--border-subtle)] flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-emerald-500" />
+                    <span>Sandbox de Validação & Diagnóstico do Especialista</span>
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Simule perguntas de rotina e valide as respostas com o prompt, ferramentas e modelo configurados antes de salvar.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] font-mono">
+                    <strong className="text-[var(--text-primary)]">{allowedTools.length}</strong> ferramentas
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                    {defaultModel}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sugestões rápidas de teste baseadas no papel */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                  Sugestões Rápidas de Pergunta para {agent.role.replace('_', ' ')}:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ...(agent.role === 'CFO_EXECUTIVO' ? [
+                      'Qual o diagnóstico do caixa hoje?',
+                      'Quais alertas contábeis requerem atenção imediata da diretoria?',
+                      'Como devemos planejar os pagamentos da próxima quinzena?'
+                    ] : agent.role === 'AUDITOR_CONCILIACAO' ? [
+                      'Como classificar uma despesa de tarifa bancária de R$ 14,90?',
+                      'Qual procedimento para extrato com lançamento duplicado?',
+                      'Como bater o saldo do extrato com as contas a pagar?'
+                    ] : agent.role === 'ANALISTA_INADIMPLENCIA' ? [
+                      'Elabore uma mensagem amigável de cobrança de 5 dias de atraso.',
+                      'Qual a melhor estratégia para renegociar cliente com 3 parcelas abertas?',
+                      'Qual o critério para aplicar juros e multa em títulos vencidos?'
+                    ] : agent.role === 'GUARDIAO_CONTABIL' ? [
+                      'Como tratar contabilmente uma conciliação com desconto comercial?',
+                      'Quais contas contábeis são afetadas pelo estorno de um pagamento?',
+                      'Como validar a consistência entre o DRE e o razão contábil?'
+                    ] : [
+                      'Apresente suas responsabilidades financeiras.',
+                      'Como você pode auxiliar a equipe nesta tarefa?'
+                    ])
+                  ].map((sug, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSandboxQuestion(sug)}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] hover:bg-emerald-500/10 hover:text-emerald-300 border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-all cursor-pointer text-left"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Caixa de Entrada da Pergunta */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-[var(--text-primary)]">
+                  Pergunta ou Cenário de Teste:
+                </label>
+                <div className="relative">
+                  <textarea
+                    rows={3}
+                    value={sandboxQuestion}
+                    onChange={(e) => setSandboxQuestion(e.target.value)}
+                    placeholder="Ex: Como você analisa uma discrepância de conciliação bancária entre o extrato e o DRE de competência?"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-y"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    O teste usará o prompt calibrado ({systemPrompt.length} chars) e as {allowedTools.length} capacidades ativas.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRunSandboxTest}
+                    disabled={isExecutingSandbox || !sandboxQuestion.trim()}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-emerald-900/30 flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    {isExecutingSandbox ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Processando com IA...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Disparar Teste no Agente</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Resultados do Teste na Sandbox */}
+              {sandboxResult && (
+                <div className="mt-4 space-y-3">
+                  {sandboxResult.success ? (
+                    <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-bold text-emerald-300">Resposta do Especialista Gerada com Sucesso</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] font-mono text-[var(--text-secondary)]">
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            {sandboxResult.modelUsed}
+                          </span>
+                          <span className="text-emerald-400 font-semibold">
+                            {sandboxResult.latencyMs}ms
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto">
+                        {sandboxResult.content}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)]">
+                        <span>A resposta acima foi gerada seguindo as instruções do prompt e ferramentas ativas.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(sandboxResult.content);
+                            setFeedbackMsg({ type: 'success', text: 'Resposta copiada para a área de transferência!' });
+                            setTimeout(() => setFeedbackMsg(null), 3000);
+                          }}
+                          className="hover:text-emerald-400 underline cursor-pointer"
+                        >
+                          Copiar Resposta
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-950/20 space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold text-rose-300">
+                              {sandboxResult.errorDiagnostic?.title || 'Falha na Validação do Agente'}
+                            </h4>
+                            {sandboxResult.errorDiagnostic?.code && (
+                              <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono border border-rose-500/30">
+                                {sandboxResult.errorDiagnostic.code}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            {sandboxResult.error || 'Não foi possível concluir a execução do teste com este modelo.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {sandboxResult.errorDiagnostic?.suggestion && (
+                        <div className="p-3 rounded-lg bg-rose-900/20 border border-rose-500/20 text-xs text-rose-200 space-y-1">
+                          <strong className="block text-[11px] uppercase tracking-wider text-rose-300">
+                            💡 Diagnóstico e Como Corrigir:
+                          </strong>
+                          <p>{sandboxResult.errorDiagnostic.suggestion}</p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveModalTab('MODELO')}
+                          className="px-3 py-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Alternar Modelo na Aba Modelos</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveModalTab('PROMPT')}
+                          className="px-3 py-1.5 rounded-lg bg-[var(--surface-elevated)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] font-medium flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Revisar Prompt do Sistema</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ABA 5: GOVERNANÇA E IDENTIDADE */}
           {activeModalTab === 'GERAL' && (
             <div className="space-y-4">
               <div className="pb-2 border-b border-[var(--border-subtle)]">
