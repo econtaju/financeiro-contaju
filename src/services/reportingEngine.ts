@@ -16,6 +16,8 @@ export interface DRELineItem {
   parentHeaderId?: string; // Direct parent header id (e.g. 'h-4' or 'h-4.1')
   valuesByMonth: number[]; // 12 months: index 0 = Jan, ..., index 11 = Dec (regime ativo ou competência)
   totalYear: number;
+  compValuesByMonth?: number[]; // Valores puros de competência
+  compTotalYear?: number;
   // Campos comparativos e regime de caixa
   cashValuesByMonth?: number[]; // Realizado financeiramente por caixa nos 12 meses
   cashTotalYear?: number;
@@ -228,6 +230,20 @@ export class ReportingEngine {
           }
 
           monthlyCash[m] += monthSettled;
+
+          // Saldo em aberto com previsão de pagamento / vencimento no mês selecionado
+          // Regra de Caixa Gerencial: "o que for de caixa é o que tem o pagamento nesse mês, tanto o que foi feito quanto o que está em aberto, você tem que somar os dois"
+          const isDueDateInMonth = (title.dueDate || '').startsWith(monthStr);
+          if (isDueDateInMonth) {
+            const openBalance = typeof title.balancePrincipal === 'number'
+              ? title.balancePrincipal
+              : Math.max(0, (title.originalAmount || 0) - (title.settledPrincipal || 0));
+
+            if (openBalance > 0.001) {
+              monthlyCash[m] += openBalance;
+              if (!titleIds.includes(title.id)) titleIds.push(title.id);
+            }
+          }
         }
 
         // Computa encargos e deduções financeiras apuradas nas baixas para Caixa
@@ -358,6 +374,8 @@ export class ReportingEngine {
         isSummary,
         valuesByMonth: activeValues,
         totalYear: activeTotal,
+        compValuesByMonth: compValues,
+        compTotalYear: compTotal,
         cashValuesByMonth: cashValues,
         cashTotalYear: cashTotal,
         gapValuesByMonth: gapValues,
@@ -377,10 +395,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-1', 'h-1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const grossRevCompValues = sumArrays(grossRevLines.map(l => l.gapValuesByMonth ? l.valuesByMonth : l.valuesByMonth));
-    const grossRevCompTotal = grossRevLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const grossRevCompValues = sumArrays(grossRevLines.map(l => l.compValuesByMonth || []));
+    const grossRevCompTotal = Math.round(grossRevLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const grossRevCashValues = sumArrays(grossRevLines.map(l => l.cashValuesByMonth || []));
-    const grossRevCashTotal = grossRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const grossRevCashTotal = Math.round(grossRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // 2. Deduções da Receita (grp-1.2)
     const deducAccs = accounts.filter(a => 
@@ -391,10 +409,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-2', 'h-2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const deducCompValues = sumArrays(deducLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const deducCompTotal = deducLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const deducCompValues = sumArrays(deducLines.map(l => l.compValuesByMonth || []));
+    const deducCompTotal = Math.round(deducLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const deducCashValues = sumArrays(deducLines.map(l => l.cashValuesByMonth || []));
-    const deducCashTotal = deducLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const deducCashTotal = Math.round(deducLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // (=) Receita Líquida
     const netRevCompValues = subtractArrays(grossRevCompValues, deducCompValues);
@@ -411,10 +429,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-3', 'h-3', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const costCompValues = sumArrays(costLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const costCompTotal = costLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const costCompValues = sumArrays(costLines.map(l => l.compValuesByMonth || []));
+    const costCompTotal = Math.round(costLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const costCashValues = sumArrays(costLines.map(l => l.cashValuesByMonth || []));
-    const costCashTotal = costLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const costCashTotal = Math.round(costLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // (=) Lucro Bruto
     const grossProfitCompValues = subtractArrays(netRevCompValues, costCompValues);
@@ -432,10 +450,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const personalCompValues = sumArrays(personalLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const personalCompTotal = personalLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const personalCompValues = sumArrays(personalLines.map(l => l.compValuesByMonth || []));
+    const personalCompTotal = Math.round(personalLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const personalCashValues = sumArrays(personalLines.map(l => l.cashValuesByMonth || []));
-    const personalCashTotal = personalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const personalCashTotal = Math.round(personalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // 4.2 Despesas Administrativas (grp-3.2)
     const adminAccs = accounts.filter(a => 
@@ -446,10 +464,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const adminCompValues = sumArrays(adminLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const adminCompTotal = adminLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const adminCompValues = sumArrays(adminLines.map(l => l.compValuesByMonth || []));
+    const adminCompTotal = Math.round(adminLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const adminCashValues = sumArrays(adminLines.map(l => l.cashValuesByMonth || []));
-    const adminCashTotal = adminLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const adminCashTotal = Math.round(adminLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // 4.3 Despesas Comerciais (grp-3.3)
     const commAccs = accounts.filter(a => 
@@ -460,10 +478,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.3', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const commCompValues = sumArrays(commLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const commCompTotal = commLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const commCompValues = sumArrays(commLines.map(l => l.compValuesByMonth || []));
+    const commCompTotal = Math.round(commLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const commCashValues = sumArrays(commLines.map(l => l.cashValuesByMonth || []));
-    const commCashTotal = commLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const commCashTotal = Math.round(commLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // 4.4 Despesas Gerais Operacionais (grp-3.4 / DESPESA_OPERACIONAL / DESPESAS_GERAIS / 3.4)
     const generalAccs = accounts.filter(a => 
@@ -474,10 +492,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-4', 'h-4.4', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const generalCompValues = sumArrays(generalLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const generalCompTotal = generalLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const generalCompValues = sumArrays(generalLines.map(l => l.compValuesByMonth || []));
+    const generalCompTotal = Math.round(generalLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const generalCashValues = sumArrays(generalLines.map(l => l.cashValuesByMonth || []));
-    const generalCashTotal = generalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const generalCashTotal = Math.round(generalLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // Total Despesas Operacionais (Pessoal + Administrativas + Comerciais + Gerais)
     const opExpCompValues = sumArrays([personalCompValues, adminCompValues, commCompValues, generalCompValues]);
@@ -500,10 +518,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-5', 'h-5.1', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const finRevCompValues = sumArrays(finRevLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const finRevCompTotal = finRevLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const finRevCompValues = sumArrays(finRevLines.map(l => l.compValuesByMonth || []));
+    const finRevCompTotal = Math.round(finRevLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const finRevCashValues = sumArrays(finRevLines.map(l => l.cashValuesByMonth || []));
-    const finRevCashTotal = finRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const finRevCashTotal = Math.round(finRevLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     const finExpAccs = accounts.filter(a => 
       (a.parentId === 'grp-4.2' || a.nature === 'DESPESA_FINANCEIRA' || (a.code && a.code.startsWith('4.2'))) && 
@@ -513,10 +531,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-5', 'h-5.2', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const finExpCompValues = sumArrays(finExpLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const finExpCompTotal = finExpLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const finExpCompValues = sumArrays(finExpLines.map(l => l.compValuesByMonth || []));
+    const finExpCompTotal = Math.round(finExpLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const finExpCashValues = sumArrays(finExpLines.map(l => l.cashValuesByMonth || []));
-    const finExpCashTotal = finExpLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const finExpCashTotal = Math.round(finExpLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     const netFinCompValues = subtractArrays(finRevCompValues, finExpCompValues);
     const netFinCompTotal = Math.round((finRevCompTotal - finExpCompTotal) * 100) / 100;
@@ -538,10 +556,10 @@ export class ReportingEngine {
       const { monthlyComp, totalComp, monthlyCash, totalCash, titleIds } = getValuesForAccount(acc.id);
       return createDRELine(acc.id, acc.name, acc.code, 2, 'h-6', 'h-6', monthlyComp, totalComp, monthlyCash, totalCash, titleIds);
     });
-    const taxCompValues = sumArrays(taxLines.map(l => regime === 'CAIXA' ? (l.cashValuesByMonth || []) : l.valuesByMonth));
-    const taxCompTotal = taxLines.reduce((acc, l) => acc + (regime === 'CAIXA' ? (l.cashTotalYear || 0) : l.totalYear), 0);
+    const taxCompValues = sumArrays(taxLines.map(l => l.compValuesByMonth || []));
+    const taxCompTotal = Math.round(taxLines.reduce((acc, l) => acc + (l.compTotalYear || 0), 0) * 100) / 100;
     const taxCashValues = sumArrays(taxLines.map(l => l.cashValuesByMonth || []));
-    const taxCashTotal = taxLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0);
+    const taxCashTotal = Math.round(taxLines.reduce((acc, l) => acc + (l.cashTotalYear || 0), 0) * 100) / 100;
 
     // (=) Resultado Líquido Gerencial
     const netResultCompValues = subtractArrays(resultBeforeTaxesComp, taxCompValues);

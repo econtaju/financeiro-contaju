@@ -1849,6 +1849,45 @@ class StorageService {
     return { success: true, message: `Contrato ${contract.contractNumber} excluído com sucesso!`, cancelledCount };
   }
 
+  private sanitizeTitles(rawTitles: FinancialTitle[]): FinancialTitle[] {
+    const KNOWN_DUPLICATE_IDS = new Set(['tit-pag-012', 'tit-pag-013', 'tit-rec-015', 'tit-rec-016']);
+    const ACCOUNT_CORRECTIONS: Record<string, string> = {
+      'tit-pag-006': 'acc-2.1.01',
+      'tit-pag-007': 'acc-3.4.01',
+      'tit-pag-008': 'acc-1.2.02',
+      'tit-pag-009': 'acc-3.2.09',
+      'tit-pag-010': 'acc-3.2.04',
+      'tit-pag-011': 'acc-3.2.03',
+      'tit-pag-202610-10': 'acc-1.2.02'
+    };
+
+    let modified = false;
+    const cleaned: FinancialTitle[] = [];
+
+    for (const t of rawTitles) {
+      if (!t || !t.id) continue;
+      if (KNOWN_DUPLICATE_IDS.has(t.id)) {
+        modified = true;
+        continue;
+      }
+
+      let updated = t;
+      if (ACCOUNT_CORRECTIONS[t.id] && t.accountId !== ACCOUNT_CORRECTIONS[t.id]) {
+        updated = { ...t, accountId: ACCOUNT_CORRECTIONS[t.id] };
+        modified = true;
+      }
+      cleaned.push(updated);
+    }
+
+    if (modified && typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify(cleaned));
+      } catch {}
+    }
+
+    return cleaned;
+  }
+
   // Titles (Receivables & Payables) com cache O(1)
   public getTitles(): FinancialTitle[] {
     if (this.normalizedTitlesCache) {
@@ -1857,7 +1896,8 @@ class StorageService {
 
     const raw = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, INITIAL_TITLES);
     if (!Array.isArray(raw)) return [];
-    const normalized = raw.filter(t => t && typeof t === 'object' && t.id).map(t => {
+    const sanitized = this.sanitizeTitles(raw);
+    const normalized = sanitized.filter(t => t && typeof t === 'object' && t.id).map(t => {
       const orig = Number(t.originalAmount) || 0;
       const settled = Number(t.settledPrincipal) || 0;
       const bal = typeof t.balancePrincipal === 'number' && !isNaN(t.balancePrincipal)

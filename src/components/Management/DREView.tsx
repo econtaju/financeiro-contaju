@@ -278,25 +278,38 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     // 3. Filtrar de acordo com o regime (Competência ou Caixa)
     if (regimeMode === 'CAIXA') {
       return lineTitles.filter(t => {
-        // Baixas em settlements
+        // Baixas em settlements efetuadas no período
         const tSettlements = allSettlements.filter(s => s.titleId === t.id);
         if (tSettlements.length > 0) {
-          return tSettlements.some(s => {
+          const hasSettlementInPeriod = tSettlements.some(s => {
             const sMonth = s.settlementDate?.substring(0, 7) || '';
             return targetMonths.includes(sMonth);
           });
+          if (hasSettlementInPeriod) return true;
         }
 
-        // Fallbacks diretos no título
+        // Fallbacks diretos no título para quitações
         const payDate = (t as any).actualPaymentDate || (t as any).paymentDate || (t as any).settlementDate || '';
         if (payDate) {
           const pMonth = payDate.substring(0, 7);
-          return targetMonths.includes(pMonth) && ((t.settledPrincipal || 0) > 0 || t.settlementState === 'LIQUIDADO');
+          if (targetMonths.includes(pMonth) && ((t.settledPrincipal || 0) > 0 || t.settlementState === 'LIQUIDADO')) {
+            return true;
+          }
         }
 
         if (t.settlementState === 'LIQUIDADO') {
           const dueMonth = (t.dueDate || '').substring(0, 7);
-          return targetMonths.includes(dueMonth);
+          if (targetMonths.includes(dueMonth)) return true;
+        }
+
+        // Títulos em aberto com previsão de pagamento / vencimento no mês (regra de caixa gerencial)
+        const dueMonth = (t.dueDate || '').substring(0, 7);
+        const openBalance = typeof t.balancePrincipal === 'number'
+          ? t.balancePrincipal
+          : Math.max(0, (t.originalAmount || 0) - (t.settledPrincipal || 0));
+
+        if (targetMonths.includes(dueMonth) && openBalance > 0.001) {
+          return true;
         }
 
         return false;
@@ -2658,7 +2671,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       Dê <strong>duplo clique</strong> na linha de qualquer lançamento para editar (ou use o ícone de lápis).
                     </span>
                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-black/20 text-slate-300">
-                      Filtro: {drillDownItem.regimeMode === 'COMPETENCIA' ? 'Competência' : 'Caixa Realizado'}
+                      Filtro: {drillDownItem.regimeMode === 'COMPETENCIA' ? 'Competência (Mês Referência)' : 'Caixa Gerencial (Realizado + Em Aberto no Mês)'}
                     </span>
                   </div>
 
@@ -2753,6 +2766,11 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                                   {drillDownItem.regimeMode === 'CAIXA' && paymentInfo.paidAmount > 0 && Math.abs(paymentInfo.paidAmount - t.originalAmount) > 0.01 && (
                                     <div className="text-[10px] text-emerald-400 font-normal">
                                       Liq: {formatBRL(paymentInfo.paidAmount)}
+                                    </div>
+                                  )}
+                                  {drillDownItem.regimeMode === 'CAIXA' && (t.settlementState === 'EM_ABERTO' || t.settlementState === 'PARCIAL') && (
+                                    <div className="text-[10px] text-amber-400 font-normal">
+                                      Aberto: {formatBRL(typeof t.balancePrincipal === 'number' ? t.balancePrincipal : (t.originalAmount - (t.settledPrincipal || 0)))}
                                     </div>
                                   )}
                                 </td>
