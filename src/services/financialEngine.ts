@@ -2414,26 +2414,39 @@ export class FinancialEngine {
   }
 
   /**
-   * CALCULATE CLIENT METRICS & KPIS
-   * Client indicators: Active clients count, client growth, contract coverage, new additions.
+   * CALCULATE CLIENT METRICS & KPIS BASEADOS ESTREITAMENTE EM CONTRATOS ATIVOS
+   * Conforme especificação do usuário:
+   * 1. Apenas clientes com contrato ATIVO contam como clientes ativos.
+   * 2. Clientes apenas cadastrados sem contrato não contam na base ativa nem de crescimento.
+   * 3. Churn: clientes cujos contratos foram cancelados/encerrados e não possuem outro contrato ativo.
+   * 4. Novos clientes: clientes que ativaram seu primeiro contrato no período.
+   * 5. Crescimento e Churn calculados rigorosamente sobre a base contratual.
    */
   public static calculateClientMetrics(referenceYear?: number, referenceMonthIdx?: number) {
-    const counterparties = storage.getCounterparties();
-    const clients = counterparties.filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
-    const totalClients = clients.length;
-    const activeClients = clients.filter(c => c.status === 'ATIVO').length;
-    const inactiveClients = clients.filter(c => c.status === 'INATIVO').length;
-
     const contracts = storage.getContracts();
-    const activeContracts = contracts.filter(c => c.status === 'ATIVO');
-    const clientsWithActiveContracts = new Set(activeContracts.map(c => c.customerId)).size;
+    const counterparties = storage.getCounterparties();
+    const registeredClients = counterparties.filter(c => c.type === 'CLIENTE' || c.type === 'AMBOS');
 
+    // 1. Identificar clientes com contrato ativo
+    const activeContracts = contracts.filter(c => c.status === 'ATIVO');
+    const activeCustomerIds = new Set(activeContracts.map(c => c.customerId));
+    const activeClients = activeCustomerIds.size;
+
+    // 2. Identificar clientes que tiveram contrato cancelado/encerrado e não possuem nenhum ativo (Churn)
+    const outOfPortfolioContracts = contracts.filter(c => c.status === 'CANCELADO' || c.status === 'ENCERRADO');
+    const outOfPortfolioCustomerIds = new Set(outOfPortfolioContracts.map(c => c.customerId));
+    const churnCustomerIds = Array.from(outOfPortfolioCustomerIds).filter(cId => !activeCustomerIds.has(cId));
+    const inactiveClients = churnCustomerIds.length;
+
+    // Base total de clientes com relacionamento contratual
+    const totalContractClients = activeClients + inactiveClients;
+
+    // 3. Período alvo e anterior
     const now = new Date();
     const targetYear = referenceYear ?? now.getFullYear();
     const targetMonth = referenceMonthIdx !== undefined ? referenceMonthIdx + 1 : now.getMonth() + 1;
     const targetMonthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
 
-    // Previous month string
     let prevYear = targetYear;
     let prevMonth = targetMonth - 1;
     if (prevMonth === 0) {
@@ -2442,38 +2455,76 @@ export class FinancialEngine {
     }
     const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
 
-    // Count clients created in target period vs previous period
-    const newClientsPeriod = clients.filter(c => {
-      const created = c.createdAt || '';
-      return created.startsWith(targetMonthStr);
+    // Mapa de primeiro contrato ativo por cliente para detectar novos clientes
+    const customerFirstContractMap = new Map<string, string>();
+    for (const c of contracts) {
+      const cur = customerFirstContractMap.get(c.customerId);
+      const contractStart = c.startDate || c.entryDate || c.createdAt || '';
+      if (!cur || (contractStart && contractStart < cur)) {
+        customerFirstContractMap.set(c.customerId, contractStart);
+      }
+    }
+
+    // Novos clientes com contrato no período alvo
+    const newClientsPeriod = Array.from(customerFirstContractMap.entries()).filter(([cId, startDate]) => {
+      return startDate.startsWith(targetMonthStr) && (activeCustomerIds.has(cId) || churnCustomerIds.includes(cId));
     }).length;
 
-    const newClientsPrevPeriod = clients.filter(c => {
-      const created = c.createdAt || '';
-      return created.startsWith(prevMonthStr);
+    // Novos clientes no período anterior
+    const newClientsPrevPeriod = Array.from(customerFirstContractMap.entries()).filter(([cId, startDate]) => {
+      return startDate.startsWith(prevMonthStr) && (activeCustomerIds.has(cId) || churnCustomerIds.includes(cId));
     }).length;
 
-    // Growth calculation: net new vs previous base
-    const baseClients = Math.max(1, activeClients - newClientsPeriod);
-    const growthRate = (newClientsPeriod / baseClients) * 100;
-    const netGrowthDiff = newClientsPeriod - newClientsPrevPeriod;
+    // Churn no período alvo: clientes cujo contrato cancelou/encerrou no mês e que ficaram sem contrato ativo
+    const churnPeriod = contracts.filter(c => {
+      if (c.status !== 'CANCELADO' && c.status !== 'ENCERRADO') return false;
+      const cancelDate = c.cancellationDate || c.inactivatedAt || '';
+      if (!cancelDate.startsWith(targetMonthStr)) return false;
+      return !activeCustomerIds.has(c.customerId);
+    }).map(c => c.customerId);
+    const uniqueChurnPeriod = new Set(churnPeriod).size;
+
+    // Churn no período anterior
+    const churnPrevPeriod = contracts.filter(c => {
+      if (c.status !== 'CANCELADO' && c.status !== 'ENCERRADO') return false;
+      const cancelDate = c.cancellationDate || c.inactivatedAt || '';
+      if (!cancelDate.startsWith(prevMonthStr)) return false;
+      return !activeCustomerIds.has(c.customerId);
+    }).map(c => c.customerId);
+    const uniqueChurnPrevPeriod = new Set(churnPrevPeriod).size;
+
+    // Crescimento líquido: novos contratos menos churn
+    const netGrowth = newClientsPeriod - uniqueChurnPeriod;
+    const netGrowthDiff = netGrowth - (newClientsPrevPeriod - uniqueChurnPrevPeriod);
+
+    // Base inicial anterior estimada
+    const baseClients = Math.max(1, activeClients - netGrowth);
+    const growthRate = (netGrowth / baseClients) * 100;
+    const churnRate = baseClients > 0 ? (uniqueChurnPeriod / baseClients) * 100 : 0;
 
     // Total MRR
     const mrr = activeContracts.reduce((acc, c) => acc + (c.monthlyTotal || 0), 0);
-    const averageTicketPerClient = clientsWithActiveContracts > 0 ? mrr / clientsWithActiveContracts : 0;
+    const averageTicketPerClient = activeClients > 0 ? mrr / activeClients : 0;
 
     return {
-      totalClients,
+      totalClients: totalContractClients > 0 ? totalContractClients : registeredClients.length,
+      registeredClientsCount: registeredClients.length,
+      totalContractClients,
       activeClients,
       inactiveClients,
-      clientsWithActiveContracts,
+      clientsWithActiveContracts: activeClients,
       newClientsPeriod,
       newClientsPrevPeriod,
+      churnPeriod: uniqueChurnPeriod,
+      churnPrevPeriod: uniqueChurnPrevPeriod,
+      churnRate: Math.round(churnRate * 10) / 10,
+      netGrowth,
       netGrowthDiff,
       growthRate: Math.round(growthRate * 10) / 10,
+      mrr,
       averageTicketPerClient,
-      activePercentage: totalClients > 0 ? Math.round((activeClients / totalClients) * 100) : 0,
-      contractCoveragePercentage: activeClients > 0 ? Math.round((clientsWithActiveContracts / activeClients) * 100) : 0
+      activePercentage: totalContractClients > 0 ? Math.round((activeClients / totalContractClients) * 100) : 100,
+      contractCoveragePercentage: 100
     };
   }
 

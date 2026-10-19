@@ -27,7 +27,9 @@ import {
   ShieldCheck,
   Users,
   UserPlus,
-  UserCheck
+  UserCheck,
+  UserMinus,
+  Table
 } from 'lucide-react';
 import { BankAccount, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
@@ -39,6 +41,7 @@ import { useModulePeriod } from '../../hooks/useModulePeriod';
 import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { PendingAlertsWidget } from './PendingAlertsWidget';
 import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
+import { AnnualKpiComparisonView } from './AnnualKpiComparisonView';
 import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
 import { EditTitleModal } from '../Modals/EditTitleModal';
 
@@ -76,8 +79,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Trigger para recálculo instantâneo ao salvar alterações de títulos
   const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
-  // Tab: 'DASHBOARD' | 'KPIS_CONFIG'
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'KPIS_CONFIG'>('DASHBOARD');
+  // Tab: 'DASHBOARD' | 'ANNUAL_KPIS' | 'KPIS_CONFIG'
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ANNUAL_KPIS' | 'KPIS_CONFIG'>('DASHBOARD');
+  // Modo de exibição no bloco de KPIs: 'MONTH_CARDS' | 'ANNUAL_TABLE'
+  const [kpiDisplayMode, setKpiDisplayMode] = useState<'MONTH_CARDS' | 'ANNUAL_TABLE'>('MONTH_CARDS');
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
   // Modal de edição de títulos aberto por clique nas linhas do dashboard
@@ -284,33 +289,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     },
     {
       id: 'clientes_ativos',
-      name: 'Clientes Ativos',
+      name: 'Clientes Ativos (Contratos)',
       category: 'Clientes',
       value: `${clientMetrics.activeClients}`,
-      subtext: `${clientMetrics.clientsWithActiveContracts} com contrato ativo (${clientMetrics.contractCoveragePercentage}%)`,
+      subtext: `${clientMetrics.activeClients} clientes com contrato ativo`,
       icon: Users,
       color: 'amber',
-      description: 'Número de clientes com cadastro ativo na Contaju e cobertura contratual regular.'
+      description: 'Número de clientes únicos com contrato formalizado e vigente (status ATIVO). Desconsidera cadastros sem contrato.'
     },
     {
       id: 'crescimento_clientes',
-      name: 'Crescimento de Clientes',
+      name: 'Crescimento Contratual',
       category: 'Clientes',
       value: `+${clientMetrics.newClientsPeriod} novos (${clientMetrics.growthRate > 0 ? '+' : ''}${clientMetrics.growthRate}%)`,
-      subtext: clientMetrics.netGrowthDiff >= 0 ? `+${clientMetrics.netGrowthDiff} vs mês anterior` : `${clientMetrics.netGrowthDiff} vs mês anterior`,
+      subtext: `${clientMetrics.netGrowthDiff >= 0 ? '+' : ''}${clientMetrics.netGrowthDiff} líq. vs mês anterior (${clientMetrics.churnPeriod} churn)`,
       icon: UserPlus,
       color: 'emerald',
-      description: 'Novos clientes conquistados na competência selecionada e taxa de expansão líquida.'
+      description: 'Novos clientes que ativaram contratos no período, descontando cancelamentos e churn da base.'
     },
     {
       id: 'carteira_total_clientes',
-      name: 'Total da Carteira',
+      name: 'Carteira de Contratos',
       category: 'Clientes',
-      value: `${clientMetrics.totalClients}`,
-      subtext: `${clientMetrics.inactiveClients} inativo(s) / churn`,
+      value: `${clientMetrics.totalContractClients || clientMetrics.activeClients}`,
+      subtext: `${clientMetrics.inactiveClients} cancelados/inativos (Churn: ${clientMetrics.churnRate}%)`,
       icon: UserCheck,
       color: 'amber',
-      description: 'Base total de clientes cadastrados no escritório (ativos e inativos).'
+      description: 'Base total de clientes com relacionamento contratual ativo ou histórico de churn.'
     },
     {
       id: 'inadimplencia',
@@ -396,11 +401,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       id: 'ticket_medio',
       name: 'Ticket Médio por Cliente',
       category: 'Comercial',
-      value: formatBRL(averageTicket),
-      subtext: 'Base de contratos recorrentes',
+      value: formatBRL(clientMetrics.averageTicketPerClient || averageTicket),
+      subtext: 'Base de clientes com contrato ativo',
       icon: DollarSign,
       color: 'amber',
-      description: 'Honorário médio mensal contratado por cliente ativo.'
+      description: 'Honorário médio mensal gerado por cliente com contrato ativo (MRR ÷ Clientes com Contrato Ativo).'
     }
   ];
 
@@ -458,6 +463,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             >
               <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
               Visão do Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('ANNUAL_KPIS')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+                activeTab === 'ANNUAL_KPIS'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
+              Evolução Anual dos KPIs (12M)
             </button>
             <button
               onClick={() => setActiveTab('KPIS_CONFIG')}
@@ -829,59 +845,101 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* GRID DE KPIS DINÂMICOS CONFORME CONFIGURAÇÃO DO USUÁRIO */}
           {safeVisibleKpis.length > 0 && (
-            <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-3">
-              <div className="flex justify-between items-center border-b border-[var(--border-subtle)] pb-2.5">
+            <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[var(--border-subtle)] pb-3 gap-3">
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                   <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
                     Indicadores Financeiros Chave (KPIs Selecionados)
                   </h3>
                 </div>
-                <button
-                  onClick={() => setActiveTab('KPIS_CONFIG')}
-                  className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center cursor-pointer"
-                >
-                  <Sliders className="w-3.5 h-3.5 mr-1" />
-                  Editar KPIs visíveis
-                </button>
+
+                <div className="flex items-center space-x-2 flex-wrap">
+                  {/* Seletor de Modo: Cards do Mês vs Linha a Linha Anual */}
+                  <div className="inline-flex p-0.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-subtle)] shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setKpiDisplayMode('MONTH_CARDS')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
+                        kpiDisplayMode === 'MONTH_CARDS'
+                          ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="Ver cards executivos do mês selecionado"
+                    >
+                      <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                      Mês Atual ({dreData.months[effectiveMonthIdx]}/{effectiveYear})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKpiDisplayMode('ANNUAL_TABLE')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
+                        kpiDisplayMode === 'ANNUAL_TABLE'
+                          ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="Ver tabela comparativa com todos os 12 meses linha a linha"
+                    >
+                      <Table className="w-3.5 h-3.5 mr-1.5" />
+                      Detalhado por Ano (Linha a Linha)
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setActiveTab('KPIS_CONFIG')}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center px-2 py-1 rounded-md hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5 mr-1" />
+                    Personalizar
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                {KPI_CATALOG
-                  .filter(kpi => safeVisibleKpis.includes(kpi.id))
-                  .map(kpi => {
-                    const IconComponent = kpi.icon;
-                    const navTarget: NavigationScreen | null = 
-                      kpi.id === 'contas_pagar_aberto' ? 'CONTAS_PAGAR' :
-                      kpi.id === 'contas_receber_aberto' ? 'CONTAS_RECEBER' :
-                      (kpi.id === 'saldo_liquido_caixa' || kpi.id === 'entradas_caixa' || kpi.id === 'saidas_caixa') ? 'FLUXO_CAIXA' :
-                      (kpi.id === 'receita_liquida' || kpi.id === 'lucro_liquido' || kpi.id === 'ebitda' || kpi.id === 'margem_liquida') ? 'DRE' :
-                      kpi.id === 'ticket_medio' ? 'CLIENTES' : null;
+              {kpiDisplayMode === 'MONTH_CARDS' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                  {KPI_CATALOG
+                    .filter(kpi => safeVisibleKpis.includes(kpi.id))
+                    .map(kpi => {
+                      const IconComponent = kpi.icon;
+                      const navTarget: NavigationScreen | null = 
+                        kpi.id === 'contas_pagar_aberto' ? 'CONTAS_PAGAR' :
+                        kpi.id === 'contas_receber_aberto' ? 'CONTAS_RECEBER' :
+                        (kpi.id === 'saldo_liquido_caixa' || kpi.id === 'entradas_caixa' || kpi.id === 'saidas_caixa') ? 'FLUXO_CAIXA' :
+                        (kpi.id === 'receita_liquida' || kpi.id === 'lucro_liquido' || kpi.id === 'ebitda' || kpi.id === 'margem_liquida') ? 'DRE' :
+                        kpi.id === 'ticket_medio' ? 'CLIENTES' : null;
 
-                    return (
-                      <div 
-                        key={kpi.id}
-                        onClick={() => navTarget && onNavigate(navTarget)}
-                        className={`p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-amber-500/40 transition-all space-y-1.5 ${
-                          navTarget ? 'cursor-pointer hover:shadow-2xs active:scale-[0.99]' : ''
-                        }`}
-                        title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
-                      >
-                        <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
-                          <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
-                          <IconComponent className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
+                      return (
+                        <div 
+                          key={kpi.id}
+                          onClick={() => navTarget && onNavigate(navTarget)}
+                          className={`p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-amber-500/40 transition-all space-y-1.5 ${
+                            navTarget ? 'cursor-pointer hover:shadow-2xs active:scale-[0.99]' : ''
+                          }`}
+                          title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
+                        >
+                          <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
+                            <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
+                            <IconComponent className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
+                          </div>
+                          <div className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
+                            {kpi.value}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-muted)] truncate flex items-center justify-between" title={kpi.subtext}>
+                            <span>{kpi.subtext}</span>
+                            {navTarget && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-60 ml-1 shrink-0" />}
+                          </div>
                         </div>
-                        <div className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
-                          {kpi.value}
-                        </div>
-                        <div className="text-[11px] text-[var(--text-muted)] truncate flex items-center justify-between" title={kpi.subtext}>
-                          <span>{kpi.subtext}</span>
-                          {navTarget && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-60 ml-1 shrink-0" />}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <AnnualKpiComparisonView
+                  currentYear={effectiveYear}
+                  selectedMonthIdx={effectiveMonthIdx}
+                  onNavigateScreen={onNavigate}
+                  isCompactMode={true}
+                />
+              )}
             </div>
           )}
 
@@ -1191,7 +1249,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: CENTRAL DE CONFIGURAÇÃO DE KPIS & WIDGETS (SOLICITAÇÃO DO USUÁRIO)  */}
+      {/* TAB 2: EVOLUÇÃO ANUAL DOS KPIS (LINHA A LINHA, JAN A DEZ)                 */}
+      {/* ========================================================================= */}
+      {activeTab === 'ANNUAL_KPIS' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <AnnualKpiComparisonView
+            currentYear={effectiveYear}
+            selectedMonthIdx={effectiveMonthIdx}
+            onNavigateScreen={onNavigate}
+            isCompactMode={false}
+          />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: CENTRAL DE CONFIGURAÇÃO DE KPIS & WIDGETS (SOLICITAÇÃO DO USUÁRIO)  */}
       {/* ========================================================================= */}
       {activeTab === 'KPIS_CONFIG' && (
         <div className="space-y-6 animate-in fade-in duration-200">
