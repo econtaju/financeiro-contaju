@@ -32,7 +32,12 @@ import {
   MessageSquare,
   HelpCircle,
   Columns,
-  Trophy
+  Trophy,
+  Sliders,
+  Edit3,
+  Wrench,
+  ChevronDown,
+  Cpu
 } from 'lucide-react';
 import { 
   AgentDefinition, 
@@ -47,6 +52,7 @@ import { AgentOrchestratorService } from '../../services/agentOrchestratorServic
 import { AiService } from '../../services/aiService';
 import { AiModelCatalogService } from '../../services/aiModelCatalogService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
+import { AgentEditModal } from '../Modals/AgentEditModal';
 
 export const AgentCenterView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'AGENTES' | 'APROVACOES' | 'RUNS' | 'GATEWAY'>(() => {
@@ -59,6 +65,39 @@ export const AgentCenterView: React.FC = () => {
   const [aiConfig, setAiConfig] = useState<AiProviderConfig>(() => AiService.getConfig());
   const [catalogModels, setCatalogModels] = useState<AiModelChainItem[]>(() => AiModelCatalogService.getCachedCatalog());
   const [isSyncingModels, setIsSyncingModels] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<AgentDefinition | null>(null);
+  const [assigningModelDropdown, setAssigningModelDropdown] = useState<string | null>(null);
+
+  const handleSaveEditedAgent = (updatedAgent: AgentDefinition) => {
+    const currentAgents = AgentOrchestratorService.getAgents();
+    const updatedList = currentAgents.map(a => a.id === updatedAgent.id ? updatedAgent : a);
+    AgentOrchestratorService.saveAgents(updatedList);
+    setAgents(updatedList);
+    setEditingAgent(null);
+    setActionSuccessMsg(`Agente "${updatedAgent.name}" configurado com sucesso! Modelo atribuído: ${updatedAgent.defaultModel}`);
+    setTimeout(() => setActionSuccessMsg(''), 5000);
+  };
+
+  const handleToggleAgentStatus = (agentId: string) => {
+    const currentAgents = AgentOrchestratorService.getAgents();
+    const updatedList = currentAgents.map(a => a.id === agentId ? { ...a, isActive: !a.isActive } : a);
+    AgentOrchestratorService.saveAgents(updatedList);
+    setAgents(updatedList);
+    const target = updatedList.find(a => a.id === agentId);
+    setActionSuccessMsg(`Agente "${target?.name}" ${target?.isActive ? 'ativado' : 'pausado'}.`);
+    setTimeout(() => setActionSuccessMsg(''), 3500);
+  };
+
+  const handleAssignModelToAgent = (modelId: string, agentRole: AgentRoleType) => {
+    const currentAgents = AgentOrchestratorService.getAgents();
+    const updatedList = currentAgents.map(a => a.role === agentRole ? { ...a, defaultModel: modelId } : a);
+    AgentOrchestratorService.saveAgents(updatedList);
+    setAgents(updatedList);
+    setAssigningModelDropdown(null);
+    const target = updatedList.find(a => a.role === agentRole);
+    setActionSuccessMsg(`Modelo "${modelId}" atribuído com sucesso ao agente "${target?.name}"!`);
+    setTimeout(() => setActionSuccessMsg(''), 5000);
+  };
 
   // Estados de Conexão com OpenCode Go
   const [apiKeyInput, setApiKeyInput] = useState(() => aiConfig.apiKey || '');
@@ -559,65 +598,164 @@ export const AgentCenterView: React.FC = () => {
             </div>
           )}
 
-          {/* Cards dos 4 Especialistas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {agents.map(agent => (
-              <div 
-                key={agent.id}
-                className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] hover:border-amber-500/30 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)]">
-                        {getAgentRoleIcon(agent.role)}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-[var(--text-primary)]">{agent.name}</h4>
-                        <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold">
-                          Papel: {agent.role}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      agent.isActive 
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                        : 'bg-slate-500/10 text-slate-400'
-                    }`}>
-                      {agent.isActive ? 'Disponível' : 'Inativo'}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
-                    {agent.description}
-                  </p>
-
-                  <div className="space-y-1.5 mb-4">
-                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider block">
-                      Ferramentas Autorizadas:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {agent.allowedTools.map((tool, idx) => (
-                        <span key={idx} className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[var(--surface-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)]">
-                          {tool}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-secondary)]">
-                    Modelo: <strong>{agent.defaultModel}</strong>
-                  </span>
-                  <span className="text-amber-500 font-semibold flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Requer Aprovação Humana
-                  </span>
-                </div>
+          {/* Top Bar da Aba de Agentes: Resumo & Ações Rápidas */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                <Sliders className="w-5 h-5" />
               </div>
-            ))}
+              <div>
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  Personalização de Prompts, Modelos & Capacidades
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Altere livremente as capacidades, o prompt mestre e selecione qualquer um dos modelos de IA disponíveis para cada especialista.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-[var(--surface-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                {catalogModels.length} Modelos Disponíveis no Catálogo
+              </span>
+            </div>
+          </div>
+
+          {/* Cards dos 4 Especialistas */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {agents.map(agent => {
+              const modelMeta = catalogModels.find(m => m.id === agent.defaultModel);
+              return (
+                <div 
+                  key={agent.id}
+                  className="p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] hover:border-amber-500/40 transition-all flex flex-col justify-between shadow-xs space-y-4"
+                >
+                  <div className="space-y-3.5">
+                    {/* Top Row: Ícone, Nome, Papel e Toggle de Status */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] shadow-xs shrink-0">
+                          {getAgentRoleIcon(agent.role)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-bold text-[var(--text-primary)]">{agent.name}</h4>
+                            <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-mono font-semibold px-2 py-0.5 rounded bg-[var(--surface-elevated)] border border-[var(--border-subtle)]">
+                              {agent.role}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">
+                            {agent.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAgentStatus(agent.id)}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer shrink-0 border ${
+                          agent.isActive 
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25' 
+                            : 'bg-slate-700/40 text-slate-400 border-slate-600 hover:bg-slate-700'
+                        }`}
+                        title="Clique para alternar entre Ativo e Pausado"
+                      >
+                        {agent.isActive ? '● Ativo' : '○ Em Pausa'}
+                      </button>
+                    </div>
+
+                    {/* Bloco do Modelo Selecionado */}
+                    <div className="p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider block">
+                          Modelo de IA Atribuído:
+                        </span>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className="text-xs font-bold text-amber-500 flex items-center gap-1.5">
+                            <Cpu className="w-3.5 h-3.5 text-amber-500" />
+                            {modelMeta?.name || agent.defaultModel}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/20 text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                            {agent.defaultModel}
+                          </span>
+                          {modelMeta?.provider && (
+                            <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              {modelMeta.provider}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditingAgent(agent)}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--surface-card)] hover:bg-amber-500/15 hover:text-amber-400 text-[var(--text-primary)] border border-[var(--border-subtle)] transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                        title="Mudar o modelo deste agente"
+                      >
+                        <Cpu className="w-3 h-3 text-amber-500" />
+                        <span>Trocar Modelo</span>
+                      </button>
+                    </div>
+
+                    {/* Bloco do Prompt do Sistema (Instruções Mestras) */}
+                    <div className="p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Prompt Mestre do Agente</span>
+                        </span>
+                        <span className="text-[10px] text-[var(--text-secondary)] font-mono">
+                          {agent.systemPrompt?.length || 0} caracteres
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--text-primary)] font-mono bg-[var(--surface-card)] p-2.5 rounded-lg border border-[var(--border-subtle)] line-clamp-3 leading-relaxed whitespace-pre-wrap">
+                        {agent.systemPrompt}
+                      </p>
+                    </div>
+
+                    {/* Capacidades & Ferramentas Autorizadas */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1">
+                          <Wrench className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Capacidades Autorizadas ({agent.allowedTools?.length || 0}):</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-semibold">
+                          Permissões Contábeis
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {agent.allowedTools?.map((tool, idx) => (
+                          <span 
+                            key={idx} 
+                            className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[var(--surface-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)]"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rodapé do Card com Ações */}
+                  <div className="pt-3 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <span className="text-[11px] text-amber-500 font-semibold flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>{agent.requiresApproval ? 'Requer Aprovação Humana Prévia' : 'Modo Autônomo para Consultas'}</span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditingAgent(agent)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>Editar Agente (Prompt & Modelo)</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1412,7 +1550,56 @@ export const AgentCenterView: React.FC = () => {
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-1.5 ml-auto">
+                        <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
+                          {/* Agentes que já usam este modelo */}
+                          {agents.filter(ag => ag.defaultModel === item.id).map(ag => (
+                            <span 
+                              key={ag.id} 
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1"
+                              title={`Este modelo é utilizado pelo agente ${ag.name}`}
+                            >
+                              <Bot className="w-2.5 h-2.5 text-amber-500" />
+                              <span className="truncate max-w-[80px]">{ag.name}</span>
+                            </span>
+                          ))}
+
+                          {/* Dropdown Atribuir a Agente */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setAssigningModelDropdown(assigningModelDropdown === item.id ? null : item.id)}
+                              className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[var(--surface-card)] hover:bg-amber-500/15 hover:text-amber-400 text-[var(--text-primary)] border border-[var(--border-subtle)] transition-colors cursor-pointer flex items-center gap-1"
+                              title="Vincular este modelo de IA a um agente específico"
+                            >
+                              <Bot className="w-2.5 h-2.5 text-amber-500" />
+                              <span>Vincular Agente</span>
+                              <ChevronDown className="w-2.5 h-2.5" />
+                            </button>
+
+                            {assigningModelDropdown === item.id && (
+                              <div className="absolute right-0 bottom-full mb-1 w-56 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-xl z-30 p-1.5 space-y-1 animate-in fade-in zoom-in-95">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] px-2 py-1 block border-b border-[var(--border-subtle)]">
+                                  Vincular modelo a:
+                                </span>
+                                {agents.map(ag => (
+                                  <button
+                                    key={ag.id}
+                                    type="button"
+                                    onClick={() => handleAssignModelToAgent(item.id, ag.role)}
+                                    className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-amber-500/15 text-[var(--text-primary)] hover:text-amber-400 flex items-center justify-between transition-colors cursor-pointer"
+                                  >
+                                    <span className="truncate">{ag.name}</span>
+                                    {ag.defaultModel === item.id ? (
+                                      <span className="text-[9px] font-bold text-emerald-400">Ativo</span>
+                                    ) : (
+                                      <span className="text-[9px] text-[var(--text-secondary)]">Aplicar</span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
                           {isPrimary ? (
                             <span className="text-[10px] font-black text-amber-500 px-2 py-0.5">
                               ⭐ Ativo
@@ -1470,6 +1657,15 @@ export const AgentCenterView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Edição Completa do Agente (Prompts, Modelos e Capacidades) */}
+      <AgentEditModal
+        isOpen={Boolean(editingAgent)}
+        onClose={() => setEditingAgent(null)}
+        agent={editingAgent}
+        availableModels={catalogModels}
+        onSave={handleSaveEditedAgent}
+      />
     </div>
   );
 };

@@ -345,13 +345,19 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
   "suggestedDescription": "Descrição limpa e padronizada sugerida para o título"
 }`;
 
+    const auditorAgent = storage.getAgentDefinitions().find(a => a.role === 'AUDITOR_CONCILIACAO');
+    const systemPrompt = auditorAgent?.systemPrompt || 'Você é um perito contábil e financeiro de conciliação. Responda estritamente em JSON válido.';
+    const modelToUse = auditorAgent?.defaultModel;
+
     const res = await this.executeWithFailover([
-      { role: 'system', content: 'Você é um perito contábil e financeiro de conciliação. Responda estritamente em JSON válido.' },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt }
     ], {
       temperature: 0.1,
       jsonMode: true,
-      featureName: 'Conciliação Bancária'
+      featureName: 'Conciliação Bancária',
+      agentRole: 'AUDITOR_CONCILIACAO',
+      preferredModel: modelToUse
     });
 
     if (res.success && res.parsedJson) {
@@ -421,12 +427,18 @@ Estruture o texto em 3 parágrafos objetivos:
 3. Conclusão estratégica para manter o fluxo positivo.
 Destaque valores importantes em negrito.`;
 
+    const cfoAgent = storage.getAgentDefinitions().find(a => a.role === 'CFO_EXECUTIVO');
+    const systemPrompt = cfoAgent?.systemPrompt || 'Você é o CFO executivo da empresa. Escreva em português claro, profissional e inspirador.';
+    const modelToUse = cfoAgent?.defaultModel;
+
     const res = await this.executeWithFailover([
-      { role: 'system', content: 'Você é o CFO executivo da empresa. Escreva em português claro, profissional e inspirador.' },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt }
     ], {
       temperature: 0.3,
-      featureName: 'Briefing Executivo'
+      featureName: 'Briefing Executivo',
+      agentRole: 'CFO_EXECUTIVO',
+      preferredModel: modelToUse
     });
 
     if (res.success) {

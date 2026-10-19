@@ -153,13 +153,18 @@ Estruture seu parecer em 3 seções:
 2. **Alertas e Gestão de Risco**: Destaque a inadimplência e títulos críticos.
 3. **Recomendações Práticas do CFO**: Ações sugeridas para otimização do capital de giro.`;
 
+    const cfoAgent = this.getAgents().find(a => a.role === 'CFO_EXECUTIVO');
+    const systemPrompt = cfoAgent?.systemPrompt || 'Você é o CFO e Diretor Financeiro Executivo da empresa. Sua função é analisar indicadores de caixa, DRE gerencial, liquidez imediata e propor recomendações estratégicas fundamentadas.';
+    const modelToUse = cfoAgent?.defaultModel;
+
     const res = await AiService.executeWithFailover([
-      { role: 'system', content: 'Você é o CFO Executivo Virtual do Contaju. Escreva com autoridade e clareza.' },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt }
     ], {
       temperature: 0.3,
       featureName: 'Parecer CFO Executivo',
-      agentRole: 'CFO_EXECUTIVO'
+      agentRole: 'CFO_EXECUTIVO',
+      preferredModel: modelToUse
     });
 
     return {
