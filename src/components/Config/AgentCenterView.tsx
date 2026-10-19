@@ -37,7 +37,9 @@ import {
   Edit3,
   Wrench,
   ChevronDown,
-  Cpu
+  Cpu,
+  Globe,
+  ExternalLink
 } from 'lucide-react';
 import { 
   AgentDefinition, 
@@ -50,7 +52,12 @@ import {
 import { storage } from '../../services/storageService';
 import { AgentOrchestratorService } from '../../services/agentOrchestratorService';
 import { AiService } from '../../services/aiService';
-import { AiModelCatalogService } from '../../services/aiModelCatalogService';
+import { 
+  AiModelCatalogService, 
+  AI_PROVIDER_PRESETS, 
+  detectProviderFromKey, 
+  AiProviderPreset 
+} from '../../services/aiModelCatalogService';
 import { formatBRL, formatDateBR } from '../../services/financialEngine';
 import { AgentEditModal } from '../Modals/AgentEditModal';
 
@@ -99,8 +106,21 @@ export const AgentCenterView: React.FC = () => {
     setTimeout(() => setActionSuccessMsg(''), 5000);
   };
 
-  // Estados de Conexão com OpenCode Go
+  // Estados de Conexão Multi-Provedores (OpenCode, OpenRouter, OpenAI, Gemini, Groq, etc.)
   const [apiKeyInput, setApiKeyInput] = useState(() => aiConfig.apiKey || '');
+  const [endpointUrlInput, setEndpointUrlInput] = useState(() => aiConfig.endpointUrl || 'https://opencode.ai/zen/go/v1');
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(() => {
+    const existing = AI_PROVIDER_PRESETS.find(p => p.endpointUrl && aiConfig.endpointUrl && p.endpointUrl.replace(/\/+$/, '') === aiConfig.endpointUrl.replace(/\/+$/, ''));
+    return existing ? existing.id : 'opencode_go';
+  });
+  const [showEndpointCustomInput, setShowEndpointCustomInput] = useState(false);
+  const [autoDetectNotice, setAutoDetectNotice] = useState<string | null>(null);
+  const [connectionDiagnostic, setConnectionDiagnostic] = useState<{
+    code: string;
+    title: string;
+    suggestion: string;
+    consoleUrl?: string;
+  } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [isConnectingKey, setIsConnectingKey] = useState(false);
   const [searchModelQuery, setSearchModelQuery] = useState('');
@@ -241,25 +261,65 @@ export const AgentCenterView: React.FC = () => {
     return unsub;
   }, []);
 
+  const handleApiKeyChange = (val: string) => {
+    setApiKeyInput(val);
+    setConnectionDiagnostic(null);
+    if (!val.trim()) return;
+
+    const detected = detectProviderFromKey(val);
+    if (detected && detected.id !== selectedPresetId) {
+      setSelectedPresetId(detected.id);
+      if (detected.endpointUrl) {
+        setEndpointUrlInput(detected.endpointUrl);
+      }
+      setAutoDetectNotice(`Provedor identificado: ${detected.name}`);
+      setTimeout(() => setAutoDetectNotice(null), 4000);
+    }
+  };
+
+  const handleSelectPreset = (preset: AiProviderPreset) => {
+    setSelectedPresetId(preset.id);
+    setConnectionDiagnostic(null);
+    if (preset.endpointUrl) {
+      setEndpointUrlInput(preset.endpointUrl);
+    }
+    if (preset.id === 'custom') {
+      setShowEndpointCustomInput(true);
+    }
+  };
+
   const handleConnectOpenCodeGo = async () => {
     if (!apiKeyInput.trim()) {
-      setActionErrorMsg('Por favor, informe sua Chave de API do OpenCode Go.');
+      setActionErrorMsg('Por favor, informe sua Chave de API.');
       setTimeout(() => setActionErrorMsg(''), 5000);
       return;
     }
     setIsConnectingKey(true);
     setActionErrorMsg('');
     setActionSuccessMsg('');
+    setConnectionDiagnostic(null);
     try {
-      const res = await AiModelCatalogService.connectAndSync(apiKeyInput.trim());
+      const activePreset = AI_PROVIDER_PRESETS.find(p => p.id === selectedPresetId);
+      const res = await AiModelCatalogService.connectAndSync(
+        apiKeyInput.trim(),
+        endpointUrlInput.trim(),
+        activePreset?.suggestedPrimaryModel
+      );
       setCatalogModels(AiModelCatalogService.getCachedCatalog());
-      setAiConfig(AiService.getConfig());
+      const updated = AiService.getConfig();
+      setAiConfig(updated);
       if (res.success) {
         setActionSuccessMsg(`🎉 ${res.message}`);
         setTimeout(() => setActionSuccessMsg(''), 6000);
       } else {
         setActionErrorMsg(res.message);
-        setTimeout(() => setActionErrorMsg(''), 7000);
+        if (res.errorDiagnostic) {
+          setConnectionDiagnostic({
+            ...res.errorDiagnostic,
+            consoleUrl: activePreset?.consoleUrl
+          });
+        }
+        setTimeout(() => setActionErrorMsg(''), 8000);
       }
     } catch (err: any) {
       setActionErrorMsg(`Falha na conexão: ${err.message || 'Erro inesperado'}`);
@@ -392,8 +452,8 @@ export const AgentCenterView: React.FC = () => {
           </div>
         </div>
 
-        {/* Painel Central de Conexão com OpenCode Go e Atualização de Modelos */}
-        <div className="mt-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-amber-950/20 to-slate-900 border border-purple-500/30 shadow-lg">
+        {/* Painel Central de Conexão Multi-Provedores & IAs */}
+        <div className="mt-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-amber-950/20 to-slate-900 border border-purple-500/30 shadow-lg space-y-4">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="p-2.5 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/40 shrink-0 mt-0.5">
@@ -402,7 +462,7 @@ export const AgentCenterView: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <span>Configuração da Chave de API do OpenCode Go</span>
+                    <span>Hub de Conexão Multi-Provedores de IA</span>
                   </h3>
                   {aiConfig.apiKey ? (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
@@ -411,7 +471,7 @@ export const AgentCenterView: React.FC = () => {
                     </span>
                   ) : (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                      Cole sua chave abaixo
+                      Selecione o provedor e insira sua chave
                     </span>
                   )}
                   <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
@@ -424,10 +484,7 @@ export const AgentCenterView: React.FC = () => {
                   )}
                 </div>
                 <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                  {aiConfig.apiKey 
-                    ? 'Sua chave está vinculada e pronta para uso em todas as conciliações e relatórios executivos.' 
-                    : 'Insira sua chave OpenCode Go para ativar as IAs no sistema. Ao salvar, todos os modelos disponíveis serão importados automaticamente.'
-                  }
+                  Conecte sua chave da <strong>OpenCode</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Google Gemini</strong>, <strong>Groq</strong> ou <strong>Endpoint Customizado</strong>. Ao colar sua chave, o sistema detecta o provedor automaticamente.
                 </p>
               </div>
             </div>
@@ -439,18 +496,89 @@ export const AgentCenterView: React.FC = () => {
               className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 disabled:opacity-50 self-stretch sm:self-auto"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingModels ? 'animate-spin text-purple-400' : 'text-slate-300'}`} />
-              <span>{isSyncingModels ? 'Sincronizando...' : 'Atualizar Catálogo (37 Modelos)'}</span>
+              <span>{isSyncingModels ? 'Sincronizando...' : 'Recarregar Catálogo'}</span>
             </button>
           </div>
 
+          {/* Seletor de Presets de Provedores com 1 Clique */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>Escolha o Provedor da sua Chave:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowEndpointCustomInput(!showEndpointCustomInput)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
+              >
+                {showEndpointCustomInput ? 'Ocultar URL do Endpoint' : 'Ver/Editar URL do Endpoint'}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {AI_PROVIDER_PRESETS.map((preset) => {
+                const isSelected = selectedPresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-500/10'
+                        : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300 border-slate-700/60'
+                    }`}
+                  >
+                    <span>{preset.name}</span>
+                    {preset.badge && (
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-semibold ${
+                        isSelected ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {preset.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Campo Customizável de Endpoint URL caso expandido */}
+          {showEndpointCustomInput && (
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+              <label className="block text-[11px] font-bold text-slate-300">
+                URL Base do Endpoint da API (OpenAI-Compatible):
+              </label>
+              <input
+                type="text"
+                value={endpointUrlInput}
+                onChange={(e) => setEndpointUrlInput(e.target.value)}
+                placeholder="https://opencode.ai/zen/go/v1 ou https://openrouter.ai/api/v1"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-xs font-mono text-white placeholder:text-slate-500 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-400 block">
+                O gateway adicionará automaticamente <code>/chat/completions</code> para despacho das mensagens.
+              </span>
+            </div>
+          )}
+
+          {/* Aviso de Auto-Detecção */}
+          {autoDetectNotice && (
+            <div className="p-2.5 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-200 text-xs flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>{autoDetectNotice}</span>
+            </div>
+          )}
+
           {/* Input Direto da Chave e Botão de Salvar/Atualizar */}
-          <div className="mt-3.5 pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row gap-2.5">
+          <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
               <input
                 type={showApiKey ? 'text' : 'password'}
                 value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="Cole sua API Key do OpenCode Go (opencode-zen-... ou sk-...)"
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+                placeholder={AI_PROVIDER_PRESETS.find(p => p.id === selectedPresetId)?.placeholder || 'Cole sua API Key aqui'}
                 className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-700 bg-slate-950/80 text-xs font-mono text-white placeholder:text-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
               <button
@@ -477,11 +605,50 @@ export const AgentCenterView: React.FC = () => {
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Salvar Chave & Atualizar Modelos Agora</span>
+                  <span>Validar Conexão & Salvar Chave</span>
                 </>
               )}
             </button>
           </div>
+
+          {/* Diagnóstico Inteligente em caso de Falha ou Chave Expirada */}
+          {connectionDiagnostic && (
+            <div className="mt-3 p-4 rounded-xl border border-rose-500/40 bg-rose-950/40 space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-rose-200">
+                      {connectionDiagnostic.title}
+                    </h4>
+                    <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono border border-rose-500/30">
+                      {connectionDiagnostic.code}
+                    </span>
+                  </div>
+                  <p className="text-xs text-rose-300">
+                    {connectionDiagnostic.suggestion}
+                  </p>
+                </div>
+              </div>
+
+              {connectionDiagnostic.consoleUrl && (
+                <div className="pt-2 flex items-center gap-3 border-t border-rose-500/20">
+                  <a
+                    href={connectionDiagnostic.consoleUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Acessar Console para Gerar Nova Chave</span>
+                  </a>
+                  <span className="text-[11px] text-rose-300">
+                    Gere uma nova chave lá, copie e cole no campo acima para revalidar.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Notificações de Ação */}
@@ -491,7 +658,7 @@ export const AgentCenterView: React.FC = () => {
             <span>{actionSuccessMsg}</span>
           </div>
         )}
-        {actionErrorMsg && (
+        {actionErrorMsg && !connectionDiagnostic && (
           <div className="mt-4 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
             <span>{actionErrorMsg}</span>

@@ -1,6 +1,127 @@
 import { AiModelChainItem, AiProviderConfig, AiProviderName, AiModelCategory } from '../types';
 import { storage } from './storageService';
 
+export interface AiProviderPreset {
+  id: string;
+  name: string;
+  endpointUrl: string;
+  placeholder: string;
+  description: string;
+  suggestedPrimaryModel: string;
+  keyPrefix?: string[];
+  consoleUrl?: string;
+  badge?: string;
+}
+
+export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
+  {
+    id: 'opencode_go',
+    name: 'OpenCode Go',
+    endpointUrl: 'https://opencode.ai/zen/go/v1',
+    placeholder: 'opencode_zen_... ou sk-...',
+    description: 'Catálogo unificado oficial OpenCode Go (DeepSeek, GPT-5.6 Luna e Claude Haiku).',
+    suggestedPrimaryModel: 'deepseek-v4-pro',
+    keyPrefix: ['opencode', 'zen'],
+    consoleUrl: 'https://opencode.ai/console',
+    badge: 'Recomendado'
+  },
+  {
+    id: 'opencode_api',
+    name: 'OpenCode API Padrão',
+    endpointUrl: 'https://api.opencode.ai/v1',
+    placeholder: 'sk-...',
+    description: 'Endpoint legado/alternativo da OpenCode compatível com SDKs padrão OpenAI.',
+    suggestedPrimaryModel: 'deepseek-v4-pro',
+    consoleUrl: 'https://opencode.ai/console'
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    endpointUrl: 'https://openrouter.ai/api/v1',
+    placeholder: 'sk-or-v1-...',
+    description: 'Hub global com mais de 200 modelos (Anthropic Claude, DeepSeek R1, GPT-4o, Llama 3).',
+    suggestedPrimaryModel: 'deepseek/deepseek-r1',
+    keyPrefix: ['sk-or-'],
+    consoleUrl: 'https://openrouter.ai/keys',
+    badge: 'Multi-Modelos'
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI Oficial',
+    endpointUrl: 'https://api.openai.com/v1',
+    placeholder: 'sk-proj-... ou sk-...',
+    description: 'Acesso direto aos modelos oficiais GPT-4o, GPT-4o-mini e o1 da OpenAI.',
+    suggestedPrimaryModel: 'gpt-4o-mini',
+    keyPrefix: ['sk-proj-', 'sk-admin-'],
+    consoleUrl: 'https://platform.openai.com/api-keys'
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini (AI Studio)',
+    endpointUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    placeholder: 'AIzaSy...',
+    description: 'Modelos Gemini 1.5 Flash e 2.0 com alta velocidade e plano gratuito generoso.',
+    suggestedPrimaryModel: 'gemini-1.5-flash',
+    keyPrefix: ['AIzaSy'],
+    consoleUrl: 'https://aistudio.google.com/app/apikey',
+    badge: 'Grátis Disponível'
+  },
+  {
+    id: 'groq',
+    name: 'Groq (Ultra-Rápido)',
+    endpointUrl: 'https://api.groq.com/openai/v1',
+    placeholder: 'gsk_...',
+    description: 'Inferência em chips LPU ultra-rápidos com centenas de tokens por segundo.',
+    suggestedPrimaryModel: 'llama-3.3-70b-versatile',
+    keyPrefix: ['gsk_'],
+    consoleUrl: 'https://console.groq.com/keys',
+    badge: 'Sub-segundo'
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek Oficial',
+    endpointUrl: 'https://api.deepseek.com/v1',
+    placeholder: 'sk-...',
+    description: 'Acesso direto aos modelos DeepSeek-V3 e DeepSeek-R1 (alta performance e economia).',
+    suggestedPrimaryModel: 'deepseek-chat',
+    consoleUrl: 'https://platform.deepseek.com/api_keys'
+  },
+  {
+    id: 'custom',
+    name: 'Personalizado (OpenAI-Compatible)',
+    endpointUrl: '',
+    placeholder: 'Qualquer API key',
+    description: 'Compatível com qualquer servidor local ou proxy (LiteLLM, Ollama, LM Studio, OneAPI).',
+    suggestedPrimaryModel: 'deepseek-v4-pro',
+    badge: 'Custom URL'
+  }
+];
+
+export function detectProviderFromKey(apiKey: string): AiProviderPreset | null {
+  const clean = apiKey.trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('sk-or-')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'openrouter') || null;
+  }
+  if (clean.startsWith('AIzaSy')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'gemini') || null;
+  }
+  if (clean.startsWith('gsk_')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'groq') || null;
+  }
+  if (clean.startsWith('sk-ant-')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'openrouter') || null;
+  }
+  if (clean.startsWith('sk-proj-') || clean.startsWith('sk-admin-')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'openai') || null;
+  }
+  if (clean.toLowerCase().startsWith('opencode') || clean.toLowerCase().startsWith('zen-')) {
+    return AI_PROVIDER_PRESETS.find(p => p.id === 'opencode_go') || null;
+  }
+  return null;
+}
+
 /**
  * Catálogo base resiliente atualizado com os novos modelos de ponta
  */
@@ -421,14 +542,24 @@ export class AiModelCatalogService {
   }
 
   /**
-   * Conecta a chave de API do OpenCode Go, importa todos os modelos disponíveis e valida a conexão em tempo real
+   * Conecta a chave de API e endpoint, importa todos os modelos disponíveis e valida a conexão em tempo real
    */
-  public static async connectAndSync(apiKey: string): Promise<{
+  public static async connectAndSync(
+    apiKey: string,
+    customEndpoint?: string,
+    preferredPrimaryModel?: string
+  ): Promise<{
     success: boolean;
     message: string;
     modelsCount: number;
     latencyMs?: number;
     primaryModel?: string;
+    statusCode?: number;
+    errorDiagnostic?: {
+      code: string;
+      title: string;
+      suggestion: string;
+    };
   }> {
     const cleanKey = apiKey.trim();
     if (!cleanKey) {
@@ -440,12 +571,14 @@ export class AiModelCatalogService {
     }
 
     const currentConfig = storage.getAiConfig();
+    const targetEndpoint = (customEndpoint || currentConfig.endpointUrl || 'https://opencode.ai/zen/go/v1').trim().replace(/\/+$/, '');
+    
     const updatedConfig: AiProviderConfig = {
       ...currentConfig,
       apiKey: cleanKey,
       enabled: true,
-      endpointUrl: 'https://opencode.ai/zen/go/v1',
-      primaryModel: currentConfig.primaryModel || 'deepseek-v4-pro',
+      endpointUrl: targetEndpoint,
+      primaryModel: preferredPrimaryModel || currentConfig.primaryModel || 'deepseek-v4-pro',
       fallbackModels: currentConfig.fallbackModels && currentConfig.fallbackModels.length > 0 
         ? currentConfig.fallbackModels 
         : ['deepseek-v4.1-flash', 'gpt-5.6-luna', 'claude-haiku-5-5', 'qwen3.8-max']
@@ -459,7 +592,7 @@ export class AiModelCatalogService {
 
     // Se o modelo primário configurado não estiver nos modelos descobertos, seleciona o primeiro recomendado
     const recommended = discovered.find(m => m.recommendedForApp && !m.isDevAgentOnly);
-    const targetModel = recommended ? recommended.id : 'deepseek-v4.1-flash';
+    const targetModel = preferredPrimaryModel || (recommended ? recommended.id : 'deepseek-v4.1-flash');
 
     if (!discovered.some(m => m.id === updatedConfig.primaryModel)) {
       updatedConfig.primaryModel = targetModel;
@@ -479,42 +612,76 @@ export class AiModelCatalogService {
           preferredModel: targetModel,
           fallbackModels: [],
           customApiKey: cleanKey,
+          customEndpoint: targetEndpoint,
           temperature: 0.1,
           maxTokens: 5
         })
       });
 
       const latencyMs = Date.now() - startTime;
+      let pingData: any = {};
+      try {
+        pingData = await pingRes.json();
+      } catch {
+        pingData = {};
+      }
 
-      if (pingRes.ok) {
-        const pingData = await pingRes.json();
-        if (pingData.success) {
-          return {
-            success: true,
-            message: `Conexão bem-sucedida com o OpenCode Go! ${discovered.length} modelos importados e prontos para uso (${latencyMs}ms).`,
-            modelsCount: discovered.length,
-            latencyMs,
-            primaryModel: updatedConfig.primaryModel
+      if (pingRes.ok && pingData.success) {
+        return {
+          success: true,
+          message: `Conexão validada com sucesso! ${discovered.length} modelos sincronizados e prontos para uso (${latencyMs}ms).`,
+          modelsCount: discovered.length,
+          latencyMs,
+          statusCode: 200,
+          primaryModel: updatedConfig.primaryModel
+        };
+      } else {
+        const rawError = pingData.error || (pingData.attempts?.[0]?.errorMessage) || `Erro HTTP ${pingRes.status}`;
+        const lowerErr = rawError.toLowerCase();
+        let diag = {
+          code: 'EXECUTION_FAILED',
+          title: 'Falha na Validação da Chave',
+          suggestion: 'Verifique se a chave de API informada é válida para este endpoint ou selecione outro provedor.'
+        };
+
+        if (lowerErr.includes('expired') || lowerErr.includes('key has expired')) {
+          diag = {
+            code: 'API_KEY_EXPIRED',
+            title: 'Chave de API Expirada',
+            suggestion: 'Esta chave foi invalidada pelo provedor por segurança. Acesse o console oficial do provedor (ex: opencode.ai/console), gere uma nova chave de API e cole-a aqui.'
           };
-        } else {
-          return {
-            success: false,
-            message: `Chave salva e ${discovered.length} modelos carregados, mas o teste retornou: ${pingData.error || 'Credencial inválida'}`,
-            modelsCount: discovered.length,
-            latencyMs,
-            primaryModel: updatedConfig.primaryModel
+        } else if (pingRes.status === 401 || lowerErr.includes('unauthorized') || lowerErr.includes('invalid key')) {
+          diag = {
+            code: 'UNAUTHORIZED',
+            title: 'Credencial Inválida (HTTP 401)',
+            suggestion: 'A chave de API informada não foi aceita pelo servidor. Revise se você copiou todos os caracteres corretamente sem espaços.'
+          };
+        } else if (pingRes.status === 429 || lowerErr.includes('rate limit')) {
+          diag = {
+            code: 'RATE_LIMIT',
+            title: 'Limite de Requisições Atingido (HTTP 429)',
+            suggestion: 'O provedor retornou limite de taxa atingido. Aguarde alguns instantes ou troque de provedor/modelo.'
           };
         }
-      }
-    } catch {
-      // Gateway indisponível ou offline
-    }
 
-    return {
-      success: true,
-      message: `Chave configurada e ${discovered.length} modelos sincronizados com sucesso no aplicativo.`,
-      modelsCount: discovered.length,
-      primaryModel: updatedConfig.primaryModel
-    };
+        return {
+          success: false,
+          message: `Chave salva e ${discovered.length} modelos carregados, mas a validação retornou: ${rawError}`,
+          modelsCount: discovered.length,
+          latencyMs,
+          statusCode: pingRes.status,
+          primaryModel: updatedConfig.primaryModel,
+          errorDiagnostic: diag
+        };
+      }
+    } catch (err: any) {
+      // Gateway indisponível ou offline
+      return {
+        success: true,
+        message: `Chave configurada e ${discovered.length} modelos sincronizados localmente no aplicativo (Gateway em background).`,
+        modelsCount: discovered.length,
+        primaryModel: updatedConfig.primaryModel
+      };
+    }
   }
 }

@@ -44,7 +44,9 @@ const ProtocolAdapters = {
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'x-opencode-session': sessionTag
+        'x-opencode-session': sessionTag,
+        'HTTP-Referer': 'https://contaju.com.br',
+        'X-Title': 'Contaju Financeiro'
       };
       const body = {
         model,
@@ -169,24 +171,22 @@ export default async function handler(req, res) {
     companyId = 'comp-1'
   } = req.body || {};
 
-  // Chave do provedor server-side
-  const rawApiKey = process.env.OPENCODE_API_KEY || 
-                    process.env.AI_GATEWAY_KEY || 
-                    process.env.GEMINI_API_KEY || 
-                    customApiKey;
-  const serverApiKey = typeof rawApiKey === 'string' ? rawApiKey.trim() : rawApiKey;
+  // Chave do provedor server-side com prioridade absoluta para a chave configurada pelo usuário
+  const userProvidedKey = typeof customApiKey === 'string' ? customApiKey.trim() : '';
+  const serverFallbackKey = process.env.OPENCODE_API_KEY || 
+                            process.env.AI_GATEWAY_KEY || 
+                            process.env.GEMINI_API_KEY || '';
+  const serverApiKey = userProvidedKey || (typeof serverFallbackKey === 'string' ? serverFallbackKey.trim() : '');
 
-  let rawEndpoint = (process.env.AI_ENDPOINT_URL || req.body?.customEndpoint || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
-  // Migra endpoint legado se informado
-  if (rawEndpoint.includes('api.opencode.ai/v1')) {
-    rawEndpoint = 'https://opencode.ai/zen/go/v1';
-  }
+  // Endpoint livremente configurável (OpenCode Go, OpenCode API, OpenRouter, OpenAI, Gemini, Groq ou Custom)
+  const userEndpoint = typeof req.body?.customEndpoint === 'string' ? req.body.customEndpoint.trim() : '';
+  const rawEndpoint = (userEndpoint || process.env.AI_ENDPOINT_URL || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
   const endpoint = rawEndpoint;
 
   if (!serverApiKey) {
     return res.status(503).json({
       success: false,
-      error: 'Provedor de IA não configurado. Por favor, informe sua Chave OpenCode Go nas Configurações de IA ou configure OPENCODE_API_KEY no servidor.',
+      error: 'Provedor de IA não configurado. Por favor, informe sua Chave de API nas Configurações de IA ou configure OPENCODE_API_KEY no servidor.',
       code: 'AI_PROVIDER_NOT_CONFIGURED'
     });
   }

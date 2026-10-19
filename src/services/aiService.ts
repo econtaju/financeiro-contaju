@@ -42,10 +42,7 @@ export class AiService {
     const config = this.getConfig();
     const rawKey = customApiKey !== undefined ? customApiKey : config.apiKey;
     const apiKey = typeof rawKey === 'string' ? rawKey.trim() : rawKey;
-    let endpoint = (customEndpoint || config.endpointUrl || 'https://opencode.ai/zen/go/v1').replace(/\/+$/, '');
-    if (endpoint.includes('api.opencode.ai/v1')) {
-      endpoint = 'https://opencode.ai/zen/go/v1';
-    }
+    let endpoint = (customEndpoint || config.endpointUrl || 'https://opencode.ai/zen/go/v1').trim().replace(/\/+$/, '');
 
     if (!apiKey) {
       return { 
@@ -170,6 +167,8 @@ export class AiService {
     agentRole?: AgentRoleType;
     allowedTools?: string[];
     temperature?: number;
+    customApiKey?: string;
+    customEndpoint?: string;
   }): Promise<{
     success: boolean;
     content: string;
@@ -183,7 +182,7 @@ export class AiService {
     };
   }> {
     const config = this.getConfig();
-    const apiKey = config.apiKey?.trim();
+    const apiKey = (options.customApiKey !== undefined ? options.customApiKey.trim() : config.apiKey?.trim()) || '';
 
     if (!apiKey) {
       return {
@@ -191,7 +190,7 @@ export class AiService {
         content: '',
         modelUsed: options.model,
         latencyMs: 0,
-        error: 'Chave de API do OpenCode Go não configurada.',
+        error: 'Chave de API não configurada.',
         errorDiagnostic: {
           code: 'AUTH_MISSING_KEY',
           title: 'Chave de API Ausente',
@@ -231,37 +230,46 @@ export class AiService {
       featureName: `Sandbox: ${options.agentRole || 'Agente Customizado'}`,
       agentRole: options.agentRole || 'CFO_EXECUTIVO',
       temperature: options.temperature ?? 0.3,
-      maxTokens: 1000
+      maxTokens: 1000,
+      customApiKey: apiKey,
+      customEndpoint: options.customEndpoint || config.endpointUrl
     });
     const latencyMs = Date.now() - startTime;
 
     if (!res.success) {
       const rawError = res.attempts[res.attempts.length - 1]?.errorMessage || 'Erro inesperado na chamada da IA.';
+      const lowerErr = rawError.toLowerCase();
       let diag = {
         code: 'EXECUTION_FAILED',
         title: 'Falha na Execução do Modelo',
         suggestion: 'Verifique se o modelo selecionado está disponível no seu plano ou tente selecionar outro modelo como DeepSeek ou Claude.'
       };
 
-      if (rawError.includes('429') || rawError.toLowerCase().includes('rate limit')) {
+      if (lowerErr.includes('expired') || lowerErr.includes('key has expired')) {
+        diag = {
+          code: 'API_KEY_EXPIRED',
+          title: 'Chave de API Expirada no Provedor',
+          suggestion: 'A OpenCode ou seu provedor invalidou esta chave por segurança. Acesse console.opencode.ai, gere uma nova chave de API e atualize-a no sistema.'
+        };
+      } else if (rawError.includes('429') || lowerErr.includes('rate limit')) {
         diag = {
           code: 'RATE_LIMIT',
           title: 'Limite de Requisições Atingido (Rate Limit - HTTP 429)',
           suggestion: 'O provedor deste modelo está momentaneamente saturado. Ative a cadeia de contingência ou selecione outro modelo.'
         };
-      } else if (rawError.includes('401') || rawError.toLowerCase().includes('unauthorized') || rawError.toLowerCase().includes('invalid key')) {
+      } else if (rawError.includes('401') || lowerErr.includes('unauthorized') || lowerErr.includes('invalid key')) {
         diag = {
           code: 'UNAUTHORIZED',
-          title: 'Chave Inválida ou Expirada (HTTP 401)',
-          suggestion: 'A chave OpenCode Go informada não foi aceita pelo servidor. Revise e salve uma chave válida na Central de Agentes.'
+          title: 'Chave Inválida (HTTP 401)',
+          suggestion: 'A chave de API informada não foi aceita pelo provedor. Verifique se a chave foi copiada integralmente sem espaços extras.'
         };
-      } else if (rawError.includes('404') || rawError.toLowerCase().includes('model not found')) {
+      } else if (rawError.includes('404') || lowerErr.includes('model not found')) {
         diag = {
           code: 'MODEL_NOT_FOUND',
           title: 'Modelo Não Encontrado (HTTP 404)',
-          suggestion: 'Este modelo específico não está liberado para a sua conta. Escolha outro modelo no catálogo disponível.'
+          suggestion: 'Este modelo específico não está liberado para a sua conta ou chave. Escolha outro modelo no catálogo disponível.'
         };
-      } else if (rawError.toLowerCase().includes('conexão') || rawError.toLowerCase().includes('fetch')) {
+      } else if (lowerErr.includes('conexão') || lowerErr.includes('fetch')) {
         diag = {
           code: 'NETWORK_GATEWAY',
           title: 'Falha de Conexão com o Gateway',
@@ -300,13 +308,15 @@ export class AiService {
       featureName?: string;
       agentRole?: AgentRoleType;
       preferredModel?: string;
+      customApiKey?: string;
+      customEndpoint?: string;
     } = {}
   ): Promise<AiExecutionResult> {
     const config = this.getConfig();
     const startTimeTotal = Date.now();
     const role: AgentRoleType = options.agentRole || 'CFO_EXECUTIVO';
 
-    const apiKey = config.apiKey?.trim();
+    const apiKey = (options.customApiKey !== undefined ? options.customApiKey.trim() : config.apiKey?.trim()) || '';
     if (!apiKey) {
       return {
         success: false,
@@ -317,7 +327,7 @@ export class AiService {
           model: 'NONE',
           durationMs: 0,
           success: false,
-          errorMessage: 'Chave de API não informada. Por favor, insira sua chave OpenCode Go nas Configurações de IA.'
+          errorMessage: 'Chave de API não informada. Por favor, insira sua chave nas Configurações de IA.'
         }],
         totalDurationMs: 0
       };
@@ -338,7 +348,7 @@ export class AiService {
           preferredModel: options.preferredModel || config.primaryModel,
           fallbackModels: config.fallbackModels || [],
           customApiKey: apiKey,
-          customEndpoint: config.endpointUrl || undefined
+          customEndpoint: options.customEndpoint || config.endpointUrl || undefined
         })
       });
 

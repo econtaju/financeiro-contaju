@@ -28,11 +28,12 @@ import {
   Filter,
   CheckCheck,
   ExternalLink,
-  Code
+  Code,
+  Globe
 } from 'lucide-react';
 import { AiProviderConfig, AiModelChainItem, AiProviderName, AiModelCategory } from '../../types';
 import { AiService } from '../../services/aiService';
-import { AiModelCatalogService } from '../../services/aiModelCatalogService';
+import { AiModelCatalogService, AI_PROVIDER_PRESETS, detectProviderFromKey } from '../../services/aiModelCatalogService';
 import { storage } from '../../services/storageService';
 
 export const AiConfigView: React.FC = () => {
@@ -321,6 +322,37 @@ export const AiConfigView: React.FC = () => {
           </label>
         </div>
 
+        {/* Presets Rápidos de Provedores */}
+        <div className="space-y-1.5 pt-1">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-amber-500" />
+            <span>Presets Rápidos de Provedores Compatíveis:</span>
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {AI_PROVIDER_PRESETS.map((p) => {
+              const isSelected = p.endpointUrl && config.endpointUrl && p.endpointUrl.replace(/\/+$/, '') === config.endpointUrl.replace(/\/+$/, '');
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    if (p.endpointUrl) {
+                      setConfig(prev => ({ ...prev, endpointUrl: p.endpointUrl }));
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/40'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <span>{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -330,8 +362,16 @@ export const AiConfigView: React.FC = () => {
               <input
                 type={showApiKey ? 'text' : 'password'}
                 value={config.apiKey}
-                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                placeholder="Ex: opencode_sk_live_... (Deixe em branco para usar Gateway do Servidor)"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const detected = detectProviderFromKey(val);
+                  if (detected && detected.endpointUrl) {
+                    setConfig(prev => ({ ...prev, apiKey: val, endpointUrl: detected.endpointUrl }));
+                  } else {
+                    setConfig(prev => ({ ...prev, apiKey: val }));
+                  }
+                }}
+                placeholder="Ex: opencode_sk_live_..., sk-or-..., AIzaSy... ou gsk_..."
                 className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#19202D] text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
               <button
@@ -344,7 +384,7 @@ export const AiConfigView: React.FC = () => {
               </button>
             </div>
             <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
-              🛡️ Se configurada na Vercel (process.env.OPENCODE_API_KEY), o app utiliza o gateway serverless seguro sem expor credenciais no navegador.
+              🛡️ A chave informada aqui tem prioridade absoluta sobre variáveis de ambiente do servidor.
             </span>
           </div>
 
@@ -358,7 +398,7 @@ export const AiConfigView: React.FC = () => {
                 onClick={() => setConfig({ ...config, endpointUrl: 'https://opencode.ai/zen/go/v1' })}
                 className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer font-semibold"
               >
-                Restaurar Padrão OpenCode Go
+                Restaurar OpenCode Go
               </button>
             </div>
             <input
@@ -369,7 +409,7 @@ export const AiConfigView: React.FC = () => {
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#19202D] text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
             <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
-              Compatível com Chat Completions, Anthropic Messages e OpenAI Responses.
+              Compatível com Chat Completions, OpenRouter, OpenAI, Gemini e Groq.
             </span>
           </div>
         </div>

@@ -25,7 +25,9 @@ import {
   Send,
   CheckCircle2,
   RefreshCw,
-  Terminal
+  Terminal,
+  Key,
+  ExternalLink
 } from 'lucide-react';
 import { AgentDefinition, AgentRoleType, AiModelChainItem } from '../../types';
 import { INITIAL_AGENT_DEFINITIONS } from '../../data/initialAgentsData';
@@ -149,6 +151,56 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
           code: 'CLIENT_EXCEPTION',
           title: 'Erro de Execução Local',
           suggestion: 'Verifique se a aplicação está em execução e conectada à internet.'
+        }
+      });
+    } finally {
+      setIsExecutingSandbox(false);
+    }
+  };
+
+  // Estados para atualização rápida de chave dentro do modal caso tenha expirado
+  const [quickApiKeyInput, setQuickApiKeyInput] = useState('');
+  const [showQuickKeyInput, setShowQuickKeyInput] = useState(false);
+
+  const handleSaveQuickKeyAndRetest = async () => {
+    if (!quickApiKeyInput.trim()) return;
+    const current = AiService.getConfig();
+    AiService.saveConfig({
+      ...current,
+      apiKey: quickApiKeyInput.trim(),
+      enabled: true
+    });
+    setFeedbackMsg({ type: 'success', text: 'Chave atualizada! Disparando novo teste...' });
+    setTimeout(() => setFeedbackMsg(null), 3000);
+    setShowQuickKeyInput(false);
+
+    setIsExecutingSandbox(true);
+    setSandboxResult(null);
+    try {
+      const res = await AiService.testAgentCustomSandbox({
+        systemPrompt: systemPrompt.trim(),
+        userPrompt: sandboxQuestion.trim(),
+        model: defaultModel,
+        agentRole: agent.role,
+        allowedTools,
+        customApiKey: quickApiKeyInput.trim()
+      });
+      setSandboxResult(res);
+      if (res.success) {
+        setFeedbackMsg({ type: 'success', text: `Sucesso! Resposta gerada via ${res.modelUsed} em ${res.latencyMs}ms!` });
+        setTimeout(() => setFeedbackMsg(null), 4000);
+      }
+    } catch (err: any) {
+      setSandboxResult({
+        success: false,
+        content: '',
+        modelUsed: defaultModel,
+        latencyMs: 0,
+        error: err.message || 'Falha inesperada no teste.',
+        errorDiagnostic: {
+          code: 'CLIENT_EXCEPTION',
+          title: 'Erro de Execução Local',
+          suggestion: 'Verifique se a aplicação está em execução.'
         }
       });
     } finally {
@@ -917,6 +969,48 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
                             💡 Diagnóstico e Como Corrigir:
                           </strong>
                           <p>{sandboxResult.errorDiagnostic.suggestion}</p>
+                        </div>
+                      )}
+
+                      {/* Opção de Atualização Rápida de Chave em caso de Chave Expirada ou Ausente */}
+                      {(sandboxResult.errorDiagnostic?.code === 'API_KEY_EXPIRED' || 
+                        sandboxResult.errorDiagnostic?.code === 'AUTH_MISSING_KEY' || 
+                        sandboxResult.errorDiagnostic?.code === 'UNAUTHORIZED') && (
+                        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/80 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                              <Key className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Atualizar Chave de API Sem Fechar Este Modal:</span>
+                            </span>
+                            <a
+                              href="https://opencode.ai/console"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-amber-400 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer font-semibold"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Acessar Console OpenCode</span>
+                            </a>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="password"
+                              value={quickApiKeyInput}
+                              onChange={(e) => setQuickApiKeyInput(e.target.value)}
+                              placeholder="Cole a nova chave de API aqui para salvar e retestar..."
+                              className="flex-1 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSaveQuickKeyAndRetest}
+                              disabled={isExecutingSandbox || !quickApiKeyInput.trim()}
+                              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Salvar & Retestar</span>
+                            </button>
+                          </div>
                         </div>
                       )}
 

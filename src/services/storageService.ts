@@ -2127,12 +2127,6 @@ class StorageService {
     const config = this.get(STORAGE_KEYS.AI_CONFIG, DEFAULT_AI_CONFIG);
     let needsUpdate = false;
 
-    // Migração transparente de endpoint legado para o endpoint oficial do OpenCode Go
-    if (config.endpointUrl && config.endpointUrl.includes('api.opencode.ai/v1')) {
-      config.endpointUrl = 'https://opencode.ai/zen/go/v1';
-      needsUpdate = true;
-    }
-
     // Se o modelo primário for claude-3-5-sonnet (não anunciado no Go), migra para deepseek-v4-pro
     if (config.primaryModel === 'claude-3-5-sonnet') {
       config.primaryModel = 'deepseek-v4-pro';
