@@ -39,6 +39,7 @@ interface CashLiquiditySimulationWidgetProps {
   contracts: Contract[];
   counterparties: Counterparty[];
   onSelectTitle?: (title: FinancialTitle) => void;
+  onOpenStressTesting?: () => void;
 }
 
 export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidgetProps> = ({
@@ -48,7 +49,8 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
   allPayables = [],
   contracts = [],
   counterparties = [],
-  onSelectTitle
+  onSelectTitle,
+  onOpenStressTesting
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -240,6 +242,19 @@ export const CashLiquiditySimulationWidget: React.FC<CashLiquiditySimulationWidg
             <Sliders className="w-3.5 h-3.5 text-slate-950" />
             <span>Personalizar Cenário</span>
           </button>
+
+          {/* Atalho para o Simulador de Estresse (180 Dias) */}
+          {onOpenStressTesting && (
+            <button
+              type="button"
+              onClick={onOpenStressTesting}
+              className="px-3.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 dark:text-amber-300 border border-amber-500/30 font-bold rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-2xs"
+              title="Abrir Simulador de Estresse e Churn para os próximos 180 dias"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+              <span>Estresse 180 Dias</span>
+            </button>
+          )}
         </div>
       </div>
 

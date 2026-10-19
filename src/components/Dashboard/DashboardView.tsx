@@ -45,6 +45,7 @@ import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
 import { AnnualKpiComparisonView } from './AnnualKpiComparisonView';
 import { ChurnRiskWidget } from './ChurnRiskWidget';
 import { CohortRetentionView } from './CohortRetentionView';
+import { StressTestingView } from './StressTestingView';
 import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
 import { EditTitleModal } from '../Modals/EditTitleModal';
 
@@ -82,8 +83,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Trigger para recálculo instantâneo ao salvar alterações de títulos
   const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
-  // Tab: 'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'KPIS_CONFIG'
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'KPIS_CONFIG'>('DASHBOARD');
+  // Tab: 'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'STRESS_TEST' | 'KPIS_CONFIG'
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'STRESS_TEST' | 'KPIS_CONFIG'>('DASHBOARD');
   // Modo de exibição no bloco de KPIs: 'MONTH_CARDS' | 'ANNUAL_TABLE'
   const [kpiDisplayMode, setKpiDisplayMode] = useState<'MONTH_CARDS' | 'ANNUAL_TABLE'>('MONTH_CARDS');
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -501,6 +502,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Risco de Churn & Health Score
             </button>
             <button
+              onClick={() => setActiveTab('STRESS_TEST')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+                activeTab === 'STRESS_TEST'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-500" />
+              Simulador de Estresse (180 Dias)
+            </button>
+            <button
               onClick={() => setActiveTab('KPIS_CONFIG')}
               className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
                 activeTab === 'KPIS_CONFIG'
@@ -553,6 +565,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             contracts={contracts}
             counterparties={counterparties}
             onSelectTitle={handleOpenEditTitle}
+            onOpenStressTesting={() => setActiveTab('STRESS_TEST')}
           />
 
           {/* WIDGET: DETECÇÃO PREDITIVA DE RISCO DE CHURN (HEALTH SCORE) */}
@@ -1307,6 +1320,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {activeTab === 'CHURN_RISK' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <ChurnRiskWidget onNavigateScreen={onNavigate} isCompactMode={false} />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: SIMULADOR DE ESTRESSE DE CAIXA E CHURN (180 DIAS)                  */}
+      {/* ========================================================================= */}
+      {activeTab === 'STRESS_TEST' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <StressTestingView onNavigateScreen={onNavigate} />
         </div>
       )}
 
