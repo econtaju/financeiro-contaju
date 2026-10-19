@@ -29,7 +29,8 @@ import {
   UserPlus,
   UserCheck,
   UserMinus,
-  Table
+  Table,
+  ShieldAlert
 } from 'lucide-react';
 import { BankAccount, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
@@ -42,6 +43,8 @@ import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { PendingAlertsWidget } from './PendingAlertsWidget';
 import { CashLiquiditySimulationWidget } from './CashLiquiditySimulationWidget';
 import { AnnualKpiComparisonView } from './AnnualKpiComparisonView';
+import { ChurnRiskWidget } from './ChurnRiskWidget';
+import { CohortRetentionView } from './CohortRetentionView';
 import { BankAccountStatementModal } from '../Financial/BankAccountStatementModal';
 import { EditTitleModal } from '../Modals/EditTitleModal';
 
@@ -73,14 +76,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const safeVisibleWidgets = useMemo(() => {
     return Array.isArray(config?.visibleWidgets) && config.visibleWidgets.length > 0
       ? config.visibleWidgets
-      : ['widget_avisos_pendentes', 'widget_faturamento_resumo', 'widget_saldos_consolidados', 'widget_resumo_clientes', 'widget_dre_economico', 'widget_posicao_caixa', 'widget_proximos_vencimentos'];
+      : ['widget_avisos_pendentes', 'widget_risco_churn', 'widget_faturamento_resumo', 'widget_saldos_consolidados', 'widget_resumo_clientes', 'widget_dre_economico', 'widget_posicao_caixa', 'widget_proximos_vencimentos'];
   }, [config?.visibleWidgets]);
 
   // Trigger para recálculo instantâneo ao salvar alterações de títulos
   const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
-  // Tab: 'DASHBOARD' | 'ANNUAL_KPIS' | 'KPIS_CONFIG'
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ANNUAL_KPIS' | 'KPIS_CONFIG'>('DASHBOARD');
+  // Tab: 'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'KPIS_CONFIG'
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ANNUAL_KPIS' | 'COHORT' | 'CHURN_RISK' | 'KPIS_CONFIG'>('DASHBOARD');
   // Modo de exibição no bloco de KPIs: 'MONTH_CARDS' | 'ANNUAL_TABLE'
   const [kpiDisplayMode, setKpiDisplayMode] = useState<'MONTH_CARDS' | 'ANNUAL_TABLE'>('MONTH_CARDS');
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -476,6 +479,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Evolução Anual dos KPIs (12M)
             </button>
             <button
+              onClick={() => setActiveTab('COHORT')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+                activeTab === 'COHORT'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 mr-1.5" />
+              Retenção por Coortes
+            </button>
+            <button
+              onClick={() => setActiveTab('CHURN_RISK')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+                activeTab === 'CHURN_RISK'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
+              Risco de Churn & Health Score
+            </button>
+            <button
               onClick={() => setActiveTab('KPIS_CONFIG')}
               className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
                 activeTab === 'KPIS_CONFIG'
@@ -484,7 +509,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               }`}
             >
               <Sliders className="w-3.5 h-3.5 mr-1.5 text-slate-950" />
-              Personalizar KPIs & Widgets ({safeVisibleKpis.length} ativos)
+              Personalizar ({safeVisibleKpis.length} KPIs)
             </button>
           </div>
 
@@ -529,6 +554,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             counterparties={counterparties}
             onSelectTitle={handleOpenEditTitle}
           />
+
+          {/* WIDGET: DETECÇÃO PREDITIVA DE RISCO DE CHURN (HEALTH SCORE) */}
+          {safeVisibleWidgets.includes('widget_risco_churn') && (
+            <ChurnRiskWidget onNavigateScreen={onNavigate} isCompactMode={true} />
+          )}
 
           {/* WIDGETS CONFIGURÁVEIS SOLICITADOS: FATURAMENTO & SALDOS BANCÁRIOS CONSOLIDADOS */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1263,7 +1293,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: CENTRAL DE CONFIGURAÇÃO DE KPIS & WIDGETS (SOLICITAÇÃO DO USUÁRIO)  */}
+      {/* TAB 3: ANÁLISE DE COORTES (RETENÇÃO DE CONTRATOS & NRR)                   */}
+      {/* ========================================================================= */}
+      {activeTab === 'COHORT' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <CohortRetentionView onNavigateScreen={onNavigate} />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: GESTÃO DE RISCO DE CHURN & HEALTH SCORE DOS CLIENTES               */}
+      {/* ========================================================================= */}
+      {activeTab === 'CHURN_RISK' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <ChurnRiskWidget onNavigateScreen={onNavigate} isCompactMode={false} />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: CENTRAL DE CONFIGURAÇÃO DE KPIS & WIDGETS (SOLICITAÇÃO DO USUÁRIO)  */}
       {/* ========================================================================= */}
       {activeTab === 'KPIS_CONFIG' && (
         <div className="space-y-6 animate-in fade-in duration-200">

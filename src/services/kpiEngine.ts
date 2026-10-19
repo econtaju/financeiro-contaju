@@ -16,6 +16,11 @@ export interface AnnualKpiRow {
   annualGrowth: number; // Crescimento ou evolução percentual no período
   positiveDirection: 'UP' | 'DOWN'; // 'UP' = subir é positivo (ex: receita); 'DOWN' = descer é positivo (ex: churn, inadimplência)
   aggregationType: 'SUM' | 'AVERAGE' | 'LATEST';
+  // Metas Orçamentárias
+  targetValuesByMonth?: number[];
+  targetPeriodTotal?: number;
+  targetAchievementRate?: number; // % atingimento (Realizado / Meta * 100)
+  targetDiff?: number;
 }
 
 export class KpiEngine {
@@ -29,6 +34,7 @@ export class KpiEngine {
     const titles = storage.getTitles();
     const settlements = storage.getSettlements().filter(s => !s.isReversed);
     const bankAccounts = storage.getBankAccounts();
+    const kpiTargets = storage.getKpiTargets(year);
 
     const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
 
@@ -200,6 +206,34 @@ export class KpiEngine {
         annualGrowth = 100;
       }
 
+      // Metas do KPI para o ano
+      const matchingTarget = kpiTargets.find(t => t.kpiId === id);
+      const targetValues = matchingTarget?.monthlyTargets || Array.from({ length: 12 }, () => 0);
+      const activeTargetValues = activeMonthIndices.map(i => targetValues[i] || 0);
+
+      let targetPeriodTotal = 0;
+      if (aggregationType === 'SUM') {
+        targetPeriodTotal = activeTargetValues.reduce((acc, v) => acc + v, 0);
+      } else if (aggregationType === 'AVERAGE') {
+        const nonZeroT = activeTargetValues.filter(v => v !== 0);
+        targetPeriodTotal = nonZeroT.length > 0 ? activeTargetValues.reduce((acc, v) => acc + v, 0) / nonZeroT.length : 0;
+      } else {
+        targetPeriodTotal = activeTargetValues[activeTargetValues.length - 1] || 0;
+      }
+
+      let targetAchievementRate: number | undefined = undefined;
+      if (targetPeriodTotal !== 0) {
+        if (positiveDirection === 'UP') {
+          targetAchievementRate = Math.round((periodTotal / targetPeriodTotal) * 1000) / 10;
+        } else {
+          targetAchievementRate = periodTotal <= targetPeriodTotal 
+            ? Math.round((100 + ((targetPeriodTotal - periodTotal) / targetPeriodTotal) * 100) * 10) / 10
+            : Math.round((targetPeriodTotal / Math.max(0.001, periodTotal)) * 1000) / 10;
+        }
+      }
+
+      const targetDiff = Math.round((periodTotal - targetPeriodTotal) * 100) / 100;
+
       return {
         id,
         name,
@@ -210,7 +244,11 @@ export class KpiEngine {
         periodTotal: Math.round(periodTotal * 100) / 100,
         annualGrowth: Math.round(annualGrowth * 10) / 10,
         aggregationType,
-        positiveDirection
+        positiveDirection,
+        targetValuesByMonth: targetValues,
+        targetPeriodTotal: Math.round(targetPeriodTotal * 100) / 100,
+        targetAchievementRate,
+        targetDiff
       };
     };
 

@@ -978,3 +978,69 @@ export interface AgentAuditEvent {
   status: 'PROPOSTO' | 'APROVADO' | 'REJEITADO' | 'EXECUTADO';
 }
 
+// ==========================================
+// METAS ORÇAMENTÁRIAS DE KPIS
+// ==========================================
+export interface KpiTarget {
+  id: string;
+  kpiId: string;
+  year: number;
+  monthlyTargets: number[]; // 12 meses (Jan a Dez)
+  annualTarget: number;
+  description?: string;
+  updatedAt?: string;
+}
+
+// ==========================================
+// RISCO PREDITIVO DE CHURN & HEALTH SCORE
+// ==========================================
+export type ChurnRiskLevel = 'CRITICO' | 'ALTO' | 'MODERADO' | 'SAUDAVEL';
+
+export interface CustomerChurnRiskAssessment {
+  customerId: string;
+  customerName: string;
+  customerDocument?: string;
+  contractId?: string;
+  contractNumber?: string;
+  monthlyFee: number;
+  healthScore: number; // 0 a 100
+  riskLevel: ChurnRiskLevel;
+  overdueTitlesCount: number;
+  overdueAmount: number;
+  maxDaysOverdue: number;
+  historyLatePaymentRate: number; // % de faturas pagas com atraso
+  monthsActive: number;
+  isRenewalWindow: boolean; // Contrato perto dos 12 meses
+  riskFactors: string[];
+  recommendedAction: string;
+  lastContactDate?: string;
+}
+
+// ==========================================
+// ANÁLISE DE COORTES (COHORT RETENTION)
+// ==========================================
+export interface CohortMonthCell {
+  monthIndex: number; // 0 = M0, 1 = M1...
+  monthLabel: string;
+  activeCount: number;
+  retentionRate: number; // 0 a 100%
+  retainedMrr: number;
+  mrrRetentionRate: number; // 0 a 100% (Net Revenue Retention)
+}
+
+export interface CohortRow {
+  cohortKey: string; // Ex: "2026-01"
+  cohortLabel: string; // Ex: "Jan/2026"
+  initialCount: number; // Clientes no M0
+  initialMrr: number; // MRR inicial no M0
+  cells: CohortMonthCell[];
+}
+
+export interface CohortAnalysisResult {
+  cohorts: CohortRow[];
+  averageRetentionM3: number;
+  averageRetentionM6: number;
+  averageRetentionM12: number;
+  totalCohorts: number;
+}
+

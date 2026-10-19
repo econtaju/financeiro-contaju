@@ -23,12 +23,15 @@ import {
   CheckCircle,
   Sparkles,
   FileSpreadsheet,
-  Download
+  Download,
+  ShieldAlert,
+  ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Counterparty, Contract, FinancialTitle } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
+import { ChurnPredictionEngine } from '../../services/churnPredictionEngine';
 import { ClientFinancialHistoryModal } from './ClientFinancialHistoryModal';
 import { ImportClientsModal } from '../Modals/ImportClientsModal';
 import { CNPJInputField } from '../Common/CNPJInputField';
@@ -47,7 +50,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
       setSearchTerm(initialSearch);
     }
   }, [initialSearch]);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'COM_CONTRATO' | 'SEM_CONTRATO' | 'INATIVO'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'COM_CONTRATO' | 'SEM_CONTRATO' | 'RISCO_CHURN' | 'INATIVO'>('ALL');
   const [toastMessage, setToastMessage] = useState<string>('');
   const [selectedClient, setSelectedClient] = useState<Counterparty | null>(null);
   const [selectedContractForModal, setSelectedContractForModal] = useState<string | undefined>(undefined);
@@ -70,11 +73,28 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
   const activeWithContractCount = allClientsList.filter(c => c.status === 'ATIVO' && clientsWithActiveContractIds.has(c.id)).length;
   const activeWithoutContractCount = allClientsList.filter(c => c.status === 'ATIVO' && !clientsWithActiveContractIds.has(c.id)).length;
 
+  // Avaliação Preditiva de Risco de Churn para cada cliente
+  const riskAssessments = useMemo(() => {
+    return ChurnPredictionEngine.getAllCustomerRiskAssessments();
+  }, [counterparties, contracts]);
+
+  const riskAssessmentMap = useMemo(() => {
+    return new Map(riskAssessments.map(a => [a.customerId, a]));
+  }, [riskAssessments]);
+
+  const atRiskCount = useMemo(() => {
+    return riskAssessments.filter(a => a.riskLevel === 'CRITICO' || a.riskLevel === 'ALTO').length;
+  }, [riskAssessments]);
+
   const clients = allClientsList.filter(c => {
     if (statusFilter === 'ATIVO' && c.status !== 'ATIVO') return false;
     if (statusFilter === 'INATIVO' && c.status !== 'INATIVO') return false;
     if (statusFilter === 'COM_CONTRATO' && (c.status !== 'ATIVO' || !clientsWithActiveContractIds.has(c.id))) return false;
     if (statusFilter === 'SEM_CONTRATO' && (c.status !== 'ATIVO' || clientsWithActiveContractIds.has(c.id))) return false;
+    if (statusFilter === 'RISCO_CHURN') {
+      const risk = riskAssessmentMap.get(c.id);
+      if (!risk || (risk.riskLevel !== 'CRITICO' && risk.riskLevel !== 'ALTO')) return false;
+    }
     return matchesSearch([c.name, c.tradeName, c.document, c.email, c.phone, c.address, c.notes], searchTerm);
   });
 
@@ -531,6 +551,23 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
           </button>
 
           <button
+            onClick={() => setStatusFilter('RISCO_CHURN')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              statusFilter === 'RISCO_CHURN'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-[var(--text-secondary)] hover:bg-rose-500/10 hover:text-rose-400'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+            <span>Risco de Churn</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+              statusFilter === 'RISCO_CHURN' ? 'bg-white/20 text-white' : 'bg-rose-500/20 text-rose-400'
+            }`}>
+              {atRiskCount}
+            </span>
+          </button>
+
+          <button
             onClick={() => setStatusFilter('INATIVO')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               statusFilter === 'INATIVO'
@@ -572,6 +609,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                 <th className="py-3 px-4">Contatos</th>
                 <th className="py-3 px-4 text-right">Saldo em Aberto</th>
                 <th className="py-3 px-4 text-center">Inadimplência</th>
+                <th className="py-3 px-4 text-center">Health Score (Risco)</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -680,6 +718,39 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                           <span>Em dia</span>
                         </span>
                       )}
+                    </td>
+
+                    {/* Health Score & Risco de Churn */}
+                    <td className="py-3 px-4 text-center">
+                      {(() => {
+                        const risk = riskAssessmentMap.get(client.id);
+                        if (!risk) {
+                          return <span className="text-[10px] text-[var(--text-muted)]">-</span>;
+                        }
+                        return (
+                          <div 
+                            className="flex flex-col items-center gap-0.5 cursor-help"
+                            title={`Health Score: ${risk.healthScore}/100\nFatores: ${risk.riskFactors.join(' | ')}\nRecomendação: ${risk.recommendedAction}`}
+                          >
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                              risk.riskLevel === 'CRITICO' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' :
+                              risk.riskLevel === 'ALTO' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                              risk.riskLevel === 'MODERADO' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30' :
+                              'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            }`}>
+                              {risk.riskLevel === 'CRITICO' || risk.riskLevel === 'ALTO' ? (
+                                <ShieldAlert className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <ShieldCheck className="w-3 h-3 shrink-0" />
+                              )}
+                              <span>{risk.healthScore}/100</span>
+                            </span>
+                            <span className="text-[9px] text-[var(--text-muted)] font-mono font-medium">
+                              {risk.riskLevel}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td className="py-3 px-4 text-center">

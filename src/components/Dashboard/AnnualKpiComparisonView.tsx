@@ -20,11 +20,14 @@ import {
   UserMinus,
   Clock,
   Sparkles,
-  Info
+  Info,
+  Target,
+  Sliders
 } from 'lucide-react';
 import { KpiEngine, AnnualKpiRow, KpiCategory } from '../../services/kpiEngine';
 import { formatBRL } from '../../services/financialEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
+import { KpiTargetConfigModal } from './KpiTargetConfigModal';
 
 export interface AnnualKpiComparisonViewProps {
   currentYear?: number;
@@ -99,6 +102,9 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
   const [timeHorizon, setTimeHorizon] = useState<'ANO' | 'SEMESTRE_1' | 'SEMESTRE_2' | 'TRI_1' | 'TRI_2' | 'TRI_3' | 'TRI_4' | 'MES'>('ANO');
   const [selectedCategory, setSelectedCategory] = useState<'TODOS' | KpiCategory>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [showTargets, setShowTargets] = useState<boolean>(true);
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState<boolean>(false);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   // Meses ativos no horizonte temporal selecionado
   const activeMonthIndices = useMemo(() => {
@@ -126,7 +132,7 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
   // Séries mensais de todos os KPIs calculadas pelo KpiEngine
   const allKpiRows = useMemo(() => {
     return KpiEngine.getAnnualKpis(selectedYear, activeMonthIndices);
-  }, [selectedYear, activeMonthIndices]);
+  }, [selectedYear, activeMonthIndices, refreshTrigger]);
 
   // Filtragem por busca e categoria
   const filteredKpiRows = useMemo(() => {
@@ -321,7 +327,34 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
             </div>
 
             {/* Botões de Exportação */}
-            <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+            <div className="flex items-center gap-1.5 ml-auto sm:ml-0 flex-wrap">
+              {/* Botão Toggle de Metas Orçamentárias */}
+              <button
+                type="button"
+                onClick={() => setShowTargets(!showTargets)}
+                className={`px-2.5 py-1 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  showTargets 
+                    ? 'bg-amber-400 text-slate-950 font-bold border-amber-400' 
+                    : 'border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Exibir metas orçamentárias e comparativo Planejado vs Realizado"
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span>Metas {showTargets ? 'Ativas' : ''}</span>
+              </button>
+
+              {showTargets && (
+                <button
+                  type="button"
+                  onClick={() => setIsTargetModalOpen(true)}
+                  className="px-2.5 py-1 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                  title="Configurar metas mensais e anuais dos KPIs"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Ajustar Metas...</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleExportExcel}
@@ -420,6 +453,18 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
                   Total/Média
                 </th>
 
+                {/* Colunas Opcionais de Metas Orçamentárias */}
+                {showTargets && (
+                  <>
+                    <th className="py-3 px-3 text-right font-bold text-slate-300 border-l border-[var(--border-subtle)] bg-[var(--surface-elevated)] min-w-[105px]" title="Meta orçamentária acumulada ou média do período">
+                      Meta Período
+                    </th>
+                    <th className="py-3 px-3 text-right font-bold text-emerald-400 border-l border-[var(--border-subtle)] bg-emerald-500/10 min-w-[105px]" title="Percentual de atingimento da meta no período (Realizado vs Meta)">
+                      % Atingimento
+                    </th>
+                  </>
+                )}
+
                 {/* Coluna de Evolução / Crescimento Anual (% AH) */}
                 <th className="py-3 px-3 text-right font-bold text-[var(--text-primary)] border-l border-[var(--border-subtle)] bg-[var(--surface-elevated)] min-w-[100px]" title="Evolução acumulada no período (Mês inicial vs Mês final)">
                   Evolução (% AH)
@@ -503,6 +548,16 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
                               {KpiEngine.formatValue(val, row.format)}
                             </div>
 
+                            {/* Meta do mês se ativada */}
+                            {showTargets && row.targetValuesByMonth && (
+                              <div 
+                                className="text-[9px] font-mono text-[var(--text-muted)] opacity-80 mt-0.5 leading-none"
+                                title={`Meta orçamentária: ${KpiEngine.formatValue(row.targetValuesByMonth[mIdx] || 0, row.format)}`}
+                              >
+                                M: {KpiEngine.formatValue(row.targetValuesByMonth[mIdx] || 0, row.format)}
+                              </div>
+                            )}
+
                             {/* Variação MoM */}
                             {momPct !== null && Math.abs(momPct) >= 0.1 && (
                               <div 
@@ -532,6 +587,47 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
                           {row.aggregationType === 'SUM' ? 'Soma' : row.aggregationType === 'AVERAGE' ? 'Média' : 'Posição'}
                         </span>
                       </td>
+
+                      {/* Colunas de Metas Orçamentárias */}
+                      {showTargets && (
+                        <>
+                          {/* Meta Período */}
+                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-[var(--text-secondary)] border-l border-[var(--border-subtle)] bg-[var(--surface-elevated)] tabular-nums whitespace-nowrap text-xs">
+                            <div>{KpiEngine.formatValue(row.targetPeriodTotal || 0, row.format)}</div>
+                            <span className="text-[9px] font-normal text-[var(--text-muted)] uppercase">
+                              Meta
+                            </span>
+                          </td>
+
+                          {/* % Atingimento */}
+                          <td className="py-2.5 px-3 text-right font-mono border-l border-[var(--border-subtle)] bg-emerald-500/5 tabular-nums whitespace-nowrap text-xs">
+                            {row.targetAchievementRate !== undefined ? (
+                              <div className="flex flex-col items-end">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  row.targetAchievementRate >= 100 
+                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
+                                    : row.targetAchievementRate >= 90 
+                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' 
+                                    : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                                }`}>
+                                  {row.targetAchievementRate.toFixed(1)}%
+                                </span>
+                                {row.targetDiff !== undefined && (
+                                  <span className={`text-[9px] font-mono mt-0.5 ${
+                                    (row.positiveDirection === 'UP' ? row.targetDiff >= 0 : row.targetDiff <= 0)
+                                      ? 'text-emerald-400/80'
+                                      : 'text-rose-400/80'
+                                  }`}>
+                                    {row.targetDiff >= 0 ? '+' : ''}{row.format === 'CURRENCY' ? formatBRL(row.targetDiff) : row.targetDiff}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[var(--text-muted)]">-</span>
+                            )}
+                          </td>
+                        </>
+                      )}
 
                       {/* Evolução / Crescimento Anual (% AH) */}
                       <td className="py-2.5 px-3 text-right font-mono border-l border-[var(--border-subtle)] tabular-nums whitespace-nowrap text-xs">
@@ -578,6 +674,16 @@ export const AnnualKpiComparisonView: React.FC<AnnualKpiComparisonViewProps> = (
           </span>
         </div>
       </div>
+
+      {/* Modal de Configuração de Metas Orçamentárias */}
+      {isTargetModalOpen && (
+        <KpiTargetConfigModal
+          isOpen={isTargetModalOpen}
+          onClose={() => setIsTargetModalOpen(false)}
+          year={selectedYear}
+          onSaved={() => setRefreshTrigger(prev => prev + 1)}
+        />
+      )}
 
     </div>
   );

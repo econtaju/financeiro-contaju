@@ -37,7 +37,8 @@ import {
   AgentDefinition,
   AgentRunRecord,
   AgentApprovalItem,
-  AgentAuditEvent
+  AgentAuditEvent,
+  KpiTarget
 } from '../types';
 import { 
   INITIAL_COMPANY, 
@@ -108,7 +109,8 @@ const STORAGE_KEYS = {
   AUTH_SESSION: 'contaju_auth_session',
   REMEMBERED_USERS: 'contaju_remembered_users',
   AI_CONFIG: 'contaju_ai_config',
-  DISCOVERED_AI_MODELS: 'contaju_discovered_ai_models'
+  DISCOVERED_AI_MODELS: 'contaju_discovered_ai_models',
+  KPI_TARGETS: 'contaju_kpi_targets'
 };
 
 export const DEFAULT_AI_CONFIG: AiProviderConfig = {
@@ -3072,6 +3074,66 @@ class StorageService {
 
   public async ensureCloudSync(): Promise<void> {
     await this.initializeDatabaseFirst();
+  }
+
+  // ==========================================
+  // METAS ORÇAMENTÁRIAS DE KPIS
+  // ==========================================
+  public getDefaultKpiTargets(year: number = new Date().getFullYear()): KpiTarget[] {
+    const defaultConfigs: Array<{ kpiId: string; monthlyVal: number; annualVal?: number; isPercent?: boolean; isCount?: boolean }> = [
+      { kpiId: 'faturamento_bruto', monthlyVal: 35000, annualVal: 420000 },
+      { kpiId: 'resultado_liquido', monthlyVal: 10500, annualVal: 126000 },
+      { kpiId: 'margem_liquida', monthlyVal: 30, annualVal: 30, isPercent: true },
+      { kpiId: 'mrr', monthlyVal: 25000, annualVal: 25000 },
+      { kpiId: 'clientes_ativos', monthlyVal: 10, annualVal: 12, isCount: true },
+      { kpiId: 'crescimento_clientes', monthlyVal: 2, annualVal: 24, isCount: true },
+      { kpiId: 'churn_clientes', monthlyVal: 0, annualVal: 1, isCount: true },
+      { kpiId: 'taxa_churn', monthlyVal: 1.5, annualVal: 1.5, isPercent: true },
+      { kpiId: 'ticket_medio', monthlyVal: 2500, annualVal: 2500 },
+      { kpiId: 'saldo_disponivel', monthlyVal: 100000, annualVal: 100000 },
+      { kpiId: 'entradas_caixa', monthlyVal: 35000, annualVal: 420000 },
+      { kpiId: 'saidas_caixa', monthlyVal: 24500, annualVal: 294000 },
+      { kpiId: 'saldo_liquido_caixa', monthlyVal: 10500, annualVal: 126000 },
+      { kpiId: 'inadimplencia', monthlyVal: 5, annualVal: 5, isPercent: true },
+      { kpiId: 'contas_receber_aberto', monthlyVal: 20000, annualVal: 20000 },
+      { kpiId: 'contas_pagar_aberto', monthlyVal: 15000, annualVal: 15000 }
+    ];
+
+    return defaultConfigs.map(cfg => ({
+      id: `target_${cfg.kpiId}_${year}`,
+      kpiId: cfg.kpiId,
+      year,
+      monthlyTargets: Array.from({ length: 12 }, () => cfg.monthlyVal),
+      annualTarget: cfg.annualVal !== undefined ? cfg.annualVal : cfg.monthlyVal * 12,
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  public getKpiTargets(year: number = new Date().getFullYear()): KpiTarget[] {
+    const stored = this.get<KpiTarget[]>(STORAGE_KEYS.KPI_TARGETS, []);
+    const filtered = (stored || []).filter(t => t.year === year);
+    if (filtered.length > 0) {
+      const defaults = this.getDefaultKpiTargets(year);
+      const existingIds = new Set(filtered.map(t => t.kpiId));
+      const missing = defaults.filter(d => !existingIds.has(d.kpiId));
+      return [...filtered, ...missing];
+    }
+    return this.getDefaultKpiTargets(year);
+  }
+
+  public saveKpiTargets(targets: KpiTarget[]): void {
+    if (!Array.isArray(targets)) return;
+    const existing = this.get<KpiTarget[]>(STORAGE_KEYS.KPI_TARGETS, []);
+    const targetMap = new Map<string, KpiTarget>();
+    existing.forEach(t => targetMap.set(`${t.kpiId}_${t.year}`, t));
+    targets.forEach(t => targetMap.set(`${t.kpiId}_${t.year}`, t));
+    const merged = Array.from(targetMap.values());
+    this.set(STORAGE_KEYS.KPI_TARGETS, merged);
+    this.notify();
+  }
+
+  public saveKpiTarget(target: KpiTarget): void {
+    this.saveKpiTargets([target]);
   }
 }
 
