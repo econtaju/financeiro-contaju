@@ -39,7 +39,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeftRight,
-  HandCoins
+  HandCoins,
+  History
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -54,13 +55,14 @@ import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 import { ReconciliationFloatingModal } from './ReconciliationFloatingModal';
 import { AiReconciliationModal } from './AiReconciliationModal';
 import { QuickNewBankAccountModal } from './QuickNewBankAccountModal';
+import { TitleSettlementHistoryModal } from './TitleSettlementHistoryModal';
 import { applyReconciliationRules, learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
 import { BANCO_INTER_ACCOUNT, BANCO_INTER_OFX_TRANSACTIONS } from '../../data/interOfxTrainingData';
 
 export const ReconciliationView: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Modais de Regras De-Para, Diagnóstico de Logs, Conferência de Fechamento de Saldos e Assistente IA
+  // Modais de Regras De-Para, Diagnóstico de Logs, Conferência de Fechamento de Saldos, Assistente IA e Histórico de Título
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
@@ -68,6 +70,8 @@ export const ReconciliationView: React.FC = () => {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isNewAccountModalOpen, setIsNewAccountModalOpen] = useState(false);
   const [rulesPresetPattern, setRulesPresetPattern] = useState<string>('');
+  const [selectedHistoryTitle, setSelectedHistoryTitle] = useState<FinancialTitle | null>(null);
+  const [initialPartialModeForModal, setInitialPartialModeForModal] = useState<boolean>(false);
 
   // Escuta alterações do storage de forma reativa
   useEffect(() => {
@@ -753,8 +757,9 @@ export const ReconciliationView: React.FC = () => {
   };
 
   // Abre a Janela Flutuante de Conciliação Bancária
-  const handleOpenReconcileModal = (stmt?: BankStatementEntry, title?: FinancialTitle) => {
+  const handleOpenReconcileModal = (stmt?: BankStatementEntry, title?: FinancialTitle, initialPartial?: boolean) => {
     setErrorMsg('');
+    setInitialPartialModeForModal(Boolean(initialPartial));
     if (stmt) {
       handleSelectStatement(stmt);
       if (!title) {
@@ -3746,6 +3751,17 @@ export const ReconciliationView: React.FC = () => {
                                 </span>
                               )}
 
+                              {/* Badge de Sugestão Automática de Pagamento Parcial */}
+                              {match?.isPartialMatch && (
+                                <span 
+                                  className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/50 flex items-center gap-1 shadow-2xs animate-pulse"
+                                  title={`Provável pagamento parcial do título (${match.partialPercentage}%). Restará em aberto: ${formatBRL(match.remainingBalanceEstimated || 0)}`}
+                                >
+                                  <Clock className="w-3 h-3 text-amber-500 stroke-[2.5]" />
+                                  <span>💡 PROVÁVEL PARCIAL ({match.partialPercentage}%)</span>
+                                </span>
+                              )}
+
                               {/* Divergência de centavos com o extrato selecionado */}
                               {selectedStmt && (() => {
                                 const titleBal = t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount;
@@ -3859,6 +3875,20 @@ export const ReconciliationView: React.FC = () => {
                                 Comp: {t.competence}
                               </span>
                             )}
+                            {(t.settlementState === 'PARCIAL' || (t.settledPrincipal && t.settledPrincipal > 0)) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedHistoryTitle(t);
+                                }}
+                                className="text-[10px] font-bold text-amber-800 dark:text-amber-300 hover:text-amber-950 dark:hover:text-amber-100 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 transition-colors"
+                                title="Ver linha do tempo com extratos bancários e amortizações anteriores deste título"
+                              >
+                                <History className="w-3 h-3 text-amber-500" />
+                                <span>Extratos Anteriores</span>
+                              </button>
+                            )}
                             {match && (
                               <button
                                 type="button"
@@ -3876,6 +3906,22 @@ export const ReconciliationView: React.FC = () => {
 
                           {/* Botões de Ação na Direita */}
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Ação Rápida: Provável Pagamento Parcial Detectado pelo Motor de IA/Matching */}
+                            {selectedStmt && match?.isPartialMatch && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenReconcileModal(selectedStmt, t, true);
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-xs font-black transition-all shadow-xs flex items-center gap-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-110 text-slate-950 border border-amber-300 cursor-pointer active:scale-95 animate-pulse"
+                                title={`⚡ Sugestão Automática: Conciliar como Pagamento Parcial de ${formatBRL(Math.abs(selectedStmt.amount))} e manter saldo de ${formatBRL(match.remainingBalanceEstimated || 0)} em aberto no ERP`}
+                              >
+                                <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>⚡ Parcial ({match.partialPercentage}%)</span>
+                              </button>
+                            )}
+
                             {selectedStmt && Math.abs(Math.abs(selectedStmt.amount) - (t.balancePrincipal > 0 ? t.balancePrincipal : t.originalAmount)) < 0.005 && (
                               <button
                                 type="button"
@@ -4431,8 +4477,16 @@ export const ReconciliationView: React.FC = () => {
             setRefreshKey(k => k + 1);
           }}
           onError={(msg) => setErrorMsg(msg)}
+          initialPartialMode={initialPartialModeForModal}
         />
       )}
+
+      {/* Modal Visual de Histórico de Extratos & Baixas do Título Parcial */}
+      <TitleSettlementHistoryModal
+        isOpen={Boolean(selectedHistoryTitle)}
+        title={selectedHistoryTitle}
+        onClose={() => setSelectedHistoryTitle(null)}
+      />
 
       {/* Modal de Gerenciamento de Regras De-Para */}
       <ReconciliationRulesModal

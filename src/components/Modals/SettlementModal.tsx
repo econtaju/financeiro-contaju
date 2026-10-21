@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertCircle, Calculator, Info, Landmark } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Calculator, Info, Landmark, Clock, History } from 'lucide-react';
 import { FinancialTitle, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL } from '../../services/financialEngine';
+import { TitleSettlementHistoryModal } from '../Financial/TitleSettlementHistoryModal';
 
 interface SettlementModalProps {
   title: FinancialTitle;
@@ -34,6 +35,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   const [voucherRef, setVoucherRef] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const selectedAccount = accounts.find(a => a.id === bankAccountId);
 
@@ -134,6 +136,26 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
             <div className="font-bold text-base text-slate-900">{formatBRL(title.balancePrincipal)}</div>
           </div>
         </div>
+
+        {/* Banner Informativo de Baixa Parcial Prévia */}
+        {(title.settlementState === 'PARCIAL' || (title.settledPrincipal && title.settledPrincipal > 0)) && (
+          <div className="shrink-0 px-4 py-2.5 sm:px-6 bg-amber-500/10 border-b border-amber-500/20 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-2 text-amber-900">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>Título parcialmente pago:</strong> Valor original de {formatBRL(title.originalAmount)}, sendo que <strong>{formatBRL(title.settledPrincipal || 0)}</strong> já foi amortizado.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-950 flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+            >
+              <History className="w-3.5 h-3.5 text-amber-600" />
+              <span>Ver Extratos Anteriores</span>
+            </button>
+          </div>
+        )}
 
         {/* Error message */}
         {errorMessage && (
@@ -383,6 +405,13 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
           </div>
 
         </form>
+
+        {/* Modal de Histórico de Extratos e Baixas Vinculadas */}
+        <TitleSettlementHistoryModal
+          isOpen={isHistoryOpen}
+          title={title}
+          onClose={() => setIsHistoryOpen(false)}
+        />
 
       </div>
     </div>

@@ -542,6 +542,9 @@ export interface MatchFactorBreakdown {
   amountSummary: string;
   dateSummary: string;
   descriptionSummary: string;
+  isPartialMatch?: boolean;
+  partialPercentage?: number; // 0 a 100
+  remainingBalanceEstimated?: number;
 }
 
 export interface ReconciliationMatchResult {
@@ -550,6 +553,9 @@ export interface ReconciliationMatchResult {
   isHighlighted: boolean; // score >= 60
   breakdown: MatchFactorBreakdown;
   summaryBadge: string;
+  isPartialMatch?: boolean;
+  partialPercentage?: number; // 0 a 100
+  remainingBalanceEstimated?: number;
 }
 
 // ==========================================

@@ -32,7 +32,8 @@ import {
   MessageCircle,
   X,
   CheckCheck,
-  HandCoins
+  HandCoins,
+  Clock
 } from 'lucide-react';
 import { FinancialTitle, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -48,6 +49,7 @@ import { ConfirmBatchActionModal } from '../Modals/ConfirmBatchActionModal';
 import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
+import { TitleSettlementHistoryModal } from './TitleSettlementHistoryModal';
 import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { SwipeableCard } from '../Common/SwipeableCard';
 import { useModulePeriod } from '../../hooks/useModulePeriod';
@@ -1795,9 +1797,18 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                           </button>
                         ) : null}
                         {t.settlementState === 'PARCIAL' && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                            Parcial
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHistoryTitle(t);
+                            }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-200 dark:hover:bg-amber-900/80 cursor-pointer flex items-center gap-1 transition-colors"
+                            title="Título com baixa parcial. Clique para ver extratos e comprovantes vinculados."
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-600" />
+                            <span>Parcial (Restante: {formatBRL(t.balancePrincipal)})</span>
+                          </button>
                         )}
                         {(t.originType === 'CONTRATO' || (t.titleNumber && t.titleNumber.startsWith('FAT-')) || t.contractNumber) && (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
@@ -2624,77 +2635,12 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         />
       )}
 
-      {/* History Modal */}
-      {historyTitle && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#131720] rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 dark:border-slate-800">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Histórico da Obrigação: {historyTitle.titleNumber}
-              </h2>
-              <button 
-                onClick={() => setHistoryTitle(null)} 
-                className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                aria-label="Fechar histórico"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 text-xs">
-              <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-700 dark:text-slate-300">Valor Original:</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">{formatBRL(historyTitle.originalAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-700 dark:text-slate-300">Principal Pago:</span>
-                  <span className="font-semibold text-rose-600 dark:text-rose-400">{formatBRL(historyTitle.settledPrincipal)}</span>
-                </div>
-                <div className="flex justify-between border-t border-slate-200 dark:border-slate-800 pt-1">
-                  <span className="text-slate-800 dark:text-slate-200 font-medium">Saldo Restante:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{formatBRL(historyTitle.balancePrincipal)}</span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 mb-2">Pagamentos Realizados</h3>
-                {settlements.filter(s => s.titleId === historyTitle.id).length === 0 ? (
-                  <p className="text-slate-600 dark:text-slate-400 p-3 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800">
-                    Nenhum pagamento registrado até o momento.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {settlements.filter(s => s.titleId === historyTitle.id).map(s => (
-                      <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-                        <div className="flex justify-between font-semibold text-slate-800 dark:text-slate-200">
-                          <span>Data: {formatDateBR(s.settlementDate)}</span>
-                          <span className="text-rose-600 dark:text-rose-400">-{formatBRL(s.components.netFinancialAmount)}</span>
-                        </div>
-                        <div className="text-slate-600 dark:text-slate-400 text-[11px]">
-                          Principal pago: {formatBRL(s.components.principalSettled)} | Desconto: {formatBRL(s.components.discount)} | Juros: {formatBRL(s.components.interest)}
-                        </div>
-                        {s.voucherRef && (
-                          <div className="text-slate-500 dark:text-slate-400 text-[10px]">Autenticação: {s.voucherRef}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex justify-end">
-              <button
-                onClick={() => setHistoryTitle(null)}
-                className="min-h-[40px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Title Settlement History Modal (Linha do Tempo Visual e Extratos Vinculados) */}
+      <TitleSettlementHistoryModal
+        isOpen={Boolean(historyTitle)}
+        title={historyTitle}
+        onClose={() => setHistoryTitle(null)}
+      />
 
       {/* Edit Title Modal (Double click or pencil action) */}
       <EditTitleModal

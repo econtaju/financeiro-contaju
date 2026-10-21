@@ -19,6 +19,7 @@ import {
   Calendar,
   Lock,
   Clock,
+  History,
   CheckCircle2
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty } from '../../types';
@@ -26,6 +27,7 @@ import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financi
 import { storage } from '../../services/storageService';
 import { learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
 import { calculateReconciliationSimilarity } from '../../services/reconciliationMatchingEngine';
+import { TitleSettlementHistoryModal } from './TitleSettlementHistoryModal';
 
 interface ReconciliationFloatingModalProps {
   isOpen: boolean;
@@ -39,6 +41,7 @@ interface ReconciliationFloatingModalProps {
   onSelectTitle?: (title: FinancialTitle) => void;
   allAvailableTitles?: FinancialTitle[];
   onCreateTitleDirectly?: (stmt: BankStatementEntry) => void;
+  initialPartialMode?: boolean;
 }
 
 export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalProps> = ({
@@ -52,9 +55,11 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   onError,
   onSelectTitle,
   allAvailableTitles,
-  onCreateTitleDirectly
+  onCreateTitleDirectly,
+  initialPartialMode = false
 }) => {
   const [internalSelectedTitle, setInternalSelectedTitle] = useState<FinancialTitle | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
 
   // Limpa seleção interna ao reabrir o modal ou mudar títulos externos
   useEffect(() => {
@@ -88,18 +93,21 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
       const titleBal = singleTitle.balancePrincipal > 0 ? singleTitle.balancePrincipal : singleTitle.originalAmount;
       const stmtAbs = Math.round(Math.abs(Number(singleStmt.amount) || 0) * 100) / 100;
       
-      setAdjPrincipal(titleBal);
+      const canPartial = stmtAbs < titleBal - 0.005;
+      const shouldBePartial = Boolean(initialPartialMode && canPartial);
+
+      setAdjPrincipal(shouldBePartial ? stmtAbs : titleBal);
       setAdjInterest(0);
       setAdjFine(0);
       setAdjDiscount(0);
       setAdjBankFee(0);
-      setIsPartialSettlement(false);
+      setIsPartialSettlement(shouldBePartial);
       
       // Abre a edição manual se houver divergência inicial
       const isExact = Math.abs(stmtAbs - titleBal) < 0.005;
       setIsManualEditOpen(!isExact);
     }
-  }, [isOpen, singleStmt, singleTitle]);
+  }, [isOpen, singleStmt, singleTitle, initialPartialMode]);
 
   // Tecla Escape para fechar
   useEffect(() => {
@@ -820,6 +828,24 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                       </strong>
                     </div>
                   </div>
+
+                  {/* Atalho para Histórico de Baixas Anteriores (se houver) */}
+                  {(singleTitle.settlementState === 'PARCIAL' || (singleTitle.settledPrincipal && singleTitle.settledPrincipal > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryModalOpen(true)}
+                      className="mt-2 w-full p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/30 flex items-center justify-between text-xs font-semibold cursor-pointer transition-all"
+                      title="Abrir linha do tempo com todos os pagamentos e extratos já vinculados a este título"
+                    >
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <History className="w-4 h-4 text-amber-500" />
+                        <span>Histórico de Extratos & Baixas Anteriores</span>
+                      </span>
+                      <span className="font-mono text-[11px] bg-amber-500/20 px-2 py-0.5 rounded text-amber-800 dark:text-amber-300">
+                        {formatBRL(singleTitle.settledPrincipal || 0)} pago &rarr;
+                      </span>
+                    </button>
+                  )}
                 </div>
               ) : singleStmt ? (
                 <div className="p-3.5 bg-white dark:bg-[#131720] rounded-xl border border-slate-200 dark:border-[#273040] space-y-2.5">
@@ -1146,6 +1172,13 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
             </button>
           </div>
         </div>
+
+        {/* Modal de Histórico de Baixas & Extratos Anteriores */}
+        <TitleSettlementHistoryModal
+          isOpen={isHistoryModalOpen}
+          title={singleTitle}
+          onClose={() => setIsHistoryModalOpen(false)}
+        />
 
       </div>
     </div>

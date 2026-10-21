@@ -242,6 +242,33 @@ export function calculateReconciliationSimilarity(
   }
 
   // =========================================================================
+  // 3.3 DETECÇÃO INTELIGENTE DE PAGAMENTO PARCIAL (SUGESTÃO AUTOMÁTICA)
+  // =========================================================================
+  let isPartialMatch = false;
+  let partialPercentage: number | undefined = undefined;
+  let remainingBalanceEstimated: number | undefined = undefined;
+
+  // Se o extrato for menor que o saldo do título, e favorecido/documento ou descrição baterem bem
+  if (stmtAbsAmount < targetTitleAmount - 0.005 && targetTitleAmount > 0) {
+    const pct = Math.round((stmtAbsAmount / targetTitleAmount) * 100);
+    const hasStrongIdentity = isBoletoMatched || descriptionScore >= 14;
+
+    // Se identificação do favorecido/documento for forte ou tiver descrição compatível com data aceitável
+    if (pct >= 2 && pct <= 98 && (hasStrongIdentity || (descriptionScore >= 8 && dateScore >= 8))) {
+      isPartialMatch = true;
+      partialPercentage = pct;
+      remainingBalanceEstimated = Math.round((targetTitleAmount - stmtAbsAmount) * 100) / 100;
+
+      // Atribui pontuação balanceada para o critério valor em baixa parcial
+      const partialAmountScore = hasStrongIdentity ? 36 : 28;
+      if (amountScore < partialAmountScore) {
+        amountScore = partialAmountScore;
+        amountSummary = `💡 Pagamento Parcial (${pct}% do saldo • Restará R$ ${remainingBalanceEstimated.toFixed(2).replace('.', ',')})`;
+      }
+    }
+  }
+
+  // =========================================================================
   // PONTUAÇÃO CONSOLIDADA E CLASSIFICAÇÃO
   // =========================================================================
   let totalScore = Math.min(100, Math.round(amountScore + dateScore + descriptionScore));
@@ -264,16 +291,20 @@ export function calculateReconciliationSimilarity(
 
   // Monta resumo visual conciso
   const summaryParts: string[] = [];
-  if (isBoletoMatched) {
-    summaryParts.push('Boleto / Linha Digitável Confirmada');
+  if (isPartialMatch && partialPercentage !== undefined && remainingBalanceEstimated !== undefined) {
+    summaryParts.push(`💡 Provável Pagamento Parcial (${partialPercentage}% • Resta R$ ${remainingBalanceEstimated.toFixed(2).replace('.', ',')})`);
+  } else {
+    if (isBoletoMatched) {
+      summaryParts.push('Boleto / Linha Digitável Confirmada');
+    }
+    if (amountScore >= 45) summaryParts.push('Mesmo valor');
+    else if (amountScore >= 35) summaryParts.push('Valor próximo');
   }
-  if (amountScore >= 45) summaryParts.push('Mesmo valor');
-  else if (amountScore >= 35) summaryParts.push('Valor próximo');
 
   if (dateScore >= 27) summaryParts.push(dateSummary);
   else if (dateScore >= 20) summaryParts.push(dateSummary);
 
-  if (!isBoletoMatched && descriptionScore >= 14) summaryParts.push(descriptionSummary);
+  if (!isBoletoMatched && descriptionScore >= 14 && !isPartialMatch) summaryParts.push(descriptionSummary);
 
   const summaryBadge = summaryParts.length > 0 ? summaryParts.join(' • ') : 'Pouca aderência';
 
@@ -281,13 +312,19 @@ export function calculateReconciliationSimilarity(
     score: totalScore,
     confidence,
     isHighlighted,
+    isPartialMatch,
+    partialPercentage,
+    remainingBalanceEstimated,
     breakdown: {
       amountScore,
       dateScore,
       descriptionScore,
       amountSummary,
       dateSummary,
-      descriptionSummary
+      descriptionSummary,
+      isPartialMatch,
+      partialPercentage,
+      remainingBalanceEstimated
     },
     summaryBadge
   };
