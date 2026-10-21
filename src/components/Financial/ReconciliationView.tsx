@@ -170,7 +170,7 @@ export const ReconciliationView: React.FC = () => {
   const [transferNotes, setTransferNotes] = useState('');
   const [transferError, setTransferError] = useState('');
 
-  // Estados de Equalização / Ajuste Financeiro da Conciliação (Valores 100% Exatos)
+  // Estados de Ajuste Financeiro da Conciliação (Valores 100% Exatos)
   const [adjPrincipal, setAdjPrincipal] = useState<number>(0);
   const [adjInterest, setAdjInterest] = useState<number>(0);
   const [adjFine, setAdjFine] = useState<number>(0);
@@ -847,7 +847,7 @@ export const ReconciliationView: React.FC = () => {
       
       const stmtAbs = Math.round(Math.abs(selectedStmt.amount) * 100) / 100;
       const isExact = Math.abs(stmtAbs - p) < 0.005;
-      // Se já houver divergência, abre o painel de ajuste para que o usuário possa equalizar
+      // Se já houver divergência, abre o painel de ajuste para que o usuário possa conciliar com ajuste ou pagamento parcial
       setIsManualEditOpen(!isExact);
     } else {
       setIsManualEditOpen(false);
@@ -866,15 +866,7 @@ export const ReconciliationView: React.FC = () => {
   // É 100% exato?
   const isValues100PercentExact = Boolean(selectedStmt && selectedTitle && Math.abs(differenceToStatement) < 0.005);
 
-  // Ações de Ajuste Rápido: "Usar Valor do Extrato"
-  const handleApplyStatementAsPrincipal = () => {
-    if (!selectedStmt) return;
-    setAdjPrincipal(stmtAbsAmount);
-    setAdjInterest(0);
-    setAdjFine(0);
-    setAdjDiscount(0);
-  };
-
+  // Ações de Ajuste Rápido
   const handleApplyDiffAsInterest = () => {
     if (!selectedStmt || !selectedTitle) return;
     const p = currentTitleBalance;
@@ -902,7 +894,7 @@ export const ReconciliationView: React.FC = () => {
     setAdjDiscount(Math.max(0, Math.round((p - stmtAbsAmount) * 100) / 100));
   };
 
-  // Opção 1: Atalho de Auto-Conciliação Expressa com 1 Clique (Score 100% Exato ou Equalizado)
+  // Opção 1: Atalho de Auto-Conciliação Expressa com 1 Clique (Score 100% Exato)
   const handleDirectExpressReconcile = (stmt: BankStatementEntry, title: FinancialTitle) => {
     if (!stmt || !title) return;
     try {
@@ -915,7 +907,7 @@ export const ReconciliationView: React.FC = () => {
       let fine = 0;
       let discount = 0;
 
-      // Se este for o par selecionado e o usuário já ajustou nos botões de equalização
+      // Se este for o par selecionado e o usuário já ajustou nos campos de conciliação
       if (selectedStmt?.id === stmt.id && selectedTitle?.id === title.id) {
         p = adjPrincipal;
         interest = adjInterest;
@@ -924,7 +916,7 @@ export const ReconciliationView: React.FC = () => {
         const total = Math.round((p + interest + fine - discount) * 100) / 100;
         if (Math.abs(total - stmtAbs) >= 0.005) {
           handleOpenReconcileModal(stmt, title);
-          setErrorMsg(`Valores divergentes: a composição contábil (${formatBRL(total)}) difere do extrato (${formatBRL(stmtAbs)}). Confira e defina se a diferença é Tarifa Bancária ou Desconto no modal antes de conciliar.`);
+          setErrorMsg(`Valores divergentes: a composição contábil (${formatBRL(total)}) difere do extrato (${formatBRL(stmtAbs)}). Confira e defina se a diferença é Pagamento Parcial, Tarifa Bancária ou Desconto no modal antes de conciliar.`);
           return;
         }
       } else {
@@ -932,7 +924,7 @@ export const ReconciliationView: React.FC = () => {
         if (Math.abs(diff) >= 0.005) {
           // Bloqueia conciliação cega com divergência de valores: abre o modal para conferência
           handleOpenReconcileModal(stmt, title);
-          setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do saldo do título (${formatBRL(titleBal)}). Faça a conferência e defina se a diferença é Tarifa Bancária ou Desconto no modal.`);
+          setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do saldo do título (${formatBRL(titleBal)}). Selecione Pagamento Parcial ou informe Desconto/Acréscimo no modal.`);
           return;
         }
         p = titleBal;
@@ -980,13 +972,19 @@ export const ReconciliationView: React.FC = () => {
           return;
         }
 
-        // Marca título como CONCILIADO
+        // Atualiza status contábil e de conciliação do título
         const allTitles = storage.getTitles();
-        const updatedTitles = allTitles.map(t => t.id === title.id ? {
-          ...t,
-          reconciliationStatus: 'CONCILIADO' as const,
-          updatedAt: new Date().toISOString()
-        } : t);
+        const updatedTitles = allTitles.map(t => {
+          if (t.id === title.id) {
+            const isFullySettled = t.balancePrincipal <= 0.005;
+            return {
+              ...t,
+              reconciliationStatus: isFullySettled ? ('CONCILIADO' as const) : ('PENDENTE' as const),
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return t;
+        });
         storage.saveTitles(updatedTitles);
 
         // Marca extrato como CONCILIADO
@@ -1275,8 +1273,8 @@ export const ReconciliationView: React.FC = () => {
     setRefreshKey(k => k + 1);
   };
 
-  // Equaliza e concilia imediatamente com resolução automática de diferenças (juros, multas ou descontos)
-  const handleEqualizeAndReconcile = () => {
+  // Inicia a conciliação: se 100% exato executa; se houver diferença, abre a janela de conciliação para Pagamento Parcial ou Ajuste de Valores
+  const handleInitiateReconciliation = () => {
     if (selectedStmts.length === 0 || selectedTitles.length === 0) return;
 
     // 1. Caso especial fundamental: se todos os títulos selecionados já estiverem baixados/liquidados previamente,
@@ -1345,10 +1343,10 @@ export const ReconciliationView: React.FC = () => {
 
     // Se houver qualquer diferença no caso 1x1, 1xN ou NxM:
     // REGRA MANDATÓRIA: Bloqueia conciliação cega de valores divergentes!
-    // Abre obrigatoriamente a janela flutuante para conferência dos valores e separação entre Desconto e Tarifa Bancária.
+    // Abre obrigatoriamente a janela de conciliação para escolha de Pagamento Parcial ou Desconto/Acréscimo.
     const diff = Math.round((totalStmtsAmount - totalTitlesAmount) * 100) / 100;
     handleOpenReconcileModal(selectedStmts[0], selectedTitles[0]);
-    setErrorMsg(`Valores divergentes: o total do extrato (${formatBRL(totalStmtsAmount)}) difere dos títulos (${formatBRL(totalTitlesAmount)}) por ${formatBRL(Math.abs(diff))}. Confira e equalize os valores separando Desconto Comercial de Tarifa Bancária para bater 100% antes de confirmar.`);
+    setErrorMsg(`Valores divergentes: o total do extrato (${formatBRL(totalStmtsAmount)}) difere dos títulos (${formatBRL(totalTitlesAmount)}) por ${formatBRL(Math.abs(diff))}. Na janela aberta, marque "Pagamento Parcial" (se for quitação parcial) ou informe Desconto/Acréscimo para fechar o valor.`);
     return;
   };
 
@@ -1604,7 +1602,6 @@ export const ReconciliationView: React.FC = () => {
       overrideInterest?: number;
       overrideFine?: number;
       overrideDiscount?: number;
-      autoEqualize?: boolean;
     }
   ): boolean => {
     setErrorMsg('');
@@ -1656,30 +1653,7 @@ export const ReconciliationView: React.FC = () => {
       princ = titleBal > 0 ? titleBal : stmtAbs;
     }
 
-    const diff = Math.round(((princ + inter + fine - disc) - stmtAbs) * 100) / 100;
-
-    // Se houver diferença ou se autoEqualize estiver ativo:
-    if (Math.abs(diff) > 0.005 || options?.autoEqualize) {
-      if (Math.abs(stmtAbs - titleBal) < 0.005) {
-        // Exatamente igual
-        princ = stmtAbs;
-        inter = 0;
-        fine = 0;
-        disc = 0;
-      } else if (stmtAbs > titleBal) {
-        // Extrato maior que saldo do título: liquida o saldo e registra acréscimo/juros
-        princ = titleBal;
-        inter = Math.round((stmtAbs - titleBal) * 100) / 100;
-        fine = 0;
-        disc = 0;
-      } else {
-        // Extrato menor que saldo do título: liquida parcialmente o valor exato que entrou/saiu no banco
-        princ = stmtAbs;
-        inter = 0;
-        fine = 0;
-        disc = 0;
-      }
-    }
+    const isPartial = princ < titleBal - 0.005;
 
     // Se o valor principal for maior que o saldo, atualiza o título no storage
     if (princ > titleBal) {
@@ -1714,11 +1688,13 @@ export const ReconciliationView: React.FC = () => {
       interest: inter,
       fine: fine,
       bankFee: 0,
-      notes: `Baixa via Conciliação Bancária Extrato (${stmt.description})${
-        inter > 0 || fine > 0 || disc > 0 || Math.abs(princ - titleBal) > 0.005
-          ? ` [Ajuste: Principal ${formatBRL(princ)}${inter > 0 ? `, Juros ${formatBRL(inter)}` : ''}${fine > 0 ? `, Multa ${formatBRL(fine)}` : ''}${disc > 0 ? `, Desc ${formatBRL(disc)}` : ''}]`
-          : ''
-      }`,
+      notes: isPartial
+        ? `Baixa parcial via Conciliação Bancária (${stmt.description}). Saldo restante em aberto: ${formatBRL(titleBal - princ)}`
+        : `Baixa via Conciliação Bancária Extrato (${stmt.description})${
+            inter > 0 || fine > 0 || disc > 0 || Math.abs(princ - titleBal) > 0.005
+              ? ` [Ajuste: Principal ${formatBRL(princ)}${inter > 0 ? `, Juros ${formatBRL(inter)}` : ''}${fine > 0 ? `, Multa ${formatBRL(fine)}` : ''}${disc > 0 ? `, Desc ${formatBRL(disc)}` : ''}]`
+              : ''
+          }`,
       voucherRef: stmt.fitId
     });
 
@@ -1727,13 +1703,24 @@ export const ReconciliationView: React.FC = () => {
       return false;
     }
 
-    // Atualiza o título como CONCILIADO no storage
+    // Atualiza o título no storage:
+    // SE FOR PARCIAL: mantém PENDENTE pois o restante continua em aberto!
+    // SE FOR TOTAL: marca como CONCILIADO
     const currentTitles = storage.getTitles();
-    const updatedTitles = currentTitles.map(t => t.id === title.id ? {
-      ...t,
-      reconciliationStatus: 'CONCILIADO' as const,
-      updatedAt: new Date().toISOString()
-    } : t);
+    const updatedTitles = currentTitles.map(t => {
+      if (t.id === title.id) {
+        const hasRemaining = t.balancePrincipal > 0.005;
+        return {
+          ...t,
+          reconciliationStatus: isPartial && hasRemaining ? ('PENDENTE' as const) : ('CONCILIADO' as const),
+          reconciliationNote: isPartial && hasRemaining
+            ? `Pagamento parcial de ${formatBRL(princ)} conciliado via extrato (${stmt.description}). Saldo restante em aberto: ${formatBRL(t.balancePrincipal)}`
+            : t.reconciliationNote,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
     storage.saveTitles(updatedTitles);
 
     // Atualiza o lançamento de extrato como CONCILIADO no storage
@@ -1741,7 +1728,10 @@ export const ReconciliationView: React.FC = () => {
     const updatedStmts = allStmts.map(s => s.id === stmt.id ? { 
       ...s, 
       reconciliationStatus: 'CONCILIADO' as const,
-      matchedTitleId: title.id 
+      matchedTitleId: title.id,
+      reconciliationNote: isPartial
+        ? `Conciliado como pagamento parcial do título #${title.titleNumber} (restante em aberto no ERP: ${formatBRL(titleBal - princ)})`
+        : s.reconciliationNote
     } : s);
     storage.saveStatementEntries(updatedStmts);
 
@@ -1750,46 +1740,24 @@ export const ReconciliationView: React.FC = () => {
     storage.addAuditLog({
       userName: currentUser.name,
       userRole: currentUser.role,
-      action: 'CONCILIACAO_MANUAL',
+      action: isPartial ? 'CONCILIACAO_PAGAMENTO_PARCIAL' : 'CONCILIACAO_MANUAL',
       module: 'Conciliação Bancária',
       recordId: stmt.id,
-      details: `Conciliado: Extrato "${stmt.description}" (${formatBRL(stmt.amount)}) com título ${title.titleNumber}. Liquidado: Principal ${formatBRL(princ)}${inter > 0 ? `, Juros ${formatBRL(inter)}` : ''}${disc > 0 ? `, Desconto ${formatBRL(disc)}` : ''}.`
+      details: isPartial
+        ? `Pagamento Parcial Conciliado: Extrato "${stmt.description}" (${formatBRL(stmt.amount)}) liquidou ${formatBRL(princ)} do título ${title.titleNumber}. Restante em aberto no ERP: ${formatBRL(titleBal - princ)}.`
+        : `Conciliado: Extrato "${stmt.description}" (${formatBRL(stmt.amount)}) com título ${title.titleNumber}. Liquidado: Principal ${formatBRL(princ)}${inter > 0 ? `, Juros ${formatBRL(inter)}` : ''}${disc > 0 ? `, Desconto ${formatBRL(disc)}` : ''}.`
     });
 
-    setSuccessMsg(`Sucesso! Lançamento "${stmt.description}" conciliado e quitado no ERP com o título ${title.titleNumber}!`);
+    setSuccessMsg(isPartial
+      ? `✓ Sucesso! Pagamento parcial de ${formatBRL(princ)} conciliado. O título #${title.titleNumber} continua em aberto com saldo restante de ${formatBRL(titleBal - princ)}.`
+      : `Sucesso! Lançamento "${stmt.description}" conciliado e quitado no ERP com o título ${title.titleNumber}!`
+    );
     setSelectedStmtIds([]);
     setSelectedTitleIds([]);
     setRefreshKey(k => k + 1);
     return true;
   };
 
-  // Assistente de Equalização em 1 Clique (Juros / Multa / Desconto / Principal) com Baixa Imediata
-  const handleQuickEqualizeAndReconcile = (type: 'STATEMENT_PRINCIPAL' | 'DISCOUNT' | 'INTEREST' | 'FINE') => {
-    if (!selectedStmt || !selectedTitle) return;
-    const p = currentTitleBalance;
-    let overrideP = p;
-    let overrideInt = 0;
-    let overrideFn = 0;
-    let overrideDisc = 0;
-
-    if (type === 'STATEMENT_PRINCIPAL') {
-      overrideP = stmtAbsAmount;
-    } else if (type === 'DISCOUNT') {
-      overrideDisc = Math.max(0, Math.round((p - stmtAbsAmount) * 100) / 100);
-    } else if (type === 'INTEREST') {
-      overrideInt = Math.max(0, Math.round((stmtAbsAmount - p) * 100) / 100);
-    } else if (type === 'FINE') {
-      overrideFn = Math.max(0, Math.round((stmtAbsAmount - p) * 100) / 100);
-    }
-
-    executeDirectReconciliation(selectedStmt, selectedTitle, {
-      overridePrincipal: overrideP,
-      overrideInterest: overrideInt,
-      overrideFine: overrideFn,
-      overrideDiscount: overrideDisc,
-      autoEqualize: true
-    });
-  };
 
   // Salva o padrão do par selecionado como Regra De-Para Automática
   const handleSaveCurrentPairAsRule = () => {
@@ -1822,25 +1790,12 @@ export const ReconciliationView: React.FC = () => {
     // =========================================================================
     if (isMultiSelection) {
       if (!isMultiExact) {
-        setBatchConfirmModal({
-          isOpen: true,
-          type: 'MULTI_SELECTION',
-          title: 'Confirmar Conciliação em Lote com Divergência de Valores',
-          description: `Atenção: A soma dos extratos difere da soma dos títulos selecionados. Deseja prosseguir com a conciliação e dar baixa/vínculo contábil nos lançamentos selecionados?`,
-          stmtsCount: selectedStmts.length,
-          titlesCount: selectedTitles.length,
-          totalStmts: totalStmtsAmount,
-          totalTitles: totalTitlesAmount,
-          difference: multiDifference,
-          onConfirm: () => {
-            setBatchConfirmModal(null);
-            executeMultiBatchReconcile();
-          }
-        });
+        handleOpenReconcileModal(selectedStmts[0], selectedTitles[0]);
+        setErrorMsg(`A conciliação em lote com valores divergentes está bloqueada (${formatBRL(Math.abs(multiDifference))}). Na janela aberta, ajuste os valores para bater 100% antes de confirmar.`);
         return;
       }
 
-      // Se valores 100% equalizados, executa diretamente
+      // Se valores 100% conferidos, executa diretamente
       executeMultiBatchReconcile();
       return;
     }
@@ -1850,12 +1805,21 @@ export const ReconciliationView: React.FC = () => {
     // =========================================================================
     if (!selectedStmt || !selectedTitle) return;
 
+    const titleBal = selectedTitle.balancePrincipal > 0 ? selectedTitle.balancePrincipal : selectedTitle.originalAmount;
+    const stmtAbs = Math.abs(Number(selectedStmt.amount) || 0);
+
+    // Se houver divergência, abre obrigatoriamente a janela de conciliação para Pagamento Parcial ou Ajuste
+    if (Math.abs(stmtAbs - titleBal) >= 0.005) {
+      handleOpenReconcileModal(selectedStmt, selectedTitle);
+      setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do ERP (${formatBRL(titleBal)}). Selecione a opção "Pagamento Parcial" ou informe Desconto/Acréscimo na janela para poder conciliar.`);
+      return;
+    }
+
     executeDirectReconciliation(selectedStmt, selectedTitle, {
-      overridePrincipal: adjPrincipal > 0 ? adjPrincipal : undefined,
-      overrideInterest: adjInterest,
-      overrideFine: adjFine,
-      overrideDiscount: adjDiscount,
-      autoEqualize: true
+      overridePrincipal: stmtAbs,
+      overrideInterest: 0,
+      overrideFine: 0,
+      overrideDiscount: 0
     });
   };
 
@@ -3768,6 +3732,14 @@ export const ReconciliationView: React.FC = () => {
                                   <HandCoins className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 stroke-[2.2]" />
                                   <span>BAIXADO MANUAL (PENDENTE BANCO)</span>
                                 </span>
+                              ) : t.settlementState === 'PARCIAL' ? (
+                                <span 
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-2xs"
+                                  title={`Pago parcialmente: ${formatBRL(t.settledPrincipal || 0)}. Saldo restante em aberto: ${formatBRL(t.balancePrincipal)}`}
+                                >
+                                  <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span>PARCIAL (Restante: {formatBRL(t.balancePrincipal)})</span>
+                                </span>
                               ) : (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
                                   EM ABERTO
@@ -4354,7 +4326,7 @@ export const ReconciliationView: React.FC = () => {
                   <div className="pt-2 border-t border-slate-200 dark:border-[#273040] flex justify-between items-center text-emerald-600 dark:text-emerald-400">
                     <span className="font-bold flex items-center gap-1">
                       <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      Total 100% Equalizado
+                      Valores 100% Conferidos (Diferença: R$ 0,00)
                     </span>
                     <span className="font-bold font-mono">
                       R$ 0,00
@@ -4370,13 +4342,13 @@ export const ReconciliationView: React.FC = () => {
                     <span>CONCILIAÇÃO BLOQUEADA: VALORES DIVERGENTES</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    A conciliação <strong>NÃO PODE ser aceita</strong> sem que os valores estejam corrigidos e batam 100%! Existe uma diferença de <strong>{formatBRL(batchConfirmModal.difference)}</strong>. Corrija ou equalize os valores na janela flutuante para prosseguir.
+                    A conciliação <strong>NÃO PODE ser aceita</strong> sem que os valores estejam corrigidos e batam 100%! Existe uma diferença de <strong>{formatBRL(batchConfirmModal.difference)}</strong>. Corrija ou ajuste os valores na janela de conciliação para prosseguir.
                   </p>
                 </div>
               ) : (
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-500 shrink-0 stroke-[3]" />
-                  <span>Valores 100% equalizados e conferidos. Liberação imediata para quitação e auditoria.</span>
+                  <span>Valores 100% conferidos e prontos para conciliação.</span>
                 </div>
               )}
             </div>
@@ -4401,7 +4373,7 @@ export const ReconciliationView: React.FC = () => {
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <Sliders className="w-4 h-4" />
-                  <span>Equalizar na Janela Flutuante</span>
+                  <span>Ajustar na Janela de Conciliação</span>
                 </button>
               )}
 
@@ -4595,7 +4567,7 @@ export const ReconciliationView: React.FC = () => {
         </div>
       )}
 
-      {/* BARRA FIXA FLUTUANTE INFERIOR DE EQUALIZAÇÃO (SEMPRE VISÍVEL MESMO COM ROLAGEM) */}
+      {/* BARRA FIXA FLUTUANTE INFERIOR DE CONCILIAÇÃO (SEMPRE VISÍVEL MESMO COM ROLAGEM) */}
       {selectedStmtIds.length > 0 && selectedTitleIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-950/95 border-2 border-amber-500/60 shadow-2xl rounded-2xl px-5 py-3 backdrop-blur-md flex items-center gap-4 text-white max-w-[94vw] animate-in slide-in-from-bottom duration-200">
           <div className="flex items-center gap-3">
@@ -4631,11 +4603,25 @@ export const ReconciliationView: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleEqualizeAndReconcile}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg hover:shadow-amber-500/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-amber-300"
+              onClick={handleInitiateReconciliation}
+              className={`px-4 py-2 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${
+                isMultiExact
+                  ? 'bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500 text-slate-950 border border-emerald-300 shadow-emerald-500/30'
+                  : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 border border-amber-300 shadow-amber-500/30'
+              }`}
+              title={isMultiExact ? 'Valores 100% batendo. Confirmar conciliação.' : 'Valores divergentes: abre a janela para selecionar Pagamento Parcial ou Desconto/Acréscimo.'}
             >
-              <Zap className="w-3.5 h-3.5 fill-current" />
-              <span>⚡ Equalizar & Conciliar</span>
+              {isMultiExact ? (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Confirmar Conciliação</span>
+                </>
+              ) : (
+                <>
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Conciliar & Ajustar ({formatBRL(Math.abs(multiDifference))})</span>
+                </>
+              )}
             </button>
 
             <button

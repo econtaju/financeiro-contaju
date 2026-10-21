@@ -18,6 +18,7 @@ import {
   Building2,
   Calendar,
   Lock,
+  Clock,
   CheckCircle2
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty } from '../../types';
@@ -77,6 +78,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   const [adjFine, setAdjFine] = useState<number>(0);
   const [adjDiscount, setAdjDiscount] = useState<number>(0);
   const [adjBankFee, setAdjBankFee] = useState<number>(0);
+  const [isPartialSettlement, setIsPartialSettlement] = useState<boolean>(false);
   const [isManualEditOpen, setIsManualEditOpen] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -91,6 +93,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
       setAdjFine(0);
       setAdjDiscount(0);
       setAdjBankFee(0);
+      setIsPartialSettlement(false);
       
       // Abre a edição manual se houver divergência inicial
       const isExact = Math.abs(stmtAbs - titleBal) < 0.005;
@@ -130,6 +133,9 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   const stmtAbsAmount = singleStmt ? Math.round(Math.abs(Number(singleStmt.amount) || 0) * 100) / 100 : 0;
   const currentTitleBalance = singleTitle ? (singleTitle.balancePrincipal > 0 ? singleTitle.balancePrincipal : singleTitle.originalAmount) : 0;
   
+  // Opção de Pagamento / Recebimento Parcial (quando o extrato é menor que o saldo do título)
+  const canPartialSettlement = Boolean(!isMultiSelection && singleStmt && singleTitle && stmtAbsAmount < currentTitleBalance - 0.005);
+
   // Distinção de natureza: RECEBER (tarifa bancária é retida/descontada na entrada) vs PAGAR (tarifa bancária é debitada a mais)
   const isReceipt = singleTitle ? singleTitle.type === 'RECEBER' : (singleStmt ? Number(singleStmt.amount) > 0 : true);
   const totalSettledCalculated = Math.round(
@@ -150,13 +156,17 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
   const multiDifference = Math.round((totalStmtsAmount - totalTitlesAmount) * 100) / 100;
   const isMultiExact = Math.abs(multiDifference) < 0.005;
 
-  // Regra Estrita do Usuário: NÃO PODE ACEITAR SE OS VALORES NÃO FOREM CORRIGIDOS E BATEREM 100%
+  // Regra Estrita do Usuário:
+  // SÓ PODE ACEITAR se os valores baterem 100% exatamente (diferença R$ 0,00) OU se for marcado Pagamento Parcial
   const canConfirm = isMultiSelection 
     ? (selectedStatements.length > 0 && effectiveTitles.length > 0 && isMultiExact) 
-    : (Boolean(singleStmt && singleTitle) && isSingleExact);
+    : Boolean(singleStmt && singleTitle) && (
+        isSingleExact || (canPartialSettlement && isPartialSettlement)
+      );
 
   // Ações de Ajuste Rápido
-  const handleApplyStatementAsPrincipal = () => {
+  const handleEnablePartialSettlement = () => {
+    setIsPartialSettlement(true);
     setAdjPrincipal(stmtAbsAmount);
     setAdjInterest(0);
     setAdjFine(0);
@@ -340,17 +350,24 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           return;
         }
 
-        // Título em aberto - dar baixa com os valores equalizados que batem 100%
-        if (adjPrincipal > currentTitleBalance) {
+        const isPartial = isPartialSettlement && canPartialSettlement;
+        const effectivePrincipalToSettle = isPartial ? stmtAbsAmount : adjPrincipal;
+        const effectiveDiscount = isPartial ? 0 : adjDiscount;
+        const effectiveInterest = isPartial ? 0 : adjInterest;
+        const effectiveFine = isPartial ? 0 : adjFine;
+        const effectiveBankFee = isPartial ? 0 : adjBankFee;
+
+        // Se o valor principal for maior que o saldo (acréscimo no valor original)
+        if (!isPartial && effectivePrincipalToSettle > currentTitleBalance) {
           const allTitles = storage.getTitles();
           const updatedTitles = allTitles.map(t => {
             if (t.id === singleTitle.id) {
-              const diffP = adjPrincipal - t.balancePrincipal;
+              const diffP = effectivePrincipalToSettle - t.balancePrincipal;
               const newOriginal = Math.round(Math.max(0.01, t.originalAmount + diffP) * 100) / 100;
               return {
                 ...t,
                 originalAmount: newOriginal,
-                balancePrincipal: adjPrincipal,
+                balancePrincipal: effectivePrincipalToSettle,
                 updatedAt: new Date().toISOString()
               };
             }
@@ -366,16 +383,18 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           titleId: singleTitle.id,
           settlementDate: safeEffectiveDate,
           bankAccountId: safeBankAccountId,
-          principalSettled: adjPrincipal,
-          discount: adjDiscount,
-          interest: adjInterest,
-          fine: adjFine,
-          bankFee: adjBankFee,
-          notes: `Baixa via Janela Flutuante de Conciliação (${singleStmt.description})${
-            adjInterest > 0 || adjFine > 0 || adjDiscount > 0 || adjBankFee > 0 || Math.abs(adjPrincipal - currentTitleBalance) > 0.005
-              ? ` [Ajuste 100%: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjFine > 0 ? `, Multa ${formatBRL(adjFine)}` : ''}${adjDiscount > 0 ? `, Desc Comercial ${formatBRL(adjDiscount)}` : ''}${adjBankFee > 0 ? `, Tarifa Bancária ${formatBRL(adjBankFee)}` : ''}]`
-              : ''
-          }`,
+          principalSettled: effectivePrincipalToSettle,
+          discount: effectiveDiscount,
+          interest: effectiveInterest,
+          fine: effectiveFine,
+          bankFee: effectiveBankFee,
+          notes: isPartial
+            ? `Baixa parcial via Conciliação Bancária (${singleStmt.description}). Saldo restante em aberto: ${formatBRL(currentTitleBalance - effectivePrincipalToSettle)}`
+            : `Baixa via Janela de Conciliação (${singleStmt.description})${
+                effectiveInterest > 0 || effectiveFine > 0 || effectiveDiscount > 0 || effectiveBankFee > 0 || Math.abs(effectivePrincipalToSettle - currentTitleBalance) > 0.005
+                  ? ` [Ajuste 100%: Principal ${formatBRL(effectivePrincipalToSettle)}${effectiveInterest > 0 ? `, Juros ${formatBRL(effectiveInterest)}` : ''}${effectiveFine > 0 ? `, Multa ${formatBRL(effectiveFine)}` : ''}${effectiveDiscount > 0 ? `, Desc Comercial ${formatBRL(effectiveDiscount)}` : ''}${effectiveBankFee > 0 ? `, Tarifa Bancária ${formatBRL(effectiveBankFee)}` : ''}]`
+                  : ''
+              }`,
           voucherRef: singleStmt.fitId
         });
 
@@ -385,13 +404,24 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           return;
         }
 
-        // Marca título como CONCILIADO
+        // Atualiza título no storage:
+        // SE FOR PARCIAL: mantém PENDENTE pois o restante continua em aberto!
+        // SE FOR TOTAL: marca como CONCILIADO
         const currentTitles = storage.getTitles();
-        const updatedTitles = currentTitles.map(t => t.id === singleTitle.id ? {
-          ...t,
-          reconciliationStatus: 'CONCILIADO' as const,
-          updatedAt: new Date().toISOString()
-        } : t);
+        const updatedTitles = currentTitles.map(t => {
+          if (t.id === singleTitle.id) {
+            const hasRemaining = t.balancePrincipal > 0.005;
+            return {
+              ...t,
+              reconciliationStatus: isPartial && hasRemaining ? ('PENDENTE' as const) : ('CONCILIADO' as const),
+              reconciliationNote: isPartial && hasRemaining
+                ? `Pagamento parcial de ${formatBRL(effectivePrincipalToSettle)} conciliado via extrato (${singleStmt.description}). Saldo restante em aberto: ${formatBRL(t.balancePrincipal)}`
+                : t.reconciliationNote,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return t;
+        });
         storage.saveTitles(updatedTitles);
 
         // Marca extrato como CONCILIADO
@@ -399,7 +429,10 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
         const updatedStmts = allStmts.map(s => s.id === singleStmt.id ? { 
           ...s, 
           reconciliationStatus: 'CONCILIADO' as const,
-          matchedTitleId: singleTitle.id 
+          matchedTitleId: singleTitle.id,
+          reconciliationNote: isPartial
+            ? `Conciliado como pagamento parcial do título #${singleTitle.titleNumber} (restante em aberto no ERP: ${formatBRL(currentTitleBalance - effectivePrincipalToSettle)})`
+            : s.reconciliationNote
         } : s);
         storage.saveStatementEntries(updatedStmts);
 
@@ -408,13 +441,18 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
         storage.addAuditLog({
           userName: currentUser.name,
           userRole: currentUser.role,
-          action: 'CONCILIACAO_100_EXATA',
+          action: isPartial ? 'CONCILIACAO_PAGAMENTO_PARCIAL' : 'CONCILIACAO_100_EXATA',
           module: 'Conciliação Bancária',
           recordId: singleStmt.id,
-          details: `Conciliado 100%: Extrato "${singleStmt.description}" (${formatBRL(singleStmt.amount)}) com título ${singleTitle.titleNumber}. Liquidado: Principal ${formatBRL(adjPrincipal)}${adjInterest > 0 ? `, Juros ${formatBRL(adjInterest)}` : ''}${adjFine > 0 ? `, Multa ${formatBRL(adjFine)}` : ''}${adjDiscount > 0 ? `, Desc Comercial ${formatBRL(adjDiscount)}` : ''}${adjBankFee > 0 ? `, Tarifa Bancária ${formatBRL(adjBankFee)}` : ''}. Diferença: R$ 0,00.`
+          details: isPartial
+            ? `Pagamento Parcial: Extrato "${singleStmt.description}" (${formatBRL(singleStmt.amount)}) baixou ${formatBRL(effectivePrincipalToSettle)} do título ${singleTitle.titleNumber}. Restante em aberto no ERP: ${formatBRL(currentTitleBalance - effectivePrincipalToSettle)}.`
+            : `Conciliado 100%: Extrato "${singleStmt.description}" (${formatBRL(singleStmt.amount)}) com título ${singleTitle.titleNumber}. Liquidado: Principal ${formatBRL(effectivePrincipalToSettle)}${effectiveInterest > 0 ? `, Juros ${formatBRL(effectiveInterest)}` : ''}${effectiveFine > 0 ? `, Multa ${formatBRL(effectiveFine)}` : ''}${effectiveDiscount > 0 ? `, Desc Comercial ${formatBRL(effectiveDiscount)}` : ''}${effectiveBankFee > 0 ? `, Tarifa Bancária ${formatBRL(effectiveBankFee)}` : ''}. Diferença: R$ 0,00.`
         });
 
-        onSuccess(`Conciliação concluída com sucesso! Extrato e Título 100% conferidos e quitados no ERP.`);
+        onSuccess(isPartial
+          ? `✓ Sucesso! Pagamento parcial de ${formatBRL(effectivePrincipalToSettle)} conciliado. O título #${singleTitle.titleNumber} continua em aberto com saldo de ${formatBRL(currentTitleBalance - effectivePrincipalToSettle)}.`
+          : `Conciliação concluída com sucesso! Extrato e Título 100% conferidos e quitados no ERP.`
+        );
         onClose();
       }
     } catch (err: any) {
@@ -481,7 +519,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
           {/* ALERTA MANDATÓRIO QUANDO OS VALORES NÃO FOREM CORRIGIDOS E NÃO BATEREM 100% */}
           {/* ========================================================================= */}
           {!canConfirm ? (
-            <div className="p-4 rounded-xl bg-rose-500/10 border-2 border-rose-500/50 text-rose-900 dark:text-rose-200 animate-in fade-in space-y-2">
+            <div className="p-4 rounded-xl bg-rose-500/10 border-2 border-rose-500/50 text-rose-900 dark:text-rose-200 animate-in fade-in space-y-3">
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/60 flex items-center justify-center text-rose-500 shrink-0 mt-0.5">
                   <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
@@ -491,32 +529,37 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                     <span>ATENÇÃO: A CONCILIAÇÃO NÃO PODE SER ACEITA COM VALORES DIVERGENTES</span>
                   </h3>
                   <p className="text-xs text-slate-700 dark:text-slate-300 mt-1 leading-relaxed">
-                    O valor registrado no <strong>Extrato Bancário</strong> não confere exatamente com o <strong>Título do ERP</strong>. A conciliação <strong>está bloqueada</strong> até que a diferença de{' '}
+                    O valor registrado no <strong>Extrato Bancário</strong> ({formatBRL(stmtAbsAmount)}) não confere com o saldo do <strong>Título no ERP</strong> ({formatBRL(currentTitleBalance)}).
+                    A conciliação <strong>está bloqueada</strong> até que seja selecionada a opção de <strong>Pagamento Parcial</strong> (para manter o restante em aberto) ou que os valores sejam ajustados de fato informando o <strong>Aumento (Juros/Multa/Tarifa)</strong> ou <strong>Desconto Comercial</strong> para zerar a diferença de{' '}
                     <strong className="text-rose-600 dark:text-rose-400 font-mono text-sm underline">
                       {formatBRL(Math.abs(isMultiSelection ? multiDifference : differenceToStatement))}
-                    </strong>{' '}
-                    seja corrigida ou equalizada (Juros, Multa, Desconto ou Ajuste do Principal) para <strong>bater 100% (Diferença: R$ 0,00)</strong>.
+                    </strong>.
                   </p>
                 </div>
               </div>
 
-              {/* Botões Rápidos de Correção em 1 Clique */}
+              {/* Botões Rápidos de Correção e Opção de Pagamento Parcial */}
               {!isMultiSelection && (
                 <div className="pt-2 border-t border-rose-500/20 flex flex-wrap items-center gap-2">
                   <span className="font-bold text-[11px] text-slate-800 dark:text-slate-200 flex items-center gap-1">
                     <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    Corrigir automaticamente para 100%:
+                    Opções para liberar conciliação:
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={handleApplyStatementAsPrincipal}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1 shadow-sm transition-all cursor-pointer"
-                    title="Ajusta o valor principal para o valor do extrato"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>Ajustar Principal para {formatBRL(stmtAbsAmount)}</span>
-                  </button>
+                  {/* Opção 1: Marcar Pagamento Parcial (se o extrato for menor que o título) */}
+                  {canPartialSettlement && (
+                    <button
+                      type="button"
+                      onClick={handleEnablePartialSettlement}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      title="Registrar como baixa parcial e manter o saldo restante em aberto no ERP"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        Marcar como {isReceipt ? 'Recebimento Parcial' : 'Pagamento Parcial'} (Restará {formatBRL(currentTitleBalance - stmtAbsAmount)} em aberto)
+                      </span>
+                    </button>
+                  )}
 
                   {isReceipt ? (
                     stmtAbsAmount < currentTitleBalance ? (
@@ -535,7 +578,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                           type="button"
                           onClick={handleApplyDiffAsDiscount}
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Lança como Desconto Comercial concedido ao cliente"
+                          title="Lança como Desconto Comercial concedido ao cliente (Quita 100% o título)"
                         >
                           <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
                           <span>Lançar como Desconto Comercial (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
@@ -602,7 +645,7 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
                         type="button"
                         onClick={handleApplyDiffAsDiscount}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1B212D] hover:bg-slate-100 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Lança como Desconto Comercial obtido do fornecedor"
+                        title="Lança como Desconto Comercial obtido do fornecedor (Quita 100% o título)"
                       >
                         <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
                         <span>Lançar como Desconto Comercial (-{formatBRL(currentTitleBalance - stmtAbsAmount)})</span>
@@ -859,20 +902,79 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
             </div>
           </div>
 
-          {/* Painel de Equalização e Composição dos Valores (Apenas se unitário e não liquidado) */}
+          {/* Composição e Ajustes da Conciliação (Apenas se unitário e não liquidado) */}
           {!isMultiSelection && singleTitle && singleTitle.settlementState !== 'LIQUIDADO' && (
             <div className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Calculator className="w-4 h-4 text-amber-400" />
                   <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Composição Contábil da Baixa para Bater 100%
+                    Composição e Ajustes da Conciliação
                   </span>
                 </div>
                 <span className="text-[11px] text-slate-400">
-                  Ajuste os campos abaixo até a diferença ser exatamente <strong>R$ 0,00</strong>
+                  {canPartialSettlement
+                    ? 'Selecione Pagamento Parcial ou ajuste Desconto/Acréscimo'
+                    : 'Ajuste os campos abaixo até a diferença ser exatamente R$ 0,00'}
                 </span>
               </div>
+
+              {/* Opção Destacada de Pagamento / Recebimento Parcial */}
+              {canPartialSettlement && (
+                <div className={`p-3.5 rounded-xl border transition-all ${
+                  isPartialSettlement
+                    ? 'bg-amber-500/20 border-amber-500 text-white ring-2 ring-amber-500/40'
+                    : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-amber-500/40'
+                }`}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPartialSettlement}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setIsPartialSettlement(checked);
+                        if (checked) {
+                          setAdjPrincipal(stmtAbsAmount);
+                          setAdjDiscount(0);
+                          setAdjInterest(0);
+                          setAdjFine(0);
+                          setAdjBankFee(0);
+                        } else {
+                          setAdjPrincipal(currentTitleBalance);
+                        }
+                      }}
+                      className="mt-0.5 w-5 h-5 rounded border-amber-500 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-extrabold text-xs text-amber-400 uppercase tracking-wide">
+                          {isReceipt ? 'Recebimento Parcial' : 'Pagamento Parcial'} (Manter Restante em Aberto)
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Opção Recomendada
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                        Dá baixa exclusivamente no valor do extrato (<strong>{formatBRL(stmtAbsAmount)}</strong>). O saldo restante de <strong className="text-amber-400 font-mono font-bold">{formatBRL(currentTitleBalance - stmtAbsAmount)}</strong> continuará <strong>EM ABERTO</strong> no ERP (status PARCIAL) para ser conciliado nos próximos lançamentos.
+                      </p>
+                      <div className="mt-2.5 pt-2 border-t border-slate-800 flex flex-wrap items-center gap-4 text-xs font-mono">
+                        <div>
+                          <span className="text-slate-500">Saldo Atual: </span>
+                          <strong className="text-white">{formatBRL(currentTitleBalance)}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Baixa no Extrato: </span>
+                          <strong className="text-emerald-400">-{formatBRL(stmtAbsAmount)}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Restará em Aberto: </span>
+                          <strong className="text-amber-400 font-bold underline">{formatBRL(currentTitleBalance - stmtAbsAmount)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                 {/* Principal */}
@@ -992,12 +1094,14 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
             {canConfirm ? (
               <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                Valores 100% equalizados e prontos para baixa contábil.
+                {isPartialSettlement 
+                  ? `Pronto: Baixa Parcial de ${formatBRL(stmtAbsAmount)} (Restante: ${formatBRL(currentTitleBalance - stmtAbsAmount)} continuará em aberto no ERP).`
+                  : 'Valores 100% conferidos e prontos para conciliação.'}
               </span>
             ) : (
               <span className="text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1.5">
                 <Lock className="w-4 h-4 text-rose-500" />
-                Conciliação bloqueada: diferença de {formatBRL(Math.abs(isMultiSelection ? multiDifference : differenceToStatement))}.
+                Conciliação bloqueada: diferença de {formatBRL(Math.abs(isMultiSelection ? multiDifference : differenceToStatement))}. Marque "Pagamento Parcial" ou informe Desconto/Acréscimo.
               </span>
             )}
           </div>
@@ -1022,14 +1126,21 @@ export const ReconciliationFloatingModal: React.FC<ReconciliationFloatingModalPr
               }`}
             >
               {canConfirm ? (
-                <>
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  <span>{isMultiSelection ? `CONFIRMAR CONCILIAÇÃO EM LOTE (${selectedStatements.length} ➔ ${selectedTitles.length})` : 'CONFIRMAR CONCILIAÇÃO E BAIXAR (100% EXATO)'}</span>
-                </>
+                isPartialSettlement ? (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>CONFIRMAR {isReceipt ? 'RECEBIMENTO' : 'PAGAMENTO'} PARCIAL ({formatBRL(stmtAbsAmount)}) • RESTANTE ({formatBRL(currentTitleBalance - stmtAbsAmount)}) EM ABERTO</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>{isMultiSelection ? `CONFIRMAR CONCILIAÇÃO EM LOTE (${selectedStatements.length} ➔ ${selectedTitles.length})` : 'CONFIRMAR CONCILIAÇÃO (100% EXATO)'}</span>
+                  </>
+                )
               ) : (
                 <>
-                  <AlertTriangle className="w-4 h-4 text-rose-500 stroke-[2.5]" />
-                  <span>CONCILIAÇÃO BLOQUEADA (CORRIJA OS VALORES PARA BATER 100%)</span>
+                  <Lock className="w-4 h-4 text-rose-500 stroke-[2.5]" />
+                  <span>CONCILIAÇÃO BLOQUEADA (MARQUE PARCIAL OU AJUSTE VALORES)</span>
                 </>
               )}
             </button>
