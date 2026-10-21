@@ -37,7 +37,8 @@ import {
   Folder,
   Scale,
   X,
-  CheckCheck
+  CheckCheck,
+  HandCoins
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -1914,10 +1915,15 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             <span>Conciliado</span>
                           </span>
                         ) : t.settlementState === 'LIQUIDADO' ? (
-                          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                            <span>Pendente Banco</span>
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleSingleReconciled(t, e)}
+                            className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-400/50 dark:border-amber-500/40 inline-flex items-center gap-1 cursor-pointer shadow-2xs hover:bg-amber-500/25 transition-colors"
+                            title="Baixado manualmente no ERP, aguardando conciliação bancária."
+                          >
+                            <HandCoins className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 stroke-[2.2]" />
+                            <span>Baixado Manual (Pendente Banco)</span>
+                          </button>
                         ) : null}
                         {isBalanceFeeTitle(t) ? (
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 flex items-center gap-0.5">
@@ -2673,11 +2679,11 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                             <button
                               type="button"
                               onClick={(e) => handleToggleSingleReconciled(t, e)}
-                              className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 transition-colors cursor-pointer"
-                              title="Baixado no ERP, aguardando conciliação com o extrato bancário. Concilie na tela de Conciliação Bancária."
+                              className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-400/50 dark:border-amber-500/40 hover:bg-amber-500/25 hover:border-amber-500 transition-colors cursor-pointer shadow-2xs"
+                              title="Baixado manualmente no ERP, aguardando conciliação com o extrato bancário. Concilie na tela de Conciliação Bancária."
                             >
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
-                              <span>Pendente Banco</span>
+                              <HandCoins className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 stroke-[2.2]" />
+                              <span>Baixado Manual (Pendente Banco)</span>
                             </button>
                           ) : null}
                         </div>

@@ -38,14 +38,16 @@ import {
   Landmark,
   ChevronLeft,
   ChevronRight,
-  ArrowLeftRight
+  ArrowLeftRight,
+  HandCoins
 } from 'lucide-react';
 import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { parseOFX, parseOFXFull } from '../../utils/ofxParser';
 import { calculateReconciliationSimilarity } from '../../services/reconciliationMatchingEngine';
 import { normalizeForSearch, matchesSearch } from '../../utils/searchUtils';
+import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { ReconciliationRulesModal } from './ReconciliationRulesModal';
 import { ReconciliationDiagnosticsModal } from './ReconciliationDiagnosticsModal';
 import { BankBalanceClosingModal } from './BankBalanceClosingModal';
@@ -110,7 +112,7 @@ export const ReconciliationView: React.FC = () => {
   // Modal de Confirmação para Conciliação em Lote
   const [batchConfirmModal, setBatchConfirmModal] = useState<{
     isOpen: boolean;
-    type: 'MULTI_SELECTION' | 'ALL_SUGGESTIONS';
+    type: 'MULTI_SELECTION' | 'ALL_SUGGESTIONS' | 'SETTLED_EXACT_MATCHES';
     title: string;
     description: string;
     stmtsCount: number;
@@ -241,6 +243,98 @@ export const ReconciliationView: React.FC = () => {
   }, [persons]);
 
   const currentAccount = accounts.find(a => a && a.id === selectedAccountId);
+
+  // Correspondências 100% exatas entre lançamentos do extrato e títulos já baixados manualmente no ERP (Sugestão 1)
+  const settledExactMatches = useMemo(() => {
+    if (!selectedAccountId) return [];
+
+    const unrecStmts = statements.filter(
+      s => s && s.bankAccountId === selectedAccountId && s.reconciliationStatus !== 'CONCILIADO'
+    );
+    const liquidatedTitles = titles.filter(
+      t => t && (t.settlementState === 'LIQUIDADO' || (t.balancePrincipal !== undefined && t.balancePrincipal <= 0.005 && (t.settledPrincipal || 0) > 0)) &&
+           t.reconciliationStatus !== 'CONCILIADO'
+    );
+
+    const matches: Array<{ stmt: BankStatementEntry; title: FinancialTitle }> = [];
+    const usedTitleIds = new Set<string>();
+    const usedStmtIds = new Set<string>();
+
+    unrecStmts.forEach(stmt => {
+      if (usedStmtIds.has(stmt.id)) return;
+      const stmtAbs = Math.abs(Number(stmt.amount) || 0);
+      if (stmtAbs <= 0.005) return;
+      const expectedType = Number(stmt.amount) < 0 ? 'PAGAR' : 'RECEBER';
+
+      // Candidatos de mesmo tipo e valor exato no centavo
+      const candidates = liquidatedTitles.filter(t => {
+        if (usedTitleIds.has(t.id)) return false;
+        if (t.type !== expectedType) return false;
+        const tVal = Number(t.settledPrincipal || t.originalAmount) || 0;
+        return Math.abs(stmtAbs - tVal) < 0.005;
+      });
+
+      if (candidates.length === 1) {
+        const best = candidates[0];
+        usedStmtIds.add(stmt.id);
+        usedTitleIds.add(best.id);
+        matches.push({ stmt, title: best });
+      } else if (candidates.length > 1) {
+        // Desempate por proximidade de data de quitação ou vencimento
+        const stmtTime = new Date(stmt.date).getTime() || 0;
+        let bestTitle = candidates[0];
+        let minDiff = Infinity;
+        for (const cand of candidates) {
+          const candDate = cand.settledAt || cand.dueDate || cand.competencyDate;
+          const diff = Math.abs(stmtTime - (new Date(candDate).getTime() || 0));
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestTitle = cand;
+          }
+        }
+        usedStmtIds.add(stmt.id);
+        usedTitleIds.add(bestTitle.id);
+        matches.push({ stmt, title: bestTitle });
+      }
+    });
+
+    return matches;
+  }, [statements, selectedAccountId, titles]);
+
+  // Opções formatadas e filtradas do Plano de Contas para o SearchableSelect (Despesa vs Receita)
+  const chartAccountOptions = useMemo<SelectOption[]>(() => {
+    return formatChartAccountSelectOptions(chartAccounts, newTitleType);
+  }, [chartAccounts, newTitleType]);
+
+  // Opções formatadas de Contrapartes / Favorecidos para o SearchableSelect
+  const entityOptions = useMemo<SelectOption[]>(() => {
+    return persons
+      .filter(p => {
+        if (!p) return false;
+        if (newTitleType === 'PAGAR') {
+          return p.type === 'FORNECEDOR' || p.type === 'AMBOS' || p.type === 'OUTRO';
+        } else {
+          return p.type === 'CLIENTE' || p.type === 'AMBOS' || p.type === 'OUTRO';
+        }
+      })
+      .map(p => ({
+        value: p.id,
+        label: p.name,
+        sublabel: p.document ? `Doc: ${p.document}` : (p.type === 'FORNECEDOR' ? 'Fornecedor' : p.type === 'CLIENTE' ? 'Cliente' : p.type),
+        badge: p.type
+      }));
+  }, [persons, newTitleType]);
+
+  // Alterna o tipo do título no formulário CREATE_NEW e limpa a categoria se não pertencer ao novo tipo
+  const handleTitleTypeChange = (type: 'PAGAR' | 'RECEBER') => {
+    setNewTitleType(type);
+    if (newTitleCategory) {
+      const validAccs = getFilteredChartAccounts(chartAccounts, type);
+      if (!validAccs.some(a => a.id === newTitleCategory)) {
+        setNewTitleCategory('');
+      }
+    }
+  };
 
   // Helper para destacar os cards com degradê verde lateral conforme a porcentagem de correspondência
   // Requisito: Quanto maior a %, mais em destaque de verde fica o card.
@@ -1404,6 +1498,98 @@ export const ReconciliationView: React.FC = () => {
     }
 
     setSuccessMsg(`Sucesso! ${reconciledCount} sugestões de extrato foram conciliadas e quitadas no ERP em lote! (${settledCount} baixadas agora, ${alreadySettledCount} já quitadas vinculadas).`);
+    setSelectedStmtIds([]);
+    setSelectedTitleIds([]);
+    setRefreshKey(k => k + 1);
+  };
+
+  // Dispara modal de confirmação para conciliar todos os títulos já baixados que têm valor exato
+  const handleTriggerBatchReconcileSettled = () => {
+    setErrorMsg('');
+    if (settledExactMatches.length === 0) {
+      setErrorMsg('Nenhuma correspondência exata encontrada com títulos já baixados no momento.');
+      return;
+    }
+
+    const totalStmts = settledExactMatches.reduce((sum, m) => sum + Math.abs(Number(m.stmt.amount) || 0), 0);
+    const totalTitles = settledExactMatches.reduce((sum, m) => {
+      const tVal = Number(m.title.settledPrincipal || m.title.originalAmount) || 0;
+      return sum + tVal;
+    }, 0);
+
+    setBatchConfirmModal({
+      isOpen: true,
+      type: 'SETTLED_EXACT_MATCHES',
+      title: 'Conciliar Títulos Já Baixados em Lote',
+      description: `Identificamos ${settledExactMatches.length} lançamentos do extrato que correspondem com 100% de precisão de valores (no centavo) a títulos que já foram quitados manualmente no ERP. Deseja realizar a auditoria e conciliação em lote sem duplicar registros de caixa?`,
+      stmtsCount: settledExactMatches.length,
+      titlesCount: settledExactMatches.length,
+      totalStmts,
+      totalTitles,
+      difference: Math.round(Math.abs(totalStmts - totalTitles) * 100) / 100,
+      onConfirm: () => {
+        setBatchConfirmModal(null);
+        executeBatchReconcileSettled();
+      }
+    });
+  };
+
+  // Executa a conciliação em lote dos títulos já baixados
+  const executeBatchReconcileSettled = () => {
+    if (settledExactMatches.length === 0) return;
+
+    const matchedStmtMap = new Map<string, FinancialTitle>();
+    const matchedTitleMap = new Map<string, BankStatementEntry>();
+
+    settledExactMatches.forEach(m => {
+      matchedStmtMap.set(m.stmt.id, m.title);
+      matchedTitleMap.set(m.title.id, m.stmt);
+    });
+
+    // 1. Atualiza extratos
+    const allStmts = storage.getStatementEntries().map(s => {
+      const matchedTitle = matchedStmtMap.get(s.id);
+      if (matchedTitle) {
+        return {
+          ...s,
+          reconciliationStatus: 'CONCILIADO' as const,
+          matchedTitleId: matchedTitle.id,
+          reconciliationNote: `Conciliado em lote com título já baixado manual #${matchedTitle.titleNumber}`
+        };
+      }
+      return s;
+    });
+    storage.saveStatementEntries(allStmts);
+
+    // 2. Atualiza títulos (sem chamar postSettlement, pois já estão quitados!)
+    const allTitles = storage.getTitles().map(t => {
+      const matchedStmt = matchedTitleMap.get(t.id);
+      if (matchedStmt) {
+        return {
+          ...t,
+          reconciliationStatus: 'CONCILIADO' as const,
+          reconciledViaBank: true,
+          reconciledAt: new Date().toISOString(),
+          reconciliationNote: `Conciliado em lote com extrato (${formatBRL(Math.abs(matchedStmt.amount))})`,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(allTitles);
+
+    // Auditoria
+    const currentUser = storage.getCurrentUser();
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CONCILIACAO_LOTE_JA_BAIXADOS',
+      module: 'Conciliação Bancária',
+      recordId: settledExactMatches.map(m => m.stmt.id).join(','),
+      details: `Conciliação em Lote de Já Baixados: ${settledExactMatches.length} títulos já liquidados vinculados aos lançamentos de extrato sem duplicação de caixa.`
+    });
+
+    setSuccessMsg(`✓ Sucesso! ${settledExactMatches.length} títulos já baixados manualmente foram conciliados com o extrato bancário sem alterar lançamentos do caixa.`);
     setSelectedStmtIds([]);
     setSelectedTitleIds([]);
     setRefreshKey(k => k + 1);
@@ -2616,6 +2802,18 @@ export const ReconciliationView: React.FC = () => {
               Conciliar Sugestões em Lote ({suggestionCount})
             </button>
           )}
+
+          {settledExactMatches.length > 0 && (
+            <button
+              type="button"
+              onClick={handleTriggerBatchReconcileSettled}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shadow-amber-500/20"
+              title="Conciliar em lote todos os lançamentos que batem 100% no centavo com títulos já baixados manualmente no ERP (sem duplicar lançamentos de caixa)"
+            >
+              <HandCoins className="w-4 h-4 stroke-[2.5]" />
+              Conciliar Já Baixados em Lote ({settledExactMatches.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -2693,7 +2891,7 @@ export const ReconciliationView: React.FC = () => {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Sugestões de Correspondência</span>
@@ -2716,6 +2914,30 @@ export const ReconciliationView: React.FC = () => {
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">Identificados com base na regra de aproximação</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Baixados Manuais no ERP</span>
+            <HandCoins className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="flex items-baseline justify-between mt-1">
+            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+              {settledExactMatches.length} prontos
+            </div>
+            {settledExactMatches.length > 0 && (
+              <button
+                type="button"
+                onClick={handleTriggerBatchReconcileSettled}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                title="Conciliar títulos já baixados manualmente em lote"
+              >
+                <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                Conciliar Lote
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Valores 100% exatos no extrato sem duplicar caixa</p>
         </div>
 
         <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
@@ -3540,11 +3762,11 @@ export const ReconciliationView: React.FC = () => {
                                 </span>
                               ) : isLiquidado ? (
                                 <span 
-                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 dark:bg-slate-800 dark:text-amber-300 dark:border-amber-500/30 flex items-center gap-1"
-                                  title="Título já baixado/pago manualmente no ERP. Pronto para vincular à linha de extrato bancário sem duplicar caixa."
+                                  className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-400/60 dark:border-amber-500/40 flex items-center gap-1 shadow-2xs"
+                                  title="Título baixado manualmente no ERP (caixa/dinheiro/transferência). Pendente de conciliação com o extrato bancário."
                                 >
-                                  <Check className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                                  <span>JÁ BAIXADO (PENDENTE BANCO)</span>
+                                  <HandCoins className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 stroke-[2.2]" />
+                                  <span>BAIXADO MANUAL (PENDENTE BANCO)</span>
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
@@ -3792,22 +4014,22 @@ export const ReconciliationView: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setNewTitleType('PAGAR')}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-colors ${
+                    onClick={() => handleTitleTypeChange('PAGAR')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                       newTitleType === 'PAGAR'
-                        ? 'bg-rose-500 text-white border-rose-600'
-                        : 'bg-white dark:bg-[#1B212D] text-slate-700 dark:text-slate-300 border-slate-300 dark:border-[#273040]'
+                        ? 'bg-rose-500 text-white border-rose-600 shadow-xs'
+                        : 'bg-white dark:bg-[#1B212D] text-slate-700 dark:text-slate-300 border-slate-300 dark:border-[#273040] hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     Contas a Pagar (Despesa)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNewTitleType('RECEBER')}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-colors ${
+                    onClick={() => handleTitleTypeChange('RECEBER')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                       newTitleType === 'RECEBER'
-                        ? 'bg-emerald-600 text-white border-emerald-700'
-                        : 'bg-white dark:bg-[#1B212D] text-slate-700 dark:text-slate-300 border-slate-300 dark:border-[#273040]'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                        : 'bg-white dark:bg-[#1B212D] text-slate-700 dark:text-slate-300 border-slate-300 dark:border-[#273040] hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     Contas a Receber (Receita)
@@ -3866,33 +4088,30 @@ export const ReconciliationView: React.FC = () => {
               <div>
                 <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
                   Classificação Contábil (Plano de Contas)
+                  <span className="text-[10px] text-amber-500 font-normal ml-1">
+                    ({newTitleType === 'PAGAR' ? 'Filtrado: Custos e Despesas' : 'Filtrado: Receitas Operacionais'})
+                  </span>
                 </label>
-                <select
+                <SearchableSelect
+                  options={chartAccountOptions}
                   value={newTitleCategory}
-                  onChange={e => setNewTitleCategory(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] px-3 py-2 font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                >
-                  <option value="">Selecione a categoria contábil...</option>
-                  {chartAccounts.map(ca => (
-                    <option key={ca.id} value={ca.id}>{ca.code} - {ca.name}</option>
-                  ))}
-                </select>
+                  onChange={setNewTitleCategory}
+                  placeholder={`Selecione a conta de ${newTitleType === 'PAGAR' ? 'despesa ou custo' : 'receita'}...`}
+                  searchPlaceholder="Pesquisar por código, nome da conta ou grupo contábil..."
+                />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                  Cliente / Fornecedor / Favorecido
+                  {newTitleType === 'PAGAR' ? 'Fornecedor / Favorecido' : 'Cliente / Pagador'}
                 </label>
-                <select
+                <SearchableSelect
+                  options={entityOptions}
                   value={newTitleEntity}
-                  onChange={e => setNewTitleEntity(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] px-3 py-2 font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                >
-                  <option value="">Selecione a pessoa ou fornecedor...</option>
-                  {persons.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.type})</option>
-                  ))}
-                </select>
+                  onChange={setNewTitleEntity}
+                  placeholder={`Selecione o ${newTitleType === 'PAGAR' ? 'fornecedor ou credor' : 'cliente'}...`}
+                  searchPlaceholder="Pesquisar por nome, documento ou tipo..."
+                />
               </div>
 
               {/* Checkbox de Aprendizado de Regra Automática */}
@@ -4085,7 +4304,9 @@ export const ReconciliationView: React.FC = () => {
                     {batchConfirmModal.title}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Conciliação bancária assistida com baixa automática no ERP
+                    {batchConfirmModal.type === 'SETTLED_EXACT_MATCHES'
+                      ? 'Auditoria e conciliação de títulos previamente quitados (sem duplicar lançamentos de caixa)'
+                      : 'Conciliação bancária assistida com baixa automática no ERP'}
                   </p>
                 </div>
               </div>
@@ -4195,7 +4416,13 @@ export const ReconciliationView: React.FC = () => {
                 }`}
               >
                 <Check className="w-4 h-4 stroke-[3]" />
-                <span>{batchConfirmModal.difference <= 0.005 ? 'Confirmar Conciliação em Lote (100% Exato)' : 'Bloqueado (Valores Divergentes)'}</span>
+                <span>
+                  {batchConfirmModal.difference <= 0.005 
+                    ? (batchConfirmModal.type === 'SETTLED_EXACT_MATCHES'
+                        ? `Confirmar Conciliação (${batchConfirmModal.titlesCount} Títulos Já Baixados)`
+                        : 'Confirmar Conciliação em Lote (100% Exato)')
+                    : 'Bloqueado (Valores Divergentes)'}
+                </span>
               </button>
             </div>
           </div>
