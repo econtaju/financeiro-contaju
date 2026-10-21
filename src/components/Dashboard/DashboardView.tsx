@@ -140,8 +140,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const { cashData, consolidatedCash, currentMonthCashInflow, currentMonthCashOutflow, currentMonthNetCash } = useMemo(() => {
     const cash = ReportingEngine.generateCashFlow(effectiveYear, 'REALIZADO');
     const consolidated = FinancialEngine.getConsolidatedCashBalance();
-    const inflow = cash.lines[2]?.valuesByMonth[effectiveMonthIdx] || 0;
-    const outflow = cash.lines[3]?.valuesByMonth[effectiveMonthIdx] || 0;
+    const opInLine = cash.lines.find(l => l.id === 'cf-op-in') || cash.lines[2];
+    const opOutLine = cash.lines.find(l => l.id === 'cf-op-out') || cash.lines[3];
+    const inflow = opInLine?.valuesByMonth[effectiveMonthIdx] || 0;
+    const outflow = opOutLine?.valuesByMonth[effectiveMonthIdx] || 0;
     return {
       cashData: cash,
       consolidatedCash: consolidated,

@@ -325,12 +325,12 @@ export function exportCashFlowToPDF(
       values: [
         line.code || line.id || '-',
         line.name,
-        ...activeIndices.map(idx => formatBRL(line.valuesByMonth[idx] || 0)),
-        formatBRL(totalCol)
+        ...activeIndices.map(idx => line.isHeader ? '-' : formatBRL(line.valuesByMonth[idx] || 0)),
+        line.isHeader ? '-' : formatBRL(totalCol)
       ],
       isInitialBalance,
       isFinalBalance,
-      isNetVariation: line.id === 'cf-net-variation' || line.id === 'cf-op-net',
+      isNetVariation: line.id === 'cf-net-variation' || line.id === 'cf-op-net' || line.id === 'cf-inv-net' || line.id === 'cf-fin-net',
       isCashBeforeProfit,
       isProfitDistribution,
       isRealActivitiesOutflows,

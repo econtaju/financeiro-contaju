@@ -118,9 +118,10 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
   const displayedLines = useMemo(() => {
     let lines = cashData.lines;
 
-    // Modo Consolidado exibe apenas as linhas sintéticas/estruturais e saldos
+    // Modo Consolidado exibe as linhas estruturais de nível 0 e 1 (Cabeçalhos de Atividades, Caixa Gerado, Caixa Consumido, Somas de Atividades e Totais)
+    // Oculta apenas as rubricas analíticas detalhadas de nível 2
     if (viewMode === 'CONSOLIDADO') {
-      lines = lines.filter(l => l.level === 0 || l.isSummary || l.isHeader);
+      lines = lines.filter(l => l.level <= 1 || l.isSummary || l.isHeader);
     }
 
     if (flowFilter === 'ATIVIDADES_REAIS') {
@@ -155,11 +156,17 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     const finalLine = cashData.lines.find(l => l.id === 'cf-final');
     const opInLine = cashData.lines.find(l => l.id === 'cf-op-in');
     const opOutLine = cashData.lines.find(l => l.id === 'cf-op-out');
+    const opNetLine = cashData.lines.find(l => l.id === 'cf-op-net');
+
     const invInLine = cashData.lines.find(l => l.id === 'cf-inv-in');
     const invOutLine = cashData.lines.find(l => l.id === 'cf-inv-out');
+    const invNetLine = cashData.lines.find(l => l.id === 'cf-inv-net');
+
     const finInLine = cashData.lines.find(l => l.id === 'cf-fin-in');
+    const finOutLine = cashData.lines.find(l => l.id === 'cf-fin-out');
     const finLoanOutLine = cashData.lines.find(l => l.id === 'cf-fin-out-loans');
     const finProfitOutLine = cashData.lines.find(l => l.id === 'cf-fin-out-profit');
+    const finNetLine = cashData.lines.find(l => l.id === 'cf-fin-net');
 
     const firstMonthIdx = activeMonthIndices[0];
     const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
@@ -172,16 +179,24 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
     };
 
-    const totalInflows = sumMonths(opInLine) + sumMonths(invInLine) + sumMonths(finInLine);
+    const opInflows = sumMonths(opInLine);
     const opOutflows = sumMonths(opOutLine);
+    const opNet = sumMonths(opNetLine);
+
+    const invInflows = sumMonths(invInLine);
     const invOutflows = sumMonths(invOutLine);
+    const invNet = sumMonths(invNetLine);
+
+    const finInflows = sumMonths(finInLine);
+    const finOutflows = sumMonths(finOutLine);
     const loanOutflows = sumMonths(finLoanOutLine);
+    const profitDistributionOutflows = sumMonths(finProfitOutLine);
+    const finNet = sumMonths(finNetLine);
+
+    const totalInflows = opInflows + invInflows + finInflows;
 
     // Pagamentos Reais das Atividades (Operação + Investimentos + Amortização de Dívidas)
     const realActivitiesOutflows = opOutflows + invOutflows + loanOutflows;
-
-    // Pagamentos de Distribuição de Lucros aos Sócios
-    const profitDistributionOutflows = sumMonths(finProfitOutLine);
 
     // Total Geral de Saídas
     const totalOutflows = realActivitiesOutflows + profitDistributionOutflows;
@@ -189,7 +204,7 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     // Geração de Caixa Antes da Distribuição de Lucros
     const netCashBeforeProfit = totalInflows - realActivitiesOutflows;
 
-    // Geração Líquida Final (após distribuição de lucros)
+    // Geração Líquida Final (após distribuição de lucros / Soma Total)
     const netCashGeneration = totalInflows - totalOutflows;
 
     // Percentual de Lucro Distribuído sobre a Geração Líquida Pré-Lucros
@@ -201,8 +216,15 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       initialBalance,
       finalBalance,
       totalInflows,
+      opInflows,
       opOutflows,
+      opNet,
+      invInflows,
       invOutflows,
+      invNet,
+      finInflows,
+      finOutflows,
+      finNet,
       loanOutflows,
       realActivitiesOutflows,
       profitDistributionOutflows,
@@ -757,6 +779,111 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
         </div>
       </div>
 
+      {/* Painel Estruturado das 3 Atividades (Operacional, Investimento e Financiamento) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        {/* Atividade Operacional */}
+        <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2.5">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-800 dark:text-slate-200">
+              1. Atividades Operacionais
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              Operação
+            </span>
+          </div>
+          <div className="space-y-1.5 py-3 text-xs">
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(+) Caixa Gerado (Entradas):</span>
+              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                {formatBRL(periodKPIs.opInflows)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(-) Caixa Consumido (Saídas):</span>
+              <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                {formatBRL(periodKPIs.opOutflows)}
+              </span>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border-subtle)] pt-2.5 flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+              (=) Soma Operacional:
+            </span>
+            <span className={`font-mono font-extrabold text-sm ${periodKPIs.opNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {periodKPIs.opNet >= 0 ? '+' : ''}{formatBRL(periodKPIs.opNet)}
+            </span>
+          </div>
+        </div>
+
+        {/* Atividade de Investimento */}
+        <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2.5">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-800 dark:text-slate-200">
+              2. Atividades de Investimento
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              Ativos / Aplicações
+            </span>
+          </div>
+          <div className="space-y-1.5 py-3 text-xs">
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(+) Caixa Gerado (Resgates):</span>
+              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                {formatBRL(periodKPIs.invInflows)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(-) Caixa Consumido (Aquisições):</span>
+              <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                {formatBRL(periodKPIs.invOutflows)}
+              </span>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border-subtle)] pt-2.5 flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+              (=) Soma Investimento:
+            </span>
+            <span className={`font-mono font-extrabold text-sm ${periodKPIs.invNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {periodKPIs.invNet >= 0 ? '+' : ''}{formatBRL(periodKPIs.invNet)}
+            </span>
+          </div>
+        </div>
+
+        {/* Atividade de Financiamento */}
+        <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2.5">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-800 dark:text-slate-200">
+              3. Atividades de Financiamento
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400">
+              Empréstimos / Sócios
+            </span>
+          </div>
+          <div className="space-y-1.5 py-3 text-xs">
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(+) Caixa Gerado (Aportes/Créditos):</span>
+              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                {formatBRL(periodKPIs.finInflows)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+              <span>(-) Caixa Consumido (Amortizações/Lucros):</span>
+              <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                {formatBRL(periodKPIs.finOutflows)}
+              </span>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border-subtle)] pt-2.5 flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+              (=) Soma Financiamento:
+            </span>
+            <span className={`font-mono font-extrabold text-sm ${periodKPIs.finNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {periodKPIs.finNet >= 0 ? '+' : ''}{formatBRL(periodKPIs.finNet)}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Destaque Gerencial: Geração Pré-Sócios vs Retiradas */}
       <div className="bg-[var(--surface-card)] p-4 rounded-2xl border border-[var(--border-subtle)] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -920,7 +1047,9 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                 const isFinalBalance = line.id === 'cf-final' || line.name.includes('SALDO FINAL');
                 const isInitialBalance = line.id === 'cf-initial' || line.name.includes('SALDO INICIAL');
                 const isOutflow = line.name.startsWith('(-)');
-                const isNetLine = line.id === 'cf-net-variation' || line.id === 'cf-op-net';
+                const isActivityNet = line.id === 'cf-op-net' || line.id === 'cf-inv-net' || line.id === 'cf-fin-net';
+                const isTotalNet = line.id === 'cf-net-variation';
+                const isNetLine = isActivityNet || isTotalNet;
                 const isCashBeforeProfit = line.id === 'cf-cash-before-profit';
                 const isProfitLine = line.id === 'cf-profit-distribution' || line.id === 'cf-fin-out-profit';
                 const isRealOutflowLine = line.id === 'cf-real-activities-outflows';
@@ -932,6 +1061,12 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                 if (isFinalBalance) {
                   rowBg = 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs border-y-2 border-slate-400 dark:border-slate-600';
                   stickyBg = 'bg-slate-200 dark:bg-[#1a2230] text-slate-900 dark:text-white font-extrabold';
+                } else if (isTotalNet) {
+                  rowBg = 'bg-indigo-500/15 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-100 font-extrabold text-xs border-y-2 border-indigo-500/50';
+                  stickyBg = 'bg-indigo-100 dark:bg-[#1a1f3d] text-indigo-950 dark:text-indigo-100 font-extrabold';
+                } else if (isActivityNet) {
+                  rowBg = 'bg-blue-500/10 dark:bg-blue-950/30 text-slate-900 dark:text-slate-100 font-bold border-t-2 border-b-2 border-blue-300 dark:border-blue-800/70';
+                  stickyBg = 'bg-blue-100 dark:bg-[#152338] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isCashBeforeProfit) {
                   rowBg = 'bg-emerald-500/15 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-extrabold text-xs border-y-2 border-emerald-500/40';
                   stickyBg = 'bg-emerald-100 dark:bg-[#13281e] text-emerald-950 dark:text-emerald-100 font-extrabold';
@@ -945,14 +1080,11 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                   rowBg = 'bg-slate-50 dark:bg-slate-800/40 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700';
                   stickyBg = 'bg-slate-100 dark:bg-[#151c27] text-slate-900 dark:text-slate-100 font-semibold';
                 } else if (isHeader) {
-                  rowBg = 'bg-slate-100 dark:bg-slate-800/70 font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider text-xs border-t-2 border-slate-300 dark:border-slate-700';
+                  rowBg = 'bg-slate-100 dark:bg-slate-800/80 font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider text-xs border-t-2 border-slate-300 dark:border-slate-700';
                   stickyBg = 'bg-slate-200 dark:bg-[#1e2738] text-slate-900 dark:text-slate-100 font-bold';
                 } else if (isSummary) {
                   rowBg = 'bg-slate-100/90 dark:bg-slate-800/60 font-bold text-slate-900 dark:text-slate-100 border-t border-b border-slate-300 dark:border-slate-700';
                   stickyBg = 'bg-slate-200 dark:bg-[#1a2230] text-slate-900 dark:text-slate-100 font-bold';
-                } else if (isNetLine) {
-                  rowBg = 'bg-blue-50/80 dark:bg-blue-950/40 font-bold text-slate-900 dark:text-slate-100 border-t-2 border-b-2 border-blue-200 dark:border-blue-800/60';
-                  stickyBg = 'bg-blue-100 dark:bg-[#152338] text-slate-900 dark:text-slate-100 font-bold';
                 }
 
                 return (
@@ -980,9 +1112,15 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                       const isEven = mIdx % 2 === 0;
 
                       let cellColor = 'text-slate-900 dark:text-slate-100 font-medium';
-                      if (val === 0) {
+                      if (isHeader) {
+                        cellColor = 'text-slate-400 dark:text-slate-500 font-normal';
+                      } else if (val === 0) {
                         cellColor = 'text-slate-400 dark:text-slate-500 font-normal';
                       } else if (isFinalBalance) {
+                        cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                      } else if (isTotalNet) {
+                        cellColor = val >= 0 ? 'text-indigo-900 dark:text-indigo-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                      } else if (isActivityNet) {
                         cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
                       } else if (isCashBeforeProfit) {
                         cellColor = val >= 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black';
@@ -996,8 +1134,6 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                         cellColor = 'text-rose-700 dark:text-rose-400 font-bold';
                       } else if (!isOutflow && val > 0 && !isInitialBalance) {
                         cellColor = 'text-emerald-700 dark:text-emerald-400 font-bold';
-                      } else if (isNetLine) {
-                        cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
                       }
 
                       const cellBg = (isFinalBalance || isHeader || isSummary || isNetLine || isCashBeforeProfit || isProfitLine || isRealOutflowLine) 
@@ -1009,15 +1145,21 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                           key={mIdx} 
                           className={`py-2 px-2 text-right font-mono border-r border-slate-200/60 dark:border-slate-800/60 ${cellColor} ${cellBg}`}
                         >
-                          {val !== 0 ? formatBRL(Math.abs(val)) : '-'}
+                          {isHeader ? '-' : (val !== 0 ? formatBRL(Math.abs(val)) : '-')}
                         </td>
                       );
                     })}
 
                     {/* Total do Período Filtrado */}
                     <td className={`py-2 px-3 text-right font-bold font-mono border-l-2 ${
-                      isFinalBalance
+                      isHeader
+                        ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 font-normal text-center'
+                        : isFinalBalance
                         ? 'bg-slate-200 dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-sm ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                        : isTotalNet
+                        ? 'bg-indigo-500/20 dark:bg-indigo-950/60 border-indigo-500/40 text-sm ' + (periodTotal >= 0 ? 'text-indigo-900 dark:text-indigo-200 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                        : isActivityNet
+                        ? 'bg-blue-500/20 dark:bg-blue-950/60 border-blue-400/50 text-sm ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
                         : isCashBeforeProfit
                         ? 'bg-emerald-500/20 dark:bg-emerald-950/60 border-emerald-500/40 text-sm ' + (periodTotal >= 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black')
                         : isProfitLine
@@ -1026,11 +1168,9 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
                         ? 'bg-amber-500/15 dark:bg-amber-950/30 border-amber-500/30 text-amber-800 dark:text-amber-200 font-bold'
                         : isSummary
                         ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold'
-                        : isNetLine
-                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 font-bold ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
                         : 'bg-slate-50/80 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
                     }`}>
-                      {formatBRL(Math.abs(periodTotal))}
+                      {isHeader ? '-' : formatBRL(Math.abs(periodTotal))}
                     </td>
                   </tr>
                 );

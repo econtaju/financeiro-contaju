@@ -19,7 +19,8 @@ export const CompareDRECashView: React.FC = () => {
 
   // 2. Cash Flow Data
   const cash = ReportingEngine.generateCashFlow(year, 'REALIZADO');
-  const cashNetOperating = cash.lines[4]?.valuesByMonth[monthIdx] || 0; // Geração Líquida Operacional
+  const opNetLine = cash.lines.find(l => l.id === 'cf-op-net') || cash.lines[4];
+  const cashNetOperating = opNetLine?.valuesByMonth[monthIdx] || 0; // Geração Líquida Operacional
 
   // 3. Timing Differences Analysis
   const titles = storage.getTitles();

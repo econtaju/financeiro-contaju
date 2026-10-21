@@ -49,6 +49,7 @@ export interface CashFlowLineItem {
   level: number;
   valuesByMonth: number[];
   totalYear: number;
+  activityCategory?: 'OPERACIONAL' | 'INVESTIMENTO' | 'FINANCIAMENTO' | 'TOTAL' | 'SALDO';
 }
 
 export type CashFlowMatrix = {
@@ -968,6 +969,35 @@ export class ReportingEngine {
     const finLoanOutflows = new Array(12).fill(0);   // Amortização de Empréstimos e Financiamentos
     const finProfitOutflows = new Array(12).fill(0); // Distribuição de Lucros aos Sócios
 
+    // Acumuladores analíticos por conta / rubrica para o modo detalhado (level: 2)
+    type AccountBreakdown = { id: string; code?: string; name: string; valuesByMonth: number[] };
+    const opInAccounts = new Map<string, AccountBreakdown>();
+    const opOutAccounts = new Map<string, AccountBreakdown>();
+    const invInAccounts = new Map<string, AccountBreakdown>();
+    const invOutAccounts = new Map<string, AccountBreakdown>();
+    const finInAccounts = new Map<string, AccountBreakdown>();
+    const finOutAccounts = new Map<string, AccountBreakdown>();
+
+    const recordAccountAmount = (
+      map: Map<string, AccountBreakdown>,
+      accountId: string | undefined,
+      fallbackName: string,
+      monthIdx: number,
+      amount: number
+    ) => {
+      if (!amount) return;
+      const acc = accountId ? accounts.find(a => a.id === accountId) : undefined;
+      const key = acc?.id || fallbackName || 'outros';
+      const code = acc?.code;
+      const name = acc?.name || fallbackName || 'Outras Rubricas';
+
+      if (!map.has(key)) {
+        map.set(key, { id: key, code, name, valuesByMonth: new Array(12).fill(0) });
+      }
+      const item = map.get(key)!;
+      item.valuesByMonth[monthIdx] = Math.round((item.valuesByMonth[monthIdx] + amount) * 100) / 100;
+    };
+
     // 1. Realized movements
     if (mode === 'REALIZADO' || mode === 'CONSOLIDADO') {
       for (const mov of movements) {
@@ -988,16 +1018,28 @@ export class ReportingEngine {
         if (isProfit && mov.direction === 'SAIDA') {
           finProfitOutflows[monthIdx] += mov.amount;
         } else if (mov.cashFlowCategory === 'OPERACIONAL') {
-          if (mov.direction === 'ENTRADA') opInflows[monthIdx] += mov.amount;
-          else opOutflows[monthIdx] += mov.amount;
+          if (mov.direction === 'ENTRADA') {
+            opInflows[monthIdx] += mov.amount;
+            recordAccountAmount(opInAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Receita Operacional', monthIdx, mov.amount);
+          } else {
+            opOutflows[monthIdx] += mov.amount;
+            recordAccountAmount(opOutAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Despesa Operacional', monthIdx, mov.amount);
+          }
         } else if (mov.cashFlowCategory === 'INVESTIMENTO') {
-          if (mov.direction === 'ENTRADA') invInflows[monthIdx] += mov.amount;
-          else invOutflows[monthIdx] += mov.amount;
+          if (mov.direction === 'ENTRADA') {
+            invInflows[monthIdx] += mov.amount;
+            recordAccountAmount(invInAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Ingresso de Investimento', monthIdx, mov.amount);
+          } else {
+            invOutflows[monthIdx] += mov.amount;
+            recordAccountAmount(invOutAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Aquisição / Aplicação', monthIdx, mov.amount);
+          }
         } else if (mov.cashFlowCategory === 'FINANCIAMENTO') {
           if (mov.direction === 'ENTRADA') {
             finInflows[monthIdx] += mov.amount;
+            recordAccountAmount(finInAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Aporte / Empréstimo', monthIdx, mov.amount);
           } else {
             finLoanOutflows[monthIdx] += mov.amount;
+            recordAccountAmount(finOutAccounts, mov.accountId || linkedTitle?.accountId, linkedTitle?.categoryName || mov.description || 'Amortização de Financiamento', monthIdx, mov.amount);
           }
         }
       }
@@ -1024,17 +1066,29 @@ export class ReportingEngine {
         if (isProfit && title.type === 'PAGAR') {
           finProfitOutflows[monthIdx] += title.balancePrincipal;
         } else if (cat === 'INVESTIMENTO') {
-          if (title.type === 'RECEBER') invInflows[monthIdx] += title.balancePrincipal;
-          else invOutflows[monthIdx] += title.balancePrincipal;
+          if (title.type === 'RECEBER') {
+            invInflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(invInAccounts, title.accountId, title.categoryName || title.description || 'Ingresso de Investimento', monthIdx, title.balancePrincipal);
+          } else {
+            invOutflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(invOutAccounts, title.accountId, title.categoryName || title.description || 'Aquisição / Aplicação', monthIdx, title.balancePrincipal);
+          }
         } else if (cat === 'FINANCIAMENTO') {
           if (title.type === 'RECEBER') {
             finInflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(finInAccounts, title.accountId, title.categoryName || title.description || 'Aporte / Empréstimo', monthIdx, title.balancePrincipal);
           } else {
             finLoanOutflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(finOutAccounts, title.accountId, title.categoryName || title.description || 'Amortização de Financiamento', monthIdx, title.balancePrincipal);
           }
         } else {
-          if (title.type === 'RECEBER') opInflows[monthIdx] += title.balancePrincipal;
-          else opOutflows[monthIdx] += title.balancePrincipal;
+          if (title.type === 'RECEBER') {
+            opInflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(opInAccounts, title.accountId, title.categoryName || title.description || 'Receita Operacional', monthIdx, title.balancePrincipal);
+          } else {
+            opOutflows[monthIdx] += title.balancePrincipal;
+            recordAccountAmount(opOutAccounts, title.accountId, title.categoryName || title.description || 'Despesa Operacional', monthIdx, title.balancePrincipal);
+          }
         }
       }
     }
@@ -1070,165 +1124,235 @@ export class ReportingEngine {
       finalBalances[m] = currentBalance;
     }
 
+    // Gerador de linhas analíticas detalhadas por conta (nível 2)
+    const buildBreakdownLines = (
+      map: Map<string, AccountBreakdown>,
+      prefix: string,
+      type: 'ENTRADA' | 'SAIDA',
+      category: 'OPERACIONAL' | 'INVESTIMENTO' | 'FINANCIAMENTO'
+    ): CashFlowLineItem[] => {
+      return Array.from(map.values())
+        .filter(item => item.valuesByMonth.some(v => v !== 0))
+        .sort((a, b) => (a.code || a.name).localeCompare(b.code || b.name))
+        .map(item => ({
+          id: `${prefix}-${item.id}`,
+          name: item.name,
+          code: item.code,
+          level: 2,
+          type,
+          activityCategory: category,
+          valuesByMonth: item.valuesByMonth,
+          totalYear: Math.round(item.valuesByMonth.reduce((a, b) => a + b, 0) * 100) / 100
+        }));
+    };
+
+    const opInLines = buildBreakdownLines(opInAccounts, 'cf-op-in-acc', 'ENTRADA', 'OPERACIONAL');
+    const opOutLines = buildBreakdownLines(opOutAccounts, 'cf-op-out-acc', 'SAIDA', 'OPERACIONAL');
+    const invInLines = buildBreakdownLines(invInAccounts, 'cf-inv-in-acc', 'ENTRADA', 'INVESTIMENTO');
+    const invOutLines = buildBreakdownLines(invOutAccounts, 'cf-inv-out-acc', 'SAIDA', 'INVESTIMENTO');
+    const finInLines = buildBreakdownLines(finInAccounts, 'cf-fin-in-acc', 'ENTRADA', 'FINANCIAMENTO');
+    const finOutLines = buildBreakdownLines(finOutAccounts, 'cf-fin-out-acc', 'SAIDA', 'FINANCIAMENTO');
+
     const lines: CashFlowLineItem[] = [
       {
         id: 'cf-initial',
-        name: '(=) SALDO INICIAL DE CAIXA',
+        name: '(=) SALDO INICIAL DE CAIXA E EQUIVALENTES',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'SALDO',
         valuesByMonth: initialBalances,
         totalYear: initialBalanceJan
       },
-      // 1. Operacional
+
+      // 1. ATIVIDADES OPERACIONAIS
       {
         id: 'cf-op-header',
-        name: 'ATIVIDADES OPERACIONAIS',
+        name: '1. ATIVIDADES OPERACIONAIS',
         level: 0,
         isHeader: true,
-        valuesByMonth: netOp,
-        totalYear: netOp.reduce((a, b) => a + b, 0)
+        activityCategory: 'OPERACIONAL',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
       },
       {
         id: 'cf-op-in',
-        name: '(+) Recebimentos Operacionais de Clientes',
+        name: '(+) Caixa Gerado pelas Operações (Recebimentos / Ingressos)',
         level: 1,
+        type: 'ENTRADA',
+        activityCategory: 'OPERACIONAL',
         valuesByMonth: opInflows,
-        totalYear: opInflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(opInflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
+      ...opInLines,
       {
         id: 'cf-op-out',
-        name: '(-) Pagamentos Operacionais (Custos e Despesas)',
+        name: '(-) Caixa Consumido pelas Operações (Pagamentos / Desembolsos)',
         level: 1,
+        type: 'SAIDA',
+        activityCategory: 'OPERACIONAL',
         valuesByMonth: opOutflows,
-        totalYear: opOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(opOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
+      ...opOutLines,
       {
         id: 'cf-op-net',
-        name: '(=) Caixa Gerado / (Consumido) pela Operação',
+        name: '(=) SOMA DA ATIVIDADE OPERACIONAL (Caixa Líquido Operacional / Geração Líquida)',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'OPERACIONAL',
         valuesByMonth: netOp,
-        totalYear: netOp.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(netOp.reduce((a, b) => a + b, 0) * 100) / 100
       },
 
-      // 2. Investimentos
+      // 2. ATIVIDADES DE INVESTIMENTO
       {
         id: 'cf-inv-header',
-        name: 'ATIVIDADES DE INVESTIMENTO',
+        name: '2. ATIVIDADES DE INVESTIMENTO',
         level: 0,
         isHeader: true,
-        valuesByMonth: netInv,
-        totalYear: netInv.reduce((a, b) => a + b, 0)
+        activityCategory: 'INVESTIMENTO',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
       },
       {
         id: 'cf-inv-in',
-        name: '(+) Entradas de Investimentos / Resgate de Aplicações',
+        name: '(+) Caixa Gerado por Investimentos (Resgates e Vendas de Ativos)',
         level: 1,
+        type: 'ENTRADA',
+        activityCategory: 'INVESTIMENTO',
         valuesByMonth: invInflows,
-        totalYear: invInflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(invInflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
+      ...invInLines,
       {
         id: 'cf-inv-out',
-        name: '(-) Aquisição de Ativos e Aplicações Financeiras',
+        name: '(-) Caixa Consumido por Investimentos (Aquisições e Aplicações)',
         level: 1,
+        type: 'SAIDA',
+        activityCategory: 'INVESTIMENTO',
         valuesByMonth: invOutflows,
-        totalYear: invOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(invOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
+      ...invOutLines,
       {
         id: 'cf-inv-net',
-        name: '(=) Fluxo Líquido das Atividades de Investimento',
+        name: '(=) SOMA DA ATIVIDADE DE INVESTIMENTO (Fluxo Líquido de Investimento)',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'INVESTIMENTO',
         valuesByMonth: netInv,
-        totalYear: netInv.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(netInv.reduce((a, b) => a + b, 0) * 100) / 100
       },
 
-      // 3. Financiamento
+      // 3. ATIVIDADES DE FINANCIAMENTO
       {
         id: 'cf-fin-header',
-        name: 'ATIVIDADES DE FINANCIAMENTO',
+        name: '3. ATIVIDADES DE FINANCIAMENTO',
         level: 0,
         isHeader: true,
-        valuesByMonth: netFin,
-        totalYear: netFin.reduce((a, b) => a + b, 0)
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
       },
       {
         id: 'cf-fin-in',
-        name: '(+) Aportes de Capital / Empréstimos Recebidos',
+        name: '(+) Caixa Gerado por Financiamentos (Empréstimos e Aportes de Capital)',
         level: 1,
+        type: 'ENTRADA',
+        activityCategory: 'FINANCIAMENTO',
         valuesByMonth: finInflows,
-        totalYear: finInflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(finInflows.reduce((a, b) => a + b, 0) * 100) / 100
+      },
+      ...finInLines,
+      {
+        id: 'cf-fin-out',
+        name: '(-) Caixa Consumido por Financiamentos (Amortizações e Retiradas)',
+        level: 1,
+        type: 'SAIDA',
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: finTotalOutflows,
+        totalYear: Math.round(finTotalOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
       {
         id: 'cf-fin-out-loans',
-        name: '(-) Amortização de Empréstimos e Financiamentos',
-        level: 1,
+        name: '    (-) Amortização de Empréstimos e Financiamentos',
+        level: 2,
+        type: 'SAIDA',
+        activityCategory: 'FINANCIAMENTO',
         valuesByMonth: finLoanOutflows,
-        totalYear: finLoanOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(finLoanOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
       {
         id: 'cf-fin-out-profit',
-        name: '(-) Distribuição de Lucros e Dividendos aos Sócios',
-        level: 1,
+        name: '    (-) Distribuição de Lucros e Dividendos aos Sócios',
+        level: 2,
+        type: 'SAIDA',
+        activityCategory: 'FINANCIAMENTO',
         valuesByMonth: finProfitOutflows,
-        totalYear: finProfitOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(finProfitOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
-      {
-        id: 'cf-fin-out',
-        name: '(-) Total de Saídas de Financiamento',
-        level: 1,
-        valuesByMonth: finTotalOutflows,
-        totalYear: finTotalOutflows.reduce((a, b) => a + b, 0)
-      },
+      ...finOutLines,
       {
         id: 'cf-fin-net',
-        name: '(=) Fluxo Líquido das Atividades de Financiamento',
+        name: '(=) SOMA DA ATIVIDADE DE FINANCIAMENTO (Fluxo Líquido de Financiamento)',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'FINANCIAMENTO',
         valuesByMonth: netFin,
-        totalYear: netFin.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(netFin.reduce((a, b) => a + b, 0) * 100) / 100
       },
 
       // 4. Subtotal Gerencial de Demonstração (Segregação de Atividades Reais vs Retiradas de Lucro)
       {
         id: 'cf-real-activities-outflows',
-        name: '(-) Pagamentos Reais das Atividades (Operação + Investimentos + Empréstimos)',
+        name: '(-) Total Desembolsos das Atividades da Empresa (Operação + Inv + Dívidas)',
         level: 0,
         isSummary: true,
+        type: 'SAIDA',
         valuesByMonth: realActivitiesOutflows,
-        totalYear: realActivitiesOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(realActivitiesOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
       {
         id: 'cf-cash-before-profit',
         name: '(=) FLUXO DE CAIXA ANTES DA DISTRIBUIÇÃO DE LUCROS',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
         valuesByMonth: netCashBeforeProfit,
-        totalYear: netCashBeforeProfit.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(netCashBeforeProfit.reduce((a, b) => a + b, 0) * 100) / 100
       },
       {
         id: 'cf-profit-distribution',
         name: '(-) Distribuição de Lucros aos Sócios no Período',
         level: 0,
         isSummary: true,
+        type: 'SAIDA',
         valuesByMonth: finProfitOutflows,
-        totalYear: finProfitOutflows.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(finProfitOutflows.reduce((a, b) => a + b, 0) * 100) / 100
       },
 
       // 5. Variação Líquida e Saldo Final
       {
         id: 'cf-net-variation',
-        name: '(=) VARIAÇÃO LÍQUIDA DE CAIXA NO PERÍODO',
+        name: '(=) SOMA TOTAL DO FLUXO DE CAIXA NO PERÍODO (VARIAÇÃO LÍQUIDA)',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'TOTAL',
         valuesByMonth: netVariations,
-        totalYear: netVariations.reduce((a, b) => a + b, 0)
+        totalYear: Math.round(netVariations.reduce((a, b) => a + b, 0) * 100) / 100
       },
       {
         id: 'cf-final',
         name: '(=) SALDO FINAL DE CAIXA E EQUIVALENTES',
         level: 0,
         isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'SALDO',
         valuesByMonth: finalBalances,
         totalYear: finalBalances[11] // No fechamento anual, o saldo final é a posição de fechamento de Dezembro
       }
