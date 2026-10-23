@@ -186,7 +186,7 @@ class StorageService {
     this.freeUpLocalStorageSpace();
     this.initIfEmpty();
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('storage', (e) => {
         if (e.key) {
           this.inMemoryCache.delete(e.key);
@@ -356,11 +356,41 @@ class StorageService {
     localStorage.setItem(SCHEMA_KEY, DATA_SCHEMA_VERSION);
 
     try {
+      // 1. Higienização automática de dados mockados legados de cartões e compras
+      const legacyMockCardIds = new Set(['card-1', 'card-2']);
+      const isLegacyMockPurchase = (id?: string) => Boolean(id && /^pur-(?:[1-9]|1[0-9]|20)$/.test(id));
+
+      const existingCards = this.get<CreditCard[]>(STORAGE_KEYS.CREDIT_CARDS, []);
+      const sanitizedCards = existingCards.filter(c => !legacyMockCardIds.has(c.id));
+      if (sanitizedCards.length !== existingCards.length) {
+        this.saveCreditCards(sanitizedCards);
+      }
+
+      const existingPurchases = this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, []);
+      const sanitizedPurchases = existingPurchases.filter(p => !isLegacyMockPurchase(p.id) && !legacyMockCardIds.has(p.cardId));
+      if (sanitizedPurchases.length !== existingPurchases.length) {
+        this.saveCardPurchases(sanitizedPurchases);
+      }
+
+      // 2. Limpeza de títulos de contas a pagar gerados por essas compras mockadas legadas
+      const titles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
+      const sanitizedTitles = titles.filter(t => {
+        if (t.originType === 'CARTAO_CREDITO' || t.isCreditCardPurchase) {
+          if (t.originId && isLegacyMockPurchase(t.originId)) return false;
+          if (t.creditCardId && legacyMockCardIds.has(t.creditCardId)) return false;
+          if (t.id && /^title-cc-pur-(?:[1-9]|1[0-9]|20)-\d+$/.test(t.id)) return false;
+        }
+        return true;
+      });
+      if (sanitizedTitles.length !== titles.length) {
+        localStorage.setItem(STORAGE_KEYS.TITLES, JSON.stringify(sanitizedTitles));
+      }
+
       const deletedIds = new Set(this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []));
-      // Also ensure initial credit card purchase titles are synced to TITLES (Contas a Pagar) ONLY if not deleted
+      // Sincroniza parcelas para TITLES (Contas a Pagar) apenas para compras reais cadastradas
       const currentTitles = this.get<FinancialTitle[]>(STORAGE_KEYS.TITLES, []);
-      const purchases = this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES);
-      const cards = this.get<CreditCard[]>(STORAGE_KEYS.CREDIT_CARDS, INITIAL_CREDIT_CARDS);
+      const purchases = this.getCardPurchases();
+      const cards = this.getCreditCards();
       let titlesUpdated = false;
       const newTitlesToAdd: FinancialTitle[] = [];
 
@@ -2457,6 +2487,90 @@ class StorageService {
   public addCreditCard(card: CreditCard) {
     const cards = this.getCreditCards();
     this.saveCreditCards([...cards, card]);
+
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CRIACAO_CARTAO_CREDITO',
+      module: 'Cartões de Crédito',
+      recordId: card.id,
+      details: `Cadastrado novo cartão de crédito: ${card.name} (${card.institution || 'Banco Emissor'}) - Limite: R$ ${card.creditLimit.toFixed(2)}.`
+    });
+  }
+
+  public updateCreditCard(updatedCard: CreditCard) {
+    const cards = this.getCreditCards();
+    const updated = cards.map(c => c.id === updatedCard.id ? updatedCard : c);
+    this.saveCreditCards(updated);
+
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EDICAO_CARTAO_CREDITO',
+      module: 'Cartões de Crédito',
+      recordId: updatedCard.id,
+      details: `Cartão de crédito atualizado: ${updatedCard.name} (${updatedCard.institution || 'Banco Emissor'}) - Limite: R$ ${updatedCard.creditLimit.toFixed(2)}.`
+    });
+  }
+
+  public deleteCreditCard(cardId: string): { success: boolean; error?: string } {
+    const cards = this.getCreditCards();
+    const targetCard = cards.find(c => c.id === cardId);
+    if (!targetCard) {
+      return { success: false, error: 'Cartão de crédito não encontrado.' };
+    }
+
+    // 1. Remove o cartão da lista
+    const filteredCards = cards.filter(c => c.id !== cardId);
+    this.saveCreditCards(filteredCards);
+
+    // 2. Remove as compras associadas ao cartão
+    const purchases = this.getCardPurchases();
+    const purchasesToDelete = purchases.filter(p => p.cardId === cardId);
+    const purchaseIdsToDelete = new Set(purchasesToDelete.map(p => p.id));
+    const remainingPurchases = purchases.filter(p => p.cardId !== cardId);
+    this.saveCardPurchases(remainingPurchases);
+
+    // 3. Remove títulos no Contas a Pagar vinculados a esse cartão ou suas compras
+    const titles = this.getTitles();
+    const titlesToRemove = titles.filter(t => 
+      t.creditCardId === cardId || 
+      (t.originType === 'CARTAO_CREDITO' && t.originId && purchaseIdsToDelete.has(t.originId))
+    );
+    const titleIdsToRemove = new Set(titlesToRemove.map(t => t.id));
+    const remainingTitles = titles.filter(t => !titleIdsToRemove.has(t.id));
+    this.saveTitles(remainingTitles);
+
+    // 4. Remove histórico de pagamentos de fatura deste cartão
+    const invoicePayments = this.getCardInvoicePayments();
+    const remainingPayments = invoicePayments.filter(p => p.cardId !== cardId);
+    this.saveCardInvoicePayments(remainingPayments);
+
+    // 5. Sincroniza exclusão no Supabase de forma assíncrona
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteCreditCardDirectly(cardId);
+      for (const purId of purchaseIdsToDelete) {
+        supabaseSync.deleteCardPurchaseDirectly(purId);
+      }
+      if (titleIdsToRemove.size > 0) {
+        supabaseSync.deleteTitlesDirectly(Array.from(titleIdsToRemove));
+      }
+    }).catch(() => {});
+
+    // 6. Log de auditoria
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_CARTAO_CREDITO',
+      module: 'Cartões de Crédito',
+      recordId: cardId,
+      details: `Cartão de crédito excluído: ${targetCard.name}. Removidas ${purchasesToDelete.length} compras e ${titlesToRemove.length} parcelas vinculadas.`
+    });
+
+    return { success: true };
   }
 
   public getCardPurchases(): CreditCardPurchase[] {
@@ -2465,6 +2579,85 @@ class StorageService {
 
   public saveCardPurchases(purchases: CreditCardPurchase[]) {
     this.set(STORAGE_KEYS.CARD_PURCHASES, purchases);
+  }
+
+  public deleteCardPurchase(purchaseId: string): { success: boolean; error?: string } {
+    const purchases = this.getCardPurchases();
+    const target = purchases.find(p => p.id === purchaseId);
+    if (!target) {
+      return { success: false, error: 'Lançamento de compra não encontrado.' };
+    }
+
+    // 1. Remove da lista de compras
+    const remainingPurchases = purchases.filter(p => p.id !== purchaseId);
+    this.saveCardPurchases(remainingPurchases);
+
+    // 2. Remove títulos vinculados no Contas a Pagar
+    const titles = this.getTitles();
+    const titlesToRemove = titles.filter(t => 
+      t.originId === purchaseId || 
+      t.id.startsWith(`title-cc-${purchaseId}-`)
+    );
+    const titleIdsToRemove = new Set(titlesToRemove.map(t => t.id));
+    const remainingTitles = titles.filter(t => !titleIdsToRemove.has(t.id));
+    this.saveTitles(remainingTitles);
+
+    // 3. Sincroniza exclusão no Supabase de forma assíncrona
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteCardPurchaseDirectly(purchaseId);
+      if (titleIdsToRemove.size > 0) {
+        supabaseSync.deleteTitlesDirectly(Array.from(titleIdsToRemove));
+      }
+    }).catch(() => {});
+
+    // 4. Log de auditoria
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_COMPRA_CARTAO',
+      module: 'Cartões de Crédito',
+      recordId: purchaseId,
+      details: `Compra no cartão excluída: ${target.description} (R$ ${target.totalAmount.toFixed(2)}). Removidas ${titlesToRemove.length} parcelas do Contas a Pagar.`
+    });
+
+    return { success: true };
+  }
+
+  public updateCardPurchase(updatedPurchase: CreditCardPurchase): { success: boolean; error?: string } {
+    const purchases = this.getCardPurchases();
+    const targetIndex = purchases.findIndex(p => p.id === updatedPurchase.id);
+    if (targetIndex === -1) {
+      return { success: false, error: 'Lançamento de compra não encontrado.' };
+    }
+
+    purchases[targetIndex] = updatedPurchase;
+    this.saveCardPurchases(purchases);
+
+    // Atualiza descrição, categoria e fornecedor nos títulos vinculados
+    const titles = this.getTitles();
+    const cards = this.getCreditCards();
+    const card = cards.find(c => c.id === updatedPurchase.cardId);
+
+    const updatedTitles = titles.map(t => {
+      if (t.originId === updatedPurchase.id || t.id.startsWith(`title-cc-${updatedPurchase.id}-`)) {
+        return {
+          ...t,
+          description: `[Cartão ${card?.name || 'Corporativo'}] ${updatedPurchase.description} (${t.installmentIndex || 1}/${t.totalInstallments || 1})`,
+          counterpartyId: updatedPurchase.counterpartyId || t.counterpartyId,
+          accountId: updatedPurchase.chartAccountId || t.accountId,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    this.saveTitles(updatedTitles);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.saveCardPurchaseDirectly(updatedPurchase);
+    }).catch(() => {});
+
+    return { success: true };
   }
 
   public addCardPurchaseAndSyncTitles(purchase: CreditCardPurchase) {

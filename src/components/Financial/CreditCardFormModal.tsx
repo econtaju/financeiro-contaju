@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CreditCard as CardIcon, Building2, Calendar, DollarSign, Palette } from 'lucide-react';
+import { X, CreditCard as CardIcon, Building2, Calendar, DollarSign, Palette, Trash2, AlertTriangle } from 'lucide-react';
 import { CreditCard, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 
@@ -49,8 +49,20 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
   );
   const [notes, setNotes] = useState(editingCard?.notes || '');
   const [error, setError] = useState<string | null>(null);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleDeleteCard = () => {
+    if (!editingCard) return;
+    const res = storage.deleteCreditCard(editingCard.id);
+    if (res.success) {
+      onSuccess();
+      onClose();
+    } else {
+      setError(res.error || 'Erro ao excluir o cartão de crédito.');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,8 +90,6 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
       return;
     }
 
-    const cards = storage.getCreditCards();
-
     if (editingCard) {
       const updated: CreditCard = {
         ...editingCard,
@@ -94,7 +104,7 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
         defaultPaymentBankAccountId: defaultPaymentBankAccountId || undefined,
         notes: notes.trim()
       };
-      storage.saveCreditCards(cards.map(c => c.id === updated.id ? updated : c));
+      storage.updateCreditCard(updated);
     } else {
       const newCard: CreditCard = {
         id: `card-${Date.now()}`,
@@ -111,7 +121,7 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
         notes: notes.trim(),
         createdAt: new Date().toISOString()
       };
-      storage.saveCreditCards([...cards, newCard]);
+      storage.addCreditCard(newCard);
     }
 
     onSuccess();
@@ -313,20 +323,55 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow-lg transition-all"
-            >
-              {editingCard ? 'Salvar Alterações' : 'Cadastrar Cartão'}
-            </button>
+          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+            <div>
+              {editingCard && !isConfirmingDelete && (
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(true)}
+                  className="px-3.5 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/50 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir Cartão
+                </button>
+              )}
+
+              {editingCard && isConfirmingDelete && (
+                <div className="flex items-center gap-2 bg-rose-950/60 p-1.5 rounded-lg border border-rose-800">
+                  <span className="text-[11px] text-rose-300 font-semibold px-1">Confirmar exclusão?</span>
+                  <button
+                    type="button"
+                    onClick={handleDeleteCard}
+                    className="px-2.5 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded transition-colors cursor-pointer"
+                  >
+                    Sim, excluir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmingDelete(false)}
+                    className="px-2 py-1 text-xs font-semibold text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                  >
+                    Não
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-lg transition-all cursor-pointer"
+              >
+                {editingCard ? 'Salvar Alterações' : 'Cadastrar Cartão'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
