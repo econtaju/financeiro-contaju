@@ -845,8 +845,8 @@ export const ContractsView: React.FC<ContractsViewProps> = ({ onOpenBillingModal
         </div>
       )}
 
-      {/* KPI Cards com Separação Estrita de Renda Ativa e Cancelados */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Cards com Separação Estrita de Renda Ativa e Cancelados (Adaptativo: 1 col celular, 2 col tablet/notebook, 4 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Card 1: MRR Ativo */}
         <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs relative overflow-hidden">
           <div className="flex items-center justify-between">

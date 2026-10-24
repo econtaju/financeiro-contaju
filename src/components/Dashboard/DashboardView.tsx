@@ -576,7 +576,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
 
           {/* WIDGETS CONFIGURÁVEIS SOLICITADOS: FATURAMENTO & SALDOS BANCÁRIOS CONSOLIDADOS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
             
             {/* WIDGET 1: RESUMO RÁPIDO DE FATURAMENTO MENSAL */}
             {safeVisibleWidgets.includes('widget_faturamento_resumo') && (
@@ -941,7 +941,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               {kpiDisplayMode === 'MONTH_CARDS' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
                   {KPI_CATALOG
                     .filter(kpi => safeVisibleKpis.includes(kpi.id))
                     .map(kpi => {
@@ -1006,7 +1006,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="p-4 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] space-y-1">
                   <div className="flex justify-between items-center text-xs text-[var(--text-secondary)] font-medium">
                     <span>Receita Reconhecida ({dreData.months[effectiveMonthIdx]})</span>
@@ -1089,7 +1089,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="flex justify-between items-center text-xs text-slate-700 font-medium">
                     <span>Disponibilidade Bancária</span>
@@ -1147,7 +1147,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* WIDGET 6: PRÓXIMOS VENCIMENTOS */}
           {safeVisibleWidgets.includes('widget_proximos_vencimentos') && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
               
               {/* Contas a Receber Próximas */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">

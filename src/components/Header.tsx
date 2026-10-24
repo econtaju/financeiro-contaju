@@ -338,29 +338,29 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Ações Rápidas & Controles (Responsivo) */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             
-            {/* Quick Actions (Desktop Grande) */}
-            <div className="hidden 2xl:flex items-center gap-1.5">
+            {/* Quick Actions (Desktop & Notebooks Adaptativo) */}
+            <div className="hidden lg:flex items-center gap-1.5">
               <button
                 onClick={() => onOpenNewTitleModal('RECEBER')}
-                className="h-9 inline-flex items-center px-2.5 text-xs font-bold rounded-lg text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800/60 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                className="h-8 lg:h-9 inline-flex items-center px-2 lg:px-2.5 text-xs font-bold rounded-lg text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800/60 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                 title="Novo lançamento a receber"
               >
                 <PlusCircle className="w-3.5 h-3.5 mr-1 text-emerald-700 dark:text-emerald-400" />
-                + Receber
+                <span className="hidden xl:inline">+ </span>Receber
               </button>
 
               <button
                 onClick={() => onOpenNewTitleModal('PAGAR')}
-                className="h-9 inline-flex items-center px-2.5 text-xs font-bold rounded-lg text-rose-900 bg-rose-100 hover:bg-rose-200 border border-rose-300 dark:text-rose-300 dark:bg-rose-950/50 dark:border-rose-800/60 dark:hover:bg-rose-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                className="h-8 lg:h-9 inline-flex items-center px-2 lg:px-2.5 text-xs font-bold rounded-lg text-rose-900 bg-rose-100 hover:bg-rose-200 border border-rose-300 dark:text-rose-300 dark:bg-rose-950/50 dark:border-rose-800/60 dark:hover:bg-rose-900/60 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                 title="Novo lançamento a pagar"
               >
                 <PlusCircle className="w-3.5 h-3.5 mr-1 text-rose-700 dark:text-rose-400" />
-                + Pagar
+                <span className="hidden xl:inline">+ </span>Pagar
               </button>
 
               <button
                 onClick={onOpenTransferModal}
-                className="h-9 inline-flex items-center px-2.5 text-xs font-semibold rounded-lg text-slate-800 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 border border-slate-300 dark:bg-slate-800/80 dark:border-slate-700 dark:hover:bg-slate-700 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+                className="hidden xl:inline-flex h-9 items-center px-2.5 text-xs font-semibold rounded-lg text-slate-800 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 border border-slate-300 dark:bg-slate-800/80 dark:border-slate-700 dark:hover:bg-slate-700 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
                 title="Transferência entre contas bancárias"
               >
                 <ArrowLeftRight className="w-3.5 h-3.5 mr-1 text-slate-600 dark:text-slate-400" />

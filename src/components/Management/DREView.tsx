@@ -1161,8 +1161,8 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
         totalCount={allTitles.length}
       />
 
-      {/* Cards de Resumo Executivo da DRE (Paleta Nobre Leão Dourado com Alto Contraste) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+      {/* Cards de Resumo Executivo da DRE (Adaptativo: 1 col celular, 2 col tablet, 3 col notebook, 5 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
         {/* 1. Receita Operacional Bruta */}
         <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-amber-500/30 shadow-xs bg-amber-500/[0.04]">
           <div className="flex items-center justify-between text-xs text-amber-800 dark:text-amber-400 uppercase font-bold tracking-wide">

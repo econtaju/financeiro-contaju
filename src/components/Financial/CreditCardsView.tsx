@@ -300,7 +300,7 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
           {cards.map(card => {
             const isSelected = activeCard?.id === card.id;
             const metrics = FinancialEngine.getCardAvailableLimit(card.id);
@@ -460,7 +460,7 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
             {/* Active Invoice Details Dashboard */}
             {activeInvoice && (
               <div className="p-6 border-b border-slate-200 dark:border-[#273040] bg-white dark:bg-[#131720]">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="p-4 bg-slate-50 dark:bg-[#1B212D] rounded-xl border border-slate-200 dark:border-[#273040]">
                     <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1">
                       Total da Fatura ({activeInvoice.invoiceMonth})
@@ -563,18 +563,18 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                   Nenhum lançamento encontrado nesta fatura ({selectedInvoiceMonth}).
                 </div>
               ) : (
-                <div className="border border-slate-200 dark:border-[#273040] rounded-xl overflow-hidden">
-                  <table className="w-full text-left text-xs">
+                <div className="border border-slate-200 dark:border-[#273040] rounded-xl overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[700px] lg:min-w-full">
                     <thead className="bg-slate-50 dark:bg-[#1B212D] text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-[#273040]">
                       <tr>
                         <th className="p-3">Data</th>
                         <th className="p-3">Descrição do Lançamento</th>
-                        <th className="p-3">Estabelecimento / Favorecido</th>
-                        <th className="p-3">Categoria</th>
+                        <th className="hidden md:table-cell p-3">Estabelecimento / Favorecido</th>
+                        <th className="hidden lg:table-cell p-3">Categoria</th>
                         <th className="p-3 text-center">Tipo / Parcela</th>
                         <th className="p-3 text-right">Valor nesta Fatura</th>
                         <th className="p-3 text-center">Status</th>
-                        <th className="p-3">Integração</th>
+                        <th className="hidden xl:table-cell p-3">Integração</th>
                         <th className="p-3 text-center">Ações</th>
                       </tr>
                     </thead>
@@ -587,10 +587,10 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                           <td className="p-3 font-semibold text-slate-900 dark:text-white">
                             {item.description}
                           </td>
-                          <td className="p-3 text-slate-700 dark:text-slate-300">
+                          <td className="hidden md:table-cell p-3 text-slate-700 dark:text-slate-300">
                             {item.counterpartyName}
                           </td>
-                          <td className="p-3 text-slate-500 dark:text-slate-400">
+                          <td className="hidden lg:table-cell p-3 text-slate-500 dark:text-slate-400">
                             {item.chartAccountName}
                           </td>
                           <td className="p-3 text-center">
@@ -628,7 +628,7 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                               {item.settled ? 'LIQUIDADO' : 'EM ABERTO'}
                             </span>
                           </td>
-                          <td className="p-3">
+                          <td className="hidden xl:table-cell p-3">
                             <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
                               <CheckCircle2 className="w-3 h-3" />
                               Contas a Pagar
@@ -672,8 +672,8 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                   </h4>
                 </div>
 
-                <div className="border border-slate-200 dark:border-[#273040] rounded-xl overflow-hidden bg-white dark:bg-[#131720]">
-                  <table className="w-full text-left text-xs">
+                <div className="border border-slate-200 dark:border-[#273040] rounded-xl overflow-x-auto bg-white dark:bg-[#131720]">
+                  <table className="w-full text-left text-xs min-w-[650px] lg:min-w-full">
                     <thead className="bg-slate-50 dark:bg-[#1B212D] text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-[#273040]">
                       <tr>
                         <th className="p-2.5">Data do Pagamento</th>

@@ -197,8 +197,8 @@ export const BankAccountsView: React.FC<BankAccountsViewProps> = ({ onOpenTransf
         </div>
       </div>
 
-      {/* Grid of Bank Accounts com Alto Contraste */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Grid of Bank Accounts Adaptativo (1 col celular, 2 col tablet/notebook, 3-4 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
         {accounts.map(acc => {
           const balance = FinancialEngine.getAccountBalance(acc.id);
           return (

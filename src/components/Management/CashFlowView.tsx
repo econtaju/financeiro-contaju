@@ -706,8 +706,8 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
         </div>
       )}
 
-      {/* Cards de Resumo Executivo do Período Filtrado */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+      {/* Cards de Resumo Executivo do Período Filtrado (Adaptativo: 1 col celular, 2 col tablet, 3 col notebook, 5 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
         {/* 1. Saldo Inicial */}
         <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
           <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">

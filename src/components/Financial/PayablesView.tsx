@@ -1049,8 +1049,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
         </div>
       </div>
 
-      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Desktop & Tablet) */}
-      <div className="hidden md:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Multidispositivo Adaptativo) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-3">
         {/* Card: Em Aberto */}
         <button
           type="button"
@@ -2191,9 +2191,9 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   </div>
                 </th>
 
-                {/* Competência */}
+                {/* Competência (Adaptativo: oculto em notebooks compactos, visível em Mac/Desktops) */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
+                  className="hidden xl:table-cell py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('competence')}
                   title="Clique para ordenar por Competência"
                 >
@@ -2223,9 +2223,9 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   </div>
                 </th>
 
-                {/* Previsão Caixa */}
+                {/* Previsão Caixa (Adaptativo: visível em monitores 2K/Grandes) */}
                 <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
+                  className="hidden 2xl:table-cell py-3 px-4 cursor-pointer hover:bg-slate-300/60 dark:hover:bg-slate-800/60 transition-colors text-slate-900 dark:text-slate-100 font-bold"
                   onClick={() => handleSort('expectedCashDate')}
                   title="Clique para ordenar por Data de Previsão de Pagamento"
                 >
@@ -2271,8 +2271,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                   </div>
                 </th>
 
-                {/* Situação Temporal */}
-                <th className="py-3 px-4 text-center text-slate-900 dark:text-slate-100 font-bold">
+                {/* Situação Temporal (Adaptativo: oculto em notebooks, visível em Mac/Desktops) */}
+                <th className="hidden xl:table-cell py-3 px-4 text-center text-slate-900 dark:text-slate-100 font-bold">
                   Situação Temporal
                 </th>
 
@@ -2431,7 +2431,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">{supplier?.document}</div>
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
+                      <td className="hidden xl:table-cell py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
                         {t.competence}
                       </td>
 
@@ -2439,7 +2439,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         {formatDateBR(t.dueDate)}
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
+                      <td className="hidden 2xl:table-cell py-3 px-4 text-slate-600 dark:text-slate-400">
                         {formatDateBR(t.expectedCashDate || t.dueDate)}
                       </td>
 
@@ -2451,7 +2451,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
                         {formatBRL(t.balancePrincipal)}
                       </td>
 
-                      <td className="py-3 px-4 text-center">
+                      <td className="hidden xl:table-cell py-3 px-4 text-center">
                         {t.balancePrincipal <= 0 ? (
                           <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">-</span>
                         ) : (

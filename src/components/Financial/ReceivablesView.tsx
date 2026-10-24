@@ -1182,8 +1182,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         </div>
       </div>
 
-      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Desktop & Tablet) */}
-      <div className="hidden md:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Multidispositivo Adaptativo) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-3">
         {/* Card: Todos em Aberto */}
         <button
           type="button"
@@ -2389,10 +2389,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   </div>
                 </th>
 
-                {/* Sortable Column: Competência */}
+                {/* Sortable Column: Competência (Adaptativo: oculto em notebooks compactos, visível em Mac/Desktops) */}
                 <th 
                   onClick={() => handleSort('competence')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
+                  className="hidden xl:table-cell py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por competência"
                 >
                   <div className="flex items-center gap-1">
@@ -2421,10 +2421,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   </div>
                 </th>
 
-                {/* Sortable Column: Previsão Caixa */}
+                {/* Sortable Column: Previsão Caixa (Adaptativo: visível em telas 2K/Grandes) */}
                 <th 
                   onClick={() => handleSort('expectedCashDate')}
-                  className="py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
+                  className="hidden 2xl:table-cell py-3 px-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none transition-colors"
                   title="Clique para ordenar por previsão de caixa"
                 >
                   <div className="flex items-center gap-1">
@@ -2469,8 +2469,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   </div>
                 </th>
 
-                {/* Temporal Situation */}
-                <th className="py-3 px-4 text-center">Situação Temporal</th>
+                {/* Temporal Situation (Adaptativo: oculto em notebooks, visível em Mac/Desktops) */}
+                <th className="hidden xl:table-cell py-3 px-4 text-center">Situação Temporal</th>
 
                 {/* Sortable Column: Status */}
                 <th 
@@ -2628,7 +2628,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         <div className="text-[10px] text-slate-700">{client?.document}</div>
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
+                      <td className="hidden xl:table-cell py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
                         {t.competence}
                       </td>
 
@@ -2636,7 +2636,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         {formatDateBR(t.dueDate)}
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="hidden 2xl:table-cell py-3 px-4 text-slate-600">
                         {formatDateBR(t.expectedCashDate || t.dueDate)}
                       </td>
 
@@ -2648,7 +2648,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         {formatBRL(t.balancePrincipal)}
                       </td>
 
-                      <td className="py-3 px-4 text-center">
+                      <td className="hidden xl:table-cell py-3 px-4 text-center">
                         {t.balancePrincipal <= 0 ? (
                           <span className="text-[10px] font-medium text-slate-500">-</span>
                         ) : (

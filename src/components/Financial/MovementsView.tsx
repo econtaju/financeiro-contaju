@@ -381,9 +381,9 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ initialSearch = ''
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Conta Bancária</th>
                 <th className="py-3 px-4">Sentido</th>
-                <th className="py-3 px-4">Origem</th>
+                <th className="hidden lg:table-cell py-3 px-4">Origem</th>
                 <th className="py-3 px-4">Descrição da Operação</th>
-                <th className="py-3 px-4">Documento / Ref</th>
+                <th className="hidden xl:table-cell py-3 px-4">Documento / Ref</th>
                 <th className="py-3 px-4 text-right">Valor</th>
                 <th className="py-3 px-4 text-center">Editar</th>
               </tr>
@@ -421,7 +421,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ initialSearch = ''
                           {m.direction}
                         </span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                      <td className="hidden lg:table-cell py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">
                         {m.originType}
                       </td>
                       <td className="py-3 px-4 text-slate-800 dark:text-slate-200 font-medium">
@@ -432,7 +432,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ initialSearch = ''
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
+                      <td className="hidden xl:table-cell py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
                         {m.originReferenceId || '-'}
                       </td>
                       <td className={`py-3 px-4 text-right font-bold text-sm ${

@@ -2859,8 +2859,8 @@ export const ReconciliationView: React.FC = () => {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Cards (Adaptativo: 1 col celular, 2 col tablet/notebook, 4 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-[#273040] shadow-2xs">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Sugestões de Correspondência</span>
@@ -2932,8 +2932,8 @@ export const ReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* GRID PRINCIPAL: 2 COLUNAS DE CONCILIAÇÃO BANCÁRIA */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start relative">
+      {/* GRID PRINCIPAL: 2 COLUNAS DE CONCILIAÇÃO BANCÁRIA (Adaptativo) */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6 items-start relative">
         
         {/* ======================================================== */}
         {/* COLUNA ESQUERDA: EXTRATO BANCÁRIO / OFX                  */}

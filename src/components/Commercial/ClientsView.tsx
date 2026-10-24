@@ -376,8 +376,8 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
         </div>
       </div>
 
-      {/* KPI Cards de Clientes */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Cards de Clientes (Adaptativo: 1 col celular, 2 col tablet/notebook, 4 col Mac/Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-[var(--surface-card)] p-4 rounded-xl border border-[var(--border-subtle)] space-y-1">
           <div className="flex justify-between items-center text-xs text-[var(--text-secondary)] font-medium">
             <span>Clientes Ativos</span>

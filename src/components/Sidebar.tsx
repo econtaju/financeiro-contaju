@@ -100,7 +100,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout
 }) => {
   const [isMinimized, setIsMinimized] = useState<boolean>(() => {
-    return localStorage.getItem('contaju_sidebar_minimized') === 'true';
+    const saved = localStorage.getItem('contaju_sidebar_minimized');
+    if (saved !== null) return saved === 'true';
+    // Em notebooks e resoluções compactas (< 1280px), inicia minimizado para maximizar a área útil dos dados contábeis
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) return true;
+    return false;
   });
   const [isPinned, setIsPinned] = useState<boolean>(false);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -316,7 +320,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onMouseMove={resetIdleTimer}
         className={`
           fixed lg:static top-0 bottom-0 left-0 z-50 lg:z-auto
-          w-72 sm:w-80 max-w-[85vw] ${isMinimized ? 'lg:w-20' : 'lg:w-72'} 
+          w-72 sm:w-80 max-w-[85vw] ${isMinimized ? 'lg:w-20' : 'lg:w-60 xl:w-64 2xl:w-72'} 
           bg-[var(--surface-card)] text-[var(--text-primary)] flex flex-col flex-shrink-0
           transition-all duration-300 ease-in-out border-r border-[var(--border-subtle)] select-none shadow-2xl lg:shadow-none
           ${isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
