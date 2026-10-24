@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { X, CreditCard as CardIcon, Building2, Calendar, DollarSign, Palette, Trash2, AlertTriangle } from 'lucide-react';
+import React, { useState, useId } from 'react';
+import { X, CreditCard as CardIcon, Building2, Calendar, DollarSign, Palette, Trash2, AlertTriangle, Check, Landmark, Search } from 'lucide-react';
 import { CreditCard, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
+import { BRAZILIAN_BANKS, POPULAR_BANKS_FOR_CARDS, BrazilianBank, findBankByTerm } from '../../data/brazilianBanks';
 
 interface CreditCardFormModalProps {
   isOpen: boolean;
@@ -21,12 +22,13 @@ const BRAND_OPTIONS = [
 
 const COLOR_PRESETS = [
   { label: 'Roxo Nubank', value: '#820ad1' },
-  { label: 'Laranja Itaú', value: '#ec7000' },
-  { label: 'Vermelho Santander/Bradesco', value: '#cc092f' },
-  { label: 'Azul Petróleo', value: '#0284c7' },
-  { label: 'Esmeralda Corporativo', value: '#059669' },
-  { label: 'Grafite Escuro', value: '#334155' },
-  { label: 'Dourado / Black', value: '#b45309' }
+  { label: 'Laranja Itaú / Inter', value: '#ec7000' },
+  { label: 'Vermelho Santander / Bradesco', value: '#cc092f' },
+  { label: 'Azul BB / Caixa', value: '#003882' },
+  { label: 'Verde Sicoob / Sicredi', value: '#00843d' },
+  { label: 'Grafite / Preto C6 / XP', value: '#242424' },
+  { label: 'Dourado / Gold', value: '#b45309' },
+  { label: 'Azul Petróleo / BTG', value: '#0a2540' }
 ];
 
 export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
@@ -37,7 +39,14 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
   onSuccess
 }) => {
   const [name, setName] = useState(editingCard?.name || '');
-  const [institution, setInstitution] = useState(editingCard?.institution || '');
+  const [selectedBankCode, setSelectedBankCode] = useState<string>(() => {
+    if (editingCard?.institution) {
+      const found = findBankByTerm(editingCard.institution);
+      return found ? found.code : '000';
+    }
+    return '260'; // Nubank por padrão
+  });
+  const [institution, setInstitution] = useState(editingCard?.institution || 'Nubank');
   const [brand, setBrand] = useState<CreditCard['brand']>(editingCard?.brand || 'MASTERCARD');
   const [lastFourDigits, setLastFourDigits] = useState(editingCard?.lastFourDigits || '');
   const [creditLimit, setCreditLimit] = useState(editingCard?.creditLimit ? String(editingCard.creditLimit) : '10000');
@@ -52,6 +61,38 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleBankSelect = (bank: BrazilianBank) => {
+    setSelectedBankCode(bank.code);
+    setInstitution(bank.name);
+    setColor(bank.color);
+    if (bank.suggestedBrand && bank.suggestedBrand !== 'OUTRO') {
+      setBrand(bank.suggestedBrand);
+    }
+    // Se o nome estiver em branco ou for nome padrão de outro banco, atualiza automaticamente
+    if (!name || BRAZILIAN_BANKS.some(b => name === `${b.name} Corporativo` || name === `${b.name} PJ`)) {
+      setName(`${bank.name} Corporativo`);
+    }
+  };
+
+  const handleDropdownChange = (code: string) => {
+    setSelectedBankCode(code);
+    const bank = BRAZILIAN_BANKS.find(b => b.code === code);
+    if (bank) {
+      if (bank.code === '000') {
+        setInstitution('');
+      } else {
+        setInstitution(bank.name);
+        setColor(bank.color);
+        if (bank.suggestedBrand && bank.suggestedBrand !== 'OUTRO') {
+          setBrand(bank.suggestedBrand);
+        }
+        if (!name || BRAZILIAN_BANKS.some(b => name === `${b.name} Corporativo` || name === `${b.name} PJ`)) {
+          setName(`${bank.name} Corporativo`);
+        }
+      }
+    }
+  };
 
   const handleDeleteCard = () => {
     if (!editingCard) return;
@@ -90,11 +131,13 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
       return;
     }
 
+    const finalInstitution = institution.trim() || 'Banco Emissor';
+
     if (editingCard) {
       const updated: CreditCard = {
         ...editingCard,
         name: name.trim(),
-        institution: institution.trim() || 'Banco Emissor',
+        institution: finalInstitution,
         brand,
         lastFourDigits: lastFourDigits.slice(-4),
         creditLimit: limitNum,
@@ -109,7 +152,7 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
       const newCard: CreditCard = {
         id: `card-${Date.now()}`,
         name: name.trim(),
-        institution: institution.trim() || 'Banco Emissor',
+        institution: finalInstitution,
         brand,
         lastFourDigits: lastFourDigits.slice(-4),
         creditLimit: limitNum,
@@ -129,40 +172,145 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+      <div 
+        className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4.5 border-b border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
               <CardIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {editingCard ? 'Editar Cartão de Crédito' : 'Novo Cartão de Crédito Corporativo'}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 Cadastre o cartão com limites e datas de fechamento para faturamento mensal.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
           {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-lg text-xs text-rose-300">
-              {error}
+            <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Pré-seleções Rápidas de Bancos Populares */}
+          <div className="p-3.5 bg-slate-50 dark:bg-[#1B212D]/60 rounded-2xl border border-slate-200 dark:border-[#273040] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Landmark className="w-4 h-4 text-amber-500" />
+                Instituição Bancária Emissora
+              </label>
+              <span className="text-[11px] text-slate-500">
+                Pré-seleção rápida:
+              </span>
+            </div>
+
+            {/* Pills de Bancos Populares */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1.5">
+              {POPULAR_BANKS_FOR_CARDS.map(b => {
+                const isSelected = selectedBankCode === b.code || institution.toLowerCase() === b.name.toLowerCase();
+                return (
+                  <button
+                    key={b.code}
+                    type="button"
+                    onClick={() => handleBankSelect(b)}
+                    className={`py-1.5 px-2 rounded-xl border text-[11px] font-semibold text-center transition-all cursor-pointer truncate flex items-center justify-center gap-1.5 ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold shadow-xs ring-1 ring-amber-500/40'
+                        : 'border-slate-200 dark:border-[#273040] bg-white dark:bg-[#131720] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                    title={`${b.name} (${b.code}) - ${b.fullName}`}
+                  >
+                    <span 
+                      className="w-2 h-2 rounded-full shrink-0" 
+                      style={{ backgroundColor: b.color }} 
+                    />
+                    <span className="truncate">{b.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Dropdown Pesquisável com TODOS os bancos brasileiros */}
+            <div className="pt-1.5">
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Ou selecione na lista de todos os bancos e fintechs do Brasil:
+              </label>
+              <select
+                value={selectedBankCode}
+                onChange={(e) => handleDropdownChange(e.target.value)}
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
+              >
+                <optgroup label="Bancos Populares & Digitais">
+                  {BRAZILIAN_BANKS.filter(b => b.isPopular).map(b => (
+                    <option 
+                      key={b.code} 
+                      value={b.code}
+                      className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white py-1"
+                    >
+                      {b.code} - {b.name} ({b.fullName})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Demais Bancos Comerciais e Cooperativas">
+                  {BRAZILIAN_BANKS.filter(b => !b.isPopular && b.code !== '000').map(b => (
+                    <option 
+                      key={b.code} 
+                      value={b.code}
+                      className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white py-1"
+                    >
+                      {b.code} - {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Personalizado">
+                  <option 
+                    value="000"
+                    className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white py-1"
+                  >
+                    000 - Outro Banco / Emissor Personalizado
+                  </option>
+                </optgroup>
+              </select>
+            </div>
+
+            {/* Se for 000 ou instituição livre, exibe campo de texto aberto */}
+            {(selectedBankCode === '000' || !BRAZILIAN_BANKS.some(b => b.code === selectedBankCode)) && (
+              <div className="pt-1">
+                <input
+                  type="text"
+                  required
+                  value={institution}
+                  onChange={(e) => setInstitution(e.target.value)}
+                  placeholder="Digite o nome do banco ou instituição..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {/* Nome de Identificação */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Nome de Identificação do Cartão *
               </label>
               <input
@@ -171,41 +319,37 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ex: Nubank PJ Mastercard, Itaú Corporate"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
 
+            {/* Bandeira */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Banco / Instituição Emissora
-              </label>
-              <input
-                type="text"
-                value={institution}
-                onChange={(e) => setInstitution(e.target.value)}
-                placeholder="Ex: Nubank, Itaú, Bradesco"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Bandeira
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Bandeira do Cartão
               </label>
               <select
                 value={brand}
                 onChange={(e) => setBrand(e.target.value as CreditCard['brand'])}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
               >
                 {BRAND_OPTIONS.map(b => (
-                  <option key={b.value} value={b.value}>{b.label}</option>
+                  <option 
+                    key={b.value} 
+                    value={b.value}
+                    className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                  >
+                    {b.label}
+                  </option>
                 ))}
               </select>
             </div>
 
+            {/* Últimos 4 Dígitos */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Últimos 4 Dígitos do Cartão
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Últimos 4 Dígitos
               </label>
               <input
                 type="text"
@@ -213,12 +357,13 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
                 value={lastFourDigits}
                 onChange={(e) => setLastFourDigits(e.target.value.replace(/\D/g, ''))}
                 placeholder="Ex: 4821"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
 
+            {/* Limite de Crédito Total */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Limite de Crédito Total (R$) *
               </label>
               <input
@@ -226,15 +371,43 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
                 step="0.01"
                 required
                 onWheel={(e) => (e.target as HTMLElement).blur()}
+                style={{ colorScheme: 'light dark' }}
                 value={creditLimit}
                 onChange={(e) => setCreditLimit(e.target.value)}
                 placeholder="10000.00"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
 
+            {/* Conta Bancária Padrão */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Conta Bancária Padrão para Débito
+              </label>
+              <select
+                value={defaultPaymentBankAccountId}
+                onChange={(e) => setDefaultPaymentBankAccountId(e.target.value)}
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
+              >
+                <option value="" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">
+                  Selecione uma conta bancária PJ...
+                </option>
+                {bankAccounts.map(b => (
+                  <option 
+                    key={b.id} 
+                    value={b.id}
+                    className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                  >
+                    {b.name} ({b.bankName || 'PJ'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Dia de Fechamento */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Dia de Fechamento da Fatura *
               </label>
               <input
@@ -243,18 +416,20 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
                 max="31"
                 required
                 onWheel={(e) => (e.target as HTMLElement).blur()}
+                style={{ colorScheme: 'light dark' }}
                 value={closingDay}
                 onChange={(e) => setClosingDay(e.target.value)}
                 placeholder="25"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
-              <span className="text-[10px] text-slate-500">
-                Dia do mês em que a fatura fecha para compras.
+              <span className="text-[10px] text-slate-500 block mt-0.5">
+                Dia do mês em que a fatura fecha para novas compras.
               </span>
             </div>
 
+            {/* Dia de Vencimento */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Dia de Vencimento da Fatura *
               </label>
               <input
@@ -263,73 +438,75 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
                 max="31"
                 required
                 onWheel={(e) => (e.target as HTMLElement).blur()}
+                style={{ colorScheme: 'light dark' }}
                 value={dueDay}
                 onChange={(e) => setDueDay(e.target.value)}
                 placeholder="5"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-500 block mt-0.5">
                 Data de pagamento do boleto da fatura.
               </span>
             </div>
 
+            {/* Seletor de Cores */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Conta Bancária Padrão para Pagamento
-              </label>
-              <select
-                value={defaultPaymentBankAccountId}
-                onChange={(e) => setDefaultPaymentBankAccountId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="">Selecione uma conta bancária PJ...</option>
-                {bankAccounts.map(b => (
-                  <option key={b.id} value={b.id}>{b.name} ({b.bankName || 'PJ'})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 Cor Visual do Cartão
               </label>
-              <div className="flex items-center gap-2 flex-wrap mb-2">
-                {COLOR_PRESETS.map(preset => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => setColor(preset.value)}
-                    className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                      color === preset.value ? 'scale-110 border-white ring-2 ring-amber-500/50' : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: preset.value }}
-                    title={preset.label}
+              <div className="flex items-center gap-2.5 flex-wrap p-2.5 rounded-xl border border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/40">
+                {COLOR_PRESETS.map(preset => {
+                  const isCur = color.toLowerCase() === preset.value.toLowerCase();
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => setColor(preset.value)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform cursor-pointer flex items-center justify-center ${
+                        isCur ? 'scale-110 border-white ring-2 ring-amber-500 shadow-sm' : 'border-slate-300 dark:border-slate-700 hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: preset.value }}
+                      title={preset.label}
+                    >
+                      {isCur && <Check className="w-3.5 h-3.5 text-white drop-shadow-xs" />}
+                    </button>
+                  );
+                })}
+                <div className="flex items-center gap-1.5 ml-auto text-xs text-slate-500">
+                  <span>Hex:</span>
+                  <input
+                    type="text"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-20 px-2 py-1 rounded border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] text-slate-900 dark:text-white font-mono text-[11px]"
                   />
-                ))}
+                </div>
               </div>
             </div>
 
+            {/* Observações */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Observações
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Observações (Opcional)
               </label>
               <textarea
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ex: Cartão destinado para despesas de TI e marketing digital..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+          {/* Footer de Ações */}
+          <div className="pt-4 border-t border-slate-200 dark:border-[#273040] flex items-center justify-between gap-3 shrink-0">
             <div>
               {editingCard && !isConfirmingDelete && (
                 <button
                   type="button"
                   onClick={() => setIsConfirmingDelete(true)}
-                  className="px-3.5 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/50 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Excluir Cartão
@@ -337,19 +514,19 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
               )}
 
               {editingCard && isConfirmingDelete && (
-                <div className="flex items-center gap-2 bg-rose-950/60 p-1.5 rounded-lg border border-rose-800">
-                  <span className="text-[11px] text-rose-300 font-semibold px-1">Confirmar exclusão?</span>
+                <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/60 p-1.5 rounded-xl border border-rose-200 dark:border-rose-800">
+                  <span className="text-[11px] text-rose-700 dark:text-rose-300 font-semibold px-1">Confirmar exclusão?</span>
                   <button
                     type="button"
                     onClick={handleDeleteCard}
-                    className="px-2.5 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded transition-colors cursor-pointer"
+                    className="px-2.5 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition-colors cursor-pointer"
                   >
                     Sim, excluir
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsConfirmingDelete(false)}
-                    className="px-2 py-1 text-xs font-semibold text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                    className="px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
                   >
                     Não
                   </button>
@@ -357,17 +534,17 @@ export const CreditCardFormModal: React.FC<CreditCardFormModalProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-[#1B212D] dark:hover:bg-slate-800 border border-slate-200 dark:border-[#273040] rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-lg transition-all cursor-pointer"
+                className="px-5 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 rounded-xl shadow-md transition-all cursor-pointer"
               >
                 {editingCard ? 'Salvar Alterações' : 'Cadastrar Cartão'}
               </button>

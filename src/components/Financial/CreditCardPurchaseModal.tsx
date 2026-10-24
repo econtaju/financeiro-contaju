@@ -166,14 +166,14 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
         totalInstallments: count,
         amount: currentInstAmount,
         competence: invoiceMonth,
-        dueDate,
         invoiceMonth,
-        settled: editingPurchase?.installments?.find(ins => ins.installmentNumber === i)?.settled || false
+        dueDate,
+        settled: false
       });
     }
 
     return result;
-  }, [selectedCard, purchaseDate, finalTotalAmount, finalInstallmentValue, installmentsCount, editingPurchase]);
+  }, [selectedCard, finalTotalAmount, finalInstallmentValue, installmentsCount, purchaseDate]);
 
   if (!isOpen) return null;
 
@@ -182,12 +182,12 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
     setError(null);
 
     if (!selectedCard) {
-      setError('Por favor, selecione um cartão de crédito.');
+      setError('Selecione um cartão de crédito cadastrado.');
       return;
     }
 
     if (!description.trim()) {
-      setError('Por favor, informe a descrição do lançamento.');
+      setError('Informe uma descrição clara para o lançamento.');
       return;
     }
 
@@ -196,15 +196,22 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
       return;
     }
 
-    const providerObj = counterparties.find(c => c.id === counterpartyId);
-    const providerName = providerObj?.name || customCounterpartyName.trim() || (transactionType === 'DESPESA' ? 'Fornecedor Cartão' : 'Crédito/Estorno Cartão');
+    if (!purchaseDate) {
+      setError('Selecione a data da transação.');
+      return;
+    }
 
-    const initialInvoiceMonth = previewInstallments[0]?.invoiceMonth || purchaseDate.slice(0, 7);
+    const providerName = customCounterpartyName.trim() || 
+      counterparties.find(c => c.id === counterpartyId)?.name || 
+      'Despesa Geral Cartão';
+
+    const initialInvoiceMonth = previewInstallments[0]?.invoiceMonth || `${purchaseDate.substring(0, 7)}`;
 
     if (editingPurchase) {
+      // Atualizar compra existente com preservação de IDs de parcelas compatíveis
       const updatedPurchase: CreditCardPurchase = {
         ...editingPurchase,
-        cardId: selectedCard.id,
+        cardId,
         transactionType,
         purchaseDate,
         description: description.trim(),
@@ -221,11 +228,22 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
       };
 
       storage.updateCardPurchaseAndSyncTitles(updatedPurchase);
+
+      // Log de Auditoria
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'EDICAO_COMPRA_CARTAO',
+        module: 'Cartões de Crédito',
+        recordId: updatedPurchase.id,
+        details: `Atualizado ${transactionType} no cartão ${selectedCard.name}: ${updatedPurchase.description} no valor de ${formatBRL(finalTotalAmount)}. Sincronizado no Contas a Pagar.`
+      });
     } else {
-      const purchaseId = `pur-${Date.now()}`;
+      // Nova Compra / Estorno
       const newPurchase: CreditCardPurchase = {
-        id: purchaseId,
-        cardId: selectedCard.id,
+        id: `cp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        cardId,
         transactionType,
         purchaseDate,
         description: description.trim(),
@@ -264,15 +282,18 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
   const isCreditType = transactionType !== 'DESPESA';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+      <div 
+        className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-4.5 border-b border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
               isCreditType
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400'
             }`}>
               {transactionType === 'ESTORNO' ? (
                 <RotateCcw className="w-5 h-5" />
@@ -283,10 +304,10 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
               )}
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {editingPurchase ? 'Editar Lançamento no Cartão' : isCreditType ? 'Novo Estorno / Crédito no Cartão' : 'Nova Compra no Cartão de Crédito'}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 {isCreditType
                   ? 'Abate o total da fatura selecionada e recompõe o limite do cartão.'
                   : 'Lançamento parcelado ou à vista com integração direta no Contas a Pagar.'}
@@ -294,30 +315,31 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
           {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-lg text-xs text-rose-300 flex items-center gap-2">
+            <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {/* Seletor de Tipo de Transação */}
-          <div className="grid grid-cols-3 gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+          <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setTransactionType('DESPESA')}
-              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 transactionType === 'DESPESA'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <ShoppingBag className="w-3.5 h-3.5" />
@@ -326,10 +348,10 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
             <button
               type="button"
               onClick={() => setTransactionType('ESTORNO')}
-              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 transactionType === 'ESTORNO'
-                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -338,10 +360,10 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
             <button
               type="button"
               onClick={() => setTransactionType('CASHBACK')}
-              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 transactionType === 'CASHBACK'
-                  ? 'bg-teal-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-teal-500 text-slate-950 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -350,29 +372,34 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
           </div>
 
           {isCreditType && (
-            <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>
                 <strong>{transactionType === 'CASHBACK' ? 'Cashback:' : 'Estorno / Devolução:'}</strong> Este lançamento entrará como crédito líquido na fatura, diminuindo o valor a pagar e liberando o limite disponível do cartão.
               </span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {/* Cartão */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Cartão de Crédito Utilizado *
               </label>
               <select
                 required
                 value={cardId}
                 onChange={(e) => setCardId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
               >
                 {cards.map(card => (
-                  <option key={card.id} value={card.id}>
-                    {card.name} (Final {card.lastFourDigits || '••••'}) — Fecha dia {card.closingDay} / Vence dia {card.dueDay}
+                  <option 
+                    key={card.id} 
+                    value={card.id}
+                    className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                  >
+                    {card.name} ({card.institution} • Final {card.lastFourDigits || '••••'}) — Fecha dia {card.closingDay} / Vence dia {card.dueDay}
                   </option>
                 ))}
               </select>
@@ -380,7 +407,7 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
             {/* Data da Compra */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Data da Compra *
               </label>
               <input
@@ -388,7 +415,8 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                 required
                 value={purchaseDate}
                 onChange={(e) => setPurchaseDate(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
               {selectedCard && (
                 <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -399,18 +427,23 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
             {/* Categoria do Plano de Contas */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Categoria / Plano de Contas *
               </label>
               <select
                 value={chartAccountId}
                 onChange={(e) => setChartAccountId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
               >
                 {chartAccounts
-                  .filter(a => a.type === 'DESPESA' && a.acceptsLaunches)
+                  .filter(a => (transactionType === 'DESPESA' ? a.type === 'DESPESA' : true) && a.acceptsLaunches)
                   .map(a => (
-                    <option key={a.id} value={a.id}>
+                    <option 
+                      key={a.id} 
+                      value={a.id}
+                      className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                    >
                       {a.code} - {a.name}
                     </option>
                   ))}
@@ -419,7 +452,7 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
             {/* Descrição */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Descrição da Compra / Despesa *
               </label>
               <input
@@ -428,30 +461,39 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Ex: Assinatura de Software, Material de Escritório, Passagens..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
 
             {/* Fornecedor */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Fornecedor Cadastrado
               </label>
               <select
                 value={counterpartyId}
                 onChange={(e) => setCounterpartyId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                style={{ colorScheme: 'light dark' }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
               >
-                <option value="">Selecione ou digite ao lado...</option>
+                <option value="" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">
+                  Selecione ou digite ao lado...
+                </option>
                 {counterparties.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
+                  <option 
+                    key={c.id} 
+                    value={c.id}
+                    className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                  >
+                    {c.name} ({c.type})
+                  </option>
                 ))}
               </select>
             </div>
 
             {/* Ou Nome do Estabelecimento */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Ou Estabelecimento / Nome Avulso
               </label>
               <input
@@ -459,27 +501,27 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                 value={customCounterpartyName}
                 onChange={(e) => setCustomCounterpartyName(e.target.value)}
                 placeholder="Ex: Amazon AWS, Posto Shell, Kalunga..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
 
             {/* Modalidade de Cálculo das Parcelas */}
-            <div className="md:col-span-2 p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <Split className="w-4 h-4 text-amber-400" />
+            <div className="md:col-span-2 p-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Split className="w-4 h-4 text-amber-500" />
                   Condições de Parcelamento
                 </span>
                 
                 {/* Switcher de Modalidade */}
-                <div className="flex items-center bg-slate-900 p-1 rounded-lg border border-slate-800 text-[11px]">
+                <div className="flex items-center bg-slate-200 dark:bg-slate-900 p-1 rounded-xl border border-slate-300 dark:border-slate-800 text-[11px]">
                   <button
                     type="button"
                     onClick={() => setCalculationMode('TOTAL_DIVIDED')}
-                    className={`px-2.5 py-1 rounded font-medium transition-all ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
                       calculationMode === 'TOTAL_DIVIDED'
-                        ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-white'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Valor Total ÷ Parcelas
@@ -487,10 +529,10 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                   <button
                     type="button"
                     onClick={() => setCalculationMode('INSTALLMENT_VALUE')}
-                    className={`px-2.5 py-1 rounded font-medium transition-all ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
                       calculationMode === 'INSTALLMENT_VALUE'
-                        ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-white'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Valor da Parcela × N° Parcelas
@@ -500,26 +542,39 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Número de Parcelas *
                   </label>
                   <select
                     value={installmentsCount}
                     onChange={(e) => setInstallmentsCount(parseInt(e.target.value, 10) || 1)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                    style={{ colorScheme: 'light dark' }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer text-xs"
                   >
-                    <option value="1">1x (À vista na fatura)</option>
+                    <option value="1" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">
+                      1x (À vista na fatura)
+                    </option>
                     {Array.from({ length: 23 }, (_, i) => i + 2).map(n => (
-                      <option key={n} value={n}>{n}x parcelado</option>
+                      <option 
+                        key={n} 
+                        value={n}
+                        className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                      >
+                        {n}x parcelado
+                      </option>
                     ))}
-                    <option value="36">36x parcelado</option>
-                    <option value="48">48x parcelado</option>
+                    <option value="36" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">
+                      36x parcelado
+                    </option>
+                    <option value="48" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">
+                      48x parcelado
+                    </option>
                   </select>
                 </div>
 
                 {calculationMode === 'TOTAL_DIVIDED' ? (
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Valor Total da Compra (R$) *
                     </label>
                     <input
@@ -527,15 +582,16 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                       step="0.01"
                       required
                       onWheel={(e) => (e.target as HTMLElement).blur()}
+                      style={{ colorScheme: 'light dark' }}
                       value={totalAmountInput}
                       onChange={(e) => setTotalAmountInput(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-amber-500"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
                     />
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Valor de Cada Parcela (R$) *
                     </label>
                     <input
@@ -543,19 +599,20 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                       step="0.01"
                       required
                       onWheel={(e) => (e.target as HTMLElement).blur()}
+                      style={{ colorScheme: 'light dark' }}
                       value={installmentValueInput}
                       onChange={(e) => setInstallmentValueInput(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-amber-500"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
                     />
                   </div>
                 )}
 
-                <div className="p-2 bg-slate-900/90 rounded-lg border border-slate-800 flex flex-col justify-center">
-                  <span className="text-[10px] text-slate-400">
+                <div className="p-2.5 bg-white dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-center">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
                     {calculationMode === 'TOTAL_DIVIDED' ? 'Valor por parcela calculado:' : 'Valor total calculado:'}
                   </span>
-                  <div className="text-sm font-bold text-amber-400 font-mono">
+                  <div className="text-sm font-bold text-amber-600 dark:text-amber-400 font-mono">
                     {calculationMode === 'TOTAL_DIVIDED' 
                       ? `${installmentsCount}x de ${formatBRL(finalInstallmentValue)}`
                       : `Total de ${formatBRL(finalTotalAmount)}`}
@@ -566,34 +623,34 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
             {/* Pré-visualização das parcelas e vencimentos */}
             {previewInstallments.length > 0 && (
-              <div className="md:col-span-2 border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
-                <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <div className="md:col-span-2 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-950/40">
+                <div className="px-3 py-2 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-500" />
                     Cronograma de Vencimento nas Faturas ({previewInstallments.length} parcelas)
                   </span>
-                  <span className="text-amber-400 font-bold font-mono">
+                  <span className="text-amber-600 dark:text-amber-400 font-bold font-mono">
                     Total: {formatBRL(finalTotalAmount)}
                   </span>
                 </div>
 
-                <div className="max-h-36 overflow-y-auto divide-y divide-slate-800/60 text-xs">
+                <div className="max-h-36 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800/60 text-xs">
                   {previewInstallments.map((inst) => (
-                    <div key={inst.installmentNumber} className="px-3 py-1.5 flex items-center justify-between hover:bg-slate-800/30 transition-colors">
+                    <div key={inst.installmentNumber} className="px-3 py-1.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800/30 transition-colors">
                       <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded bg-slate-800 text-[11px] font-mono flex items-center justify-center text-slate-300 font-semibold">
+                        <span className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-800 text-[11px] font-mono flex items-center justify-center text-slate-700 dark:text-slate-300 font-semibold">
                           {inst.installmentNumber}/{inst.totalInstallments}
                         </span>
-                        <span className="text-slate-300 font-medium">
-                          Fatura: <strong className="text-white">{inst.invoiceMonth}</strong>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">
+                          Fatura: <strong className="text-slate-900 dark:text-white">{inst.invoiceMonth}</strong>
                         </span>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="text-slate-400 text-[11px]">
-                          Vencimento: <span className="text-slate-300 font-mono">{inst.dueDate}</span>
+                        <span className="text-slate-500 text-[11px]">
+                          Vencimento: <span className="text-slate-700 dark:text-slate-300 font-mono">{inst.dueDate}</span>
                         </span>
-                        <span className="font-mono font-bold text-amber-300">
+                        <span className="font-mono font-bold text-amber-600 dark:text-amber-300">
                           {formatBRL(inst.amount)}
                         </span>
                       </div>
@@ -605,7 +662,7 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
 
             {/* Observações */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Observações
               </label>
               <textarea
@@ -613,31 +670,31 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Detalhes adicionais sobre a compra ou projeto correspondente..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-xs"
               />
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <div className="pt-4 border-t border-slate-200 dark:border-[#273040] flex items-center justify-between gap-3 shrink-0">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               Sincroniza automaticamente com o relatório de Contas a Pagar
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-[#1B212D] dark:hover:bg-slate-800 border border-slate-200 dark:border-[#273040] rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className={`px-5 py-2 text-xs font-bold text-slate-950 rounded-lg shadow-lg transition-all cursor-pointer ${
+                className={`px-5 py-2 text-xs font-bold text-slate-950 rounded-xl shadow-md transition-all cursor-pointer ${
                   isCreditType
                     ? 'bg-emerald-500 hover:bg-emerald-400'
-                    : 'bg-amber-500 hover:bg-amber-400'
+                    : 'bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105'
                 }`}
               >
                 {editingPurchase ? 'Salvar Alterações' : isCreditType ? 'Confirmar Estorno / Crédito' : 'Confirmar Compra'}

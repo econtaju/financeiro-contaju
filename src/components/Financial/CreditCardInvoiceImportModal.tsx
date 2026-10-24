@@ -330,36 +330,40 @@ Vencimento: 15/${m}/${y} | Período de Compras
     .reduce((acc, m) => acc + m.invoiceItem!.amount, 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700/90 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+      <div 
+        className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header com identidade do Cartão */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between gap-4">
+        <div className="px-6 py-4.5 border-b border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/80 flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3">
             <div 
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-md"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-md shrink-0"
               style={{ backgroundColor: card.color || '#f59e0b' }}
             >
               <CardIcon className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white tracking-tight">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
                   Conciliação e Cruzamento de Fatura ({card.name})
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                   Fatura: {invoiceMonth}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 Compare a fatura do banco com os lançamentos manuais do sistema e cadastre compras faltantes.
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -371,15 +375,15 @@ Vencimento: 15/${m}/${y} | Período de Compras
           {/* Seção 1: Upload ou Colagem da Fatura */}
           {importedItems.length === 0 ? (
             <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setActiveTab('UPLOAD')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                       activeTab === 'UPLOAD'
-                        ? 'bg-amber-500 text-black font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -389,10 +393,10 @@ Vencimento: 15/${m}/${y} | Período de Compras
                   <button
                     type="button"
                     onClick={() => setActiveTab('PASTE')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                       activeTab === 'PASTE'
-                        ? 'bg-amber-500 text-black font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
                     <ClipboardPaste className="w-3.5 h-3.5" />
@@ -403,7 +407,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                 <button
                   type="button"
                   onClick={handleLoadSampleInvoice}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Carregar Exemplo de Teste
@@ -411,34 +415,34 @@ Vencimento: 15/${m}/${y} | Período de Compras
               </div>
 
               {errorMessage && (
-                <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
                   <span>{errorMessage}</span>
                 </div>
               )}
 
               {activeTab === 'UPLOAD' ? (
-                <div className="border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-2xl p-8 text-center bg-slate-800/30 transition-all flex flex-col items-center justify-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-500/60 rounded-3xl p-8 text-center bg-slate-50 dark:bg-slate-800/30 transition-all flex flex-col items-center justify-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
                     <FileText className="w-7 h-7" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-white">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                       Selecione ou arraste a fatura do cartão
                     </h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-md mx-auto">
                       Formatos aceitos: <strong>OFX</strong>, <strong>CSV</strong>, <strong>PDF</strong> ou <strong>Excel</strong>.
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2">
-                      <span className="px-2 py-0.5 rounded-md bg-purple-950/60 border border-purple-800 text-[10px] text-purple-300 font-semibold">Nubank</span>
-                      <span className="px-2 py-0.5 rounded-md bg-orange-950/60 border border-orange-800 text-[10px] text-orange-300 font-semibold">Itaú</span>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] text-slate-200 font-semibold">C6 Bank</span>
-                      <span className="px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-800 text-[10px] text-amber-300 font-semibold">Inter</span>
-                      <span className="px-2 py-0.5 rounded-md bg-rose-950/60 border border-rose-800 text-[10px] text-rose-300 font-semibold">Bradesco</span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] text-purple-700 dark:text-purple-300 font-semibold">Nubank</span>
+                      <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 text-[10px] text-orange-700 dark:text-orange-300 font-semibold">Itaú</span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[10px] text-slate-800 dark:text-slate-200 font-semibold">C6 Bank</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-[10px] text-amber-700 dark:text-amber-300 font-semibold">Inter</span>
+                      <span className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-[10px] text-rose-700 dark:text-rose-300 font-semibold">Bradesco</span>
                     </div>
                   </div>
 
-                  <label className="cursor-pointer mt-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-md transition-all flex items-center gap-2">
+                  <label className="cursor-pointer mt-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-2">
                     <Upload className="w-4 h-4" />
                     Escolher Arquivo no Computador
                     <input
@@ -451,7 +455,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                   </label>
 
                   {isProcessing && (
-                    <div className="flex items-center gap-2 text-xs text-amber-400 mt-2 font-medium">
+                    <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       Lendo streams de texto e decodificando lançamentos da fatura...
                     </div>
@@ -459,7 +463,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     Abra o PDF da fatura ou o app do banco, selecione os lançamentos (Ctrl+C) e cole abaixo (Ctrl+V):
                   </p>
                   <textarea
@@ -467,13 +471,13 @@ Vencimento: 15/${m}/${y} | Período de Compras
                     value={pastedText}
                     onChange={(e) => setPastedText(e.target.value)}
                     placeholder="Exemplo:&#10;14/09 POSTO SHELL R$ 180,00&#10;15/09 UBER *TRIP 28,90&#10;18/09 RESTAURANTE COCO BAMBU R$ 240,00"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl p-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
                   />
                   <button
                     type="button"
                     disabled={isProcessing || !pastedText.trim()}
                     onClick={() => handleParseText(pastedText)}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     Processar e Fazer Cruzamento
@@ -486,14 +490,14 @@ Vencimento: 15/${m}/${y} | Período de Compras
             <div className="space-y-6">
               
               {/* Barra de Ação Superior do Comparativo */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/60 p-4 rounded-xl border border-slate-700/80">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-amber-400" />
+                  <ShieldCheck className="w-5 h-5 text-amber-500" />
                   <div>
-                    <h4 className="text-sm font-bold text-white">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                       Cruzamento de Dados Concluído
                     </h4>
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-slate-600 dark:text-slate-400">
                       {importedItems.length} lançamentos na fatura importada vs {manualInvoiceItems.length} cadastrados no sistema.
                     </span>
                   </div>
@@ -506,7 +510,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                     setPastedText('');
                     setErrorMessage(null);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-colors self-start sm:self-auto"
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors self-start sm:self-auto cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   Importar Outra Fatura
@@ -515,38 +519,38 @@ Vencimento: 15/${m}/${y} | Período de Compras
 
               {/* Cards de Resumo Comparativo */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700">
-                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block mb-1">
                     Total Fatura Importada (PDF)
                   </span>
-                  <div className="text-lg font-bold text-white font-mono">
+                  <div className="text-lg font-bold text-slate-900 dark:text-white font-mono">
                     {formatBRL(comparison.totalImported)}
                   </div>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
                     {importedItems.length} transações no documento
                   </span>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700">
-                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block mb-1">
                     Total Já Lançado no Sistema
                   </span>
-                  <div className="text-lg font-bold text-slate-200 font-mono">
+                  <div className="text-lg font-bold text-slate-900 dark:text-slate-200 font-mono">
                     {formatBRL(comparison.totalManual)}
                   </div>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
                     {manualInvoiceItems.length} compras cadastradas nesta fatura
                   </span>
                 </div>
 
-                <div className={`p-4 rounded-xl border ${
+                <div className={`p-4 rounded-2xl border ${
                   comparison.totalDifference > 0.05 
-                    ? 'bg-amber-950/20 border-amber-500/40 text-amber-400' 
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-700 dark:text-amber-400' 
                     : comparison.totalDifference < -0.05
-                      ? 'bg-rose-950/20 border-rose-500/40 text-rose-400'
-                      : 'bg-emerald-950/20 border-emerald-500/40 text-emerald-400'
+                      ? 'bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-400'
+                      : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400'
                 }`}>
-                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block mb-1">
                     Divergência / Saldo Faltante
                   </span>
                   <div className="text-lg font-bold font-mono">
@@ -639,14 +643,14 @@ Vencimento: 15/${m}/${y} | Período de Compras
                   </div>
 
                   {comparison.missingInSystem.length === 0 ? (
-                    <div className="p-8 text-center bg-slate-800/40 rounded-xl border border-slate-800 text-slate-400 text-xs">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+                    <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-emerald-400 mx-auto mb-2" />
                       Nenhum lançamento faltando! Todas as compras da fatura importada já constam no sistema.
                     </div>
                   ) : (
-                    <div className="border border-slate-700 rounded-xl overflow-hidden">
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xs">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-800 text-slate-300 font-semibold border-b border-slate-700">
+                        <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
                           <tr>
                             <th className="p-3 w-10 text-center">Sel.</th>
                             <th className="p-3">Data</th>
@@ -657,7 +661,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                             <th className="p-3 text-right">Valor</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800 text-slate-300">
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
                           {comparison.missingInSystem.map(m => {
                             const it = m.invoiceItem!;
                             const isChecked = selectedMissingIds.has(it.id);
@@ -671,7 +675,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
                               <tr 
                                 key={it.id} 
                                 className={`transition-colors ${
-                                  isChecked ? 'bg-amber-950/20 hover:bg-amber-950/30' : 'hover:bg-slate-800/50 opacity-70'
+                                  isChecked ? 'bg-amber-500/10 dark:bg-amber-950/20 hover:bg-amber-500/15 dark:hover:bg-amber-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 opacity-70'
                                 }`}
                               >
                                 <td className="p-3 text-center">
@@ -679,10 +683,10 @@ Vencimento: 15/${m}/${y} | Período de Compras
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => handleToggleSelectMissing(it.id)}
-                                    className="rounded border-slate-700 text-amber-500 focus:ring-amber-500/30 cursor-pointer"
+                                    className="rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500/30 cursor-pointer"
                                   />
                                 </td>
-                                <td className="p-3 font-mono text-slate-400 whitespace-nowrap">
+                                <td className="p-3 font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
                                   {it.formattedDate}
                                 </td>
                                 <td className="p-3">
@@ -690,19 +694,24 @@ Vencimento: 15/${m}/${y} | Período de Compras
                                     type="text"
                                     value={edits.description}
                                     onChange={(e) => handleEditChange(it.id, 'description', e.target.value)}
-                                    className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-amber-500"
+                                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
                                   />
                                 </td>
                                 <td className="p-3">
                                   <select
                                     value={edits.chartAccountId}
                                     onChange={(e) => handleEditChange(it.id, 'chartAccountId', e.target.value)}
-                                    className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-amber-500"
+                                    style={{ colorScheme: 'light dark' }}
+                                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer"
                                   >
                                     {chartAccounts
                                       .filter(a => a.type === 'DESPESA' || a.code.startsWith('4.'))
                                       .map(a => (
-                                        <option key={a.id} value={a.id}>
+                                        <option 
+                                          key={a.id} 
+                                          value={a.id}
+                                          className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white"
+                                        >
                                           {a.code} - {a.name}
                                         </option>
                                       ))}
@@ -713,16 +722,16 @@ Vencimento: 15/${m}/${y} | Período de Compras
                                     type="text"
                                     value={edits.counterpartyName}
                                     onChange={(e) => handleEditChange(it.id, 'counterpartyName', e.target.value)}
-                                    className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-amber-500"
+                                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
                                     placeholder="Nome do Fornecedor"
                                   />
                                 </td>
                                 <td className="p-3 text-center">
-                                  <span className="px-2 py-0.5 rounded bg-slate-800 font-mono text-[11px] font-bold text-amber-400 border border-slate-700">
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400 border border-slate-200 dark:border-slate-700">
                                     {it.installmentText || '1/1'}
                                   </span>
                                 </td>
-                                <td className="p-3 text-right font-mono font-bold text-amber-400 whitespace-nowrap">
+                                <td className="p-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
                                   {formatBRL(it.amount)}
                                 </td>
                               </tr>
@@ -846,20 +855,20 @@ Vencimento: 15/${m}/${y} | Período de Compras
         </div>
 
         {/* Footer com botões de ação */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-xs text-slate-400">
+        <div className="px-6 py-4 border-t border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/80 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+          <div className="text-xs text-slate-600 dark:text-slate-400">
             {importedItems.length > 0 && (
               <span>
-                Competência de lançamento: <strong className="text-white">{formatCompetence(invoiceMonth)}</strong>
+                Competência de lançamento: <strong className="text-slate-900 dark:text-white">{formatCompetence(invoiceMonth)}</strong>
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-[#1B212D] dark:hover:bg-slate-800 border border-slate-200 dark:border-[#273040] rounded-xl transition-colors cursor-pointer"
             >
               Cancelar
             </button>

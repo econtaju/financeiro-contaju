@@ -202,12 +202,13 @@ export const QuickNewBankAccountModal: React.FC<QuickNewBankAccountModalProps> =
               <select
                 value={type}
                 onChange={e => setType(e.target.value as BankAccountType)}
+                style={{ colorScheme: 'light dark' }}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 cursor-pointer"
               >
-                <option value="CORRENTE">Conta Corrente</option>
-                <option value="POUPANCA">Poupança</option>
-                <option value="INVESTIMENTO">Aplicação / Investimento</option>
-                <option value="CAIXA_FISICO">Caixa Físico / Gaveta</option>
+                <option value="CORRENTE" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">Conta Corrente</option>
+                <option value="POUPANCA" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">Poupança</option>
+                <option value="INVESTIMENTO" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">Aplicação / Investimento</option>
+                <option value="CAIXA_FISICO" className="bg-white text-slate-900 dark:bg-[#131720] dark:text-white">Caixa Físico / Gaveta</option>
               </select>
             </div>
           </div>
