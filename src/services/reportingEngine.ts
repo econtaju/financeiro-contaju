@@ -309,9 +309,13 @@ export class ReportingEngine {
           }
         }
 
-        // Movimentações financeiras avulsas diretas do extrato/caixa
+        // Movimentações financeiras avulsas diretas do extrato/caixa (exclui baixas de títulos já computadas acima)
         for (const mov of allMovements) {
           if (!mov.date || !mov.date.startsWith(monthStr)) continue;
+          // Ignora movimentações decorrentes de baixa de título/quitação para evitar duplicidade de caixa
+          if (mov.originType === 'BAIXA_TITULO' || (mov.originReferenceId && mov.originReferenceId.startsWith('set-'))) {
+            continue;
+          }
           const matchesMovementAcc = (mov as any).accountId === accId || 
             (accId === 'acc-4.2.04' && mov.originType === 'OPERACAO_DIRETA' && mov.description?.toLowerCase().includes('tarifa'));
           if (matchesMovementAcc) {

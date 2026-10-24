@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   BarChart3, 
   Download, 
@@ -262,57 +262,78 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   }, [timeHorizon, selectedSemester, selectedQuarter, selectedMonth]);
 
+  // Meses alvo conforme o clique no drill-down (mês específico ou acumulado do período selecionado)
+  const targetDrillDownMonths = useMemo(() => {
+    if (!drillDownItem) return [];
+    const { monthIdx } = drillDownItem;
+    return monthIdx >= 0
+      ? [`${effectiveYear}-${(monthIdx + 1).toString().padStart(2, '0')}`]
+      : activeMonthIndices.map(m => `${effectiveYear}-${(m + 1).toString().padStart(2, '0')}`);
+  }, [drillDownItem, effectiveYear, activeMonthIndices]);
+
+  // Helper contábil que apura com precisão o impacto de caixa de um título no período selecionado
+  const getTitleCashInPeriod = useCallback((title: FinancialTitle, targetMonths: string[]) => {
+    let settledInPeriod = 0;
+    const matchingSettlements = allSettlements.filter(s => s.titleId === title.id);
+
+    if (matchingSettlements.length > 0) {
+      for (const s of matchingSettlements) {
+        const sMonth = s.settlementDate?.substring(0, 7) || '';
+        if (targetMonths.includes(sMonth)) {
+          settledInPeriod += s.components?.principalSettled || s.components?.netFinancialAmount || 0;
+        }
+      }
+    } else {
+      const payDate = (title as any).actualPaymentDate || (title as any).paymentDate || (title as any).settlementDate || '';
+      const pMonth = payDate.substring(0, 7);
+      if (payDate && targetMonths.includes(pMonth) && ((title.settledPrincipal || 0) > 0 || title.settlementState === 'LIQUIDADO')) {
+        settledInPeriod += title.settledPrincipal || title.originalAmount || 0;
+      } else if (!payDate && title.settlementState === 'LIQUIDADO') {
+        const dueMonth = (title.dueDate || '').substring(0, 7);
+        if (targetMonths.includes(dueMonth)) {
+          settledInPeriod += title.settledPrincipal || title.originalAmount || 0;
+        }
+      }
+    }
+
+    // Saldo em aberto com previsão de pagamento / vencimento no período (regra contábil de caixa gerencial)
+    let openDueInPeriod = 0;
+    const dueMonth = (title.dueDate || '').substring(0, 7);
+    if (targetMonths.includes(dueMonth)) {
+      const openBalance = typeof title.balancePrincipal === 'number'
+        ? title.balancePrincipal
+        : Math.max(0, (title.originalAmount || 0) - (title.settledPrincipal || 0));
+
+      if (openBalance > 0.001) {
+        openDueInPeriod = openBalance;
+      }
+    }
+
+    const totalInPeriod = Math.round((settledInPeriod + openDueInPeriod) * 100) / 100;
+    return {
+      settledInPeriod: Math.round(settledInPeriod * 100) / 100,
+      openDueInPeriod: Math.round(openDueInPeriod * 100) / 100,
+      totalInPeriod
+    };
+  }, [allSettlements]);
+
   // Filtragem estrita dos títulos da linha para o período e regime ativos
   const filteredDrillDownTitles = useMemo(() => {
     if (!drillDownItem) return [];
-    const { line, monthIdx, regimeMode } = drillDownItem;
+    const { line, regimeMode } = drillDownItem;
 
     // 1. Títulos vinculados à rubrica da DRE
-    const lineTitles = allTitles.filter(t => line.matchedTitleIds?.includes(t.id));
+    const lineTitles = allTitles.filter(t => 
+      line.matchedTitleIds?.includes(t.id) || 
+      t.accountId === line.id || 
+      (line as any).accountId === t.accountId
+    );
 
-    // 2. Meses alvo conforme o clique (mês específico ou acumulado do período selecionado)
-    const targetMonths: string[] = monthIdx >= 0
-      ? [`${effectiveYear}-${(monthIdx + 1).toString().padStart(2, '0')}`]
-      : activeMonthIndices.map(m => `${effectiveYear}-${(m + 1).toString().padStart(2, '0')}`);
-
-    // 3. Filtrar de acordo com o regime (Competência ou Caixa)
+    // 2. Filtrar de acordo com o regime (Competência ou Caixa)
     if (regimeMode === 'CAIXA') {
       return lineTitles.filter(t => {
-        // Baixas em settlements efetuadas no período
-        const tSettlements = allSettlements.filter(s => s.titleId === t.id);
-        if (tSettlements.length > 0) {
-          const hasSettlementInPeriod = tSettlements.some(s => {
-            const sMonth = s.settlementDate?.substring(0, 7) || '';
-            return targetMonths.includes(sMonth);
-          });
-          if (hasSettlementInPeriod) return true;
-        }
-
-        // Fallbacks diretos no título para quitações
-        const payDate = (t as any).actualPaymentDate || (t as any).paymentDate || (t as any).settlementDate || '';
-        if (payDate) {
-          const pMonth = payDate.substring(0, 7);
-          if (targetMonths.includes(pMonth) && ((t.settledPrincipal || 0) > 0 || t.settlementState === 'LIQUIDADO')) {
-            return true;
-          }
-        }
-
-        if (t.settlementState === 'LIQUIDADO') {
-          const dueMonth = (t.dueDate || '').substring(0, 7);
-          if (targetMonths.includes(dueMonth)) return true;
-        }
-
-        // Títulos em aberto com previsão de pagamento / vencimento no mês (regra de caixa gerencial)
-        const dueMonth = (t.dueDate || '').substring(0, 7);
-        const openBalance = typeof t.balancePrincipal === 'number'
-          ? t.balancePrincipal
-          : Math.max(0, (t.originalAmount || 0) - (t.settledPrincipal || 0));
-
-        if (targetMonths.includes(dueMonth) && openBalance > 0.001) {
-          return true;
-        }
-
-        return false;
+        const cash = getTitleCashInPeriod(t, targetDrillDownMonths);
+        return cash.totalInPeriod > 0.001;
       });
     } else {
       // Regime de Competência
@@ -320,15 +341,37 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
         const compStr = t.competence && t.competence.trim().length >= 7
           ? t.competence.trim().substring(0, 7)
           : (t.dueDate ? t.dueDate.substring(0, 7) : '');
-        return targetMonths.includes(compStr);
+        return targetDrillDownMonths.includes(compStr);
       });
     }
-  }, [drillDownItem, allTitles, allSettlements, effectiveYear, activeMonthIndices]);
+  }, [drillDownItem, allTitles, targetDrillDownMonths, getTitleCashInPeriod]);
 
-  // Raio-X de Concentração de Favorecidos / Clientes (Melhoria 2)
+  // Totalizador consolidado dos títulos do drill-down para o período (bate centavo por centavo com a DRE)
+  const drillDownTotalAmount = useMemo(() => {
+    if (!drillDownItem || filteredDrillDownTitles.length === 0) return 0;
+    if (drillDownItem.regimeMode === 'CAIXA') {
+      return Math.round(filteredDrillDownTitles.reduce((acc, t) => {
+        const cash = getTitleCashInPeriod(t, targetDrillDownMonths);
+        return acc + cash.totalInPeriod;
+      }, 0) * 100) / 100;
+    } else {
+      return Math.round(filteredDrillDownTitles.reduce((acc, t) => acc + (t.originalAmount || 0), 0) * 100) / 100;
+    }
+  }, [drillDownItem, filteredDrillDownTitles, targetDrillDownMonths, getTitleCashInPeriod]);
+
+  // Raio-X de Concentração de Favorecidos / Clientes
   const drillDownConcentration = useMemo(() => {
     if (!drillDownItem || filteredDrillDownTitles.length === 0) return null;
-    const totalAmount = filteredDrillDownTitles.reduce((acc, t) => acc + t.originalAmount, 0);
+    const isCash = drillDownItem.regimeMode === 'CAIXA';
+
+    const getEffectiveAmount = (t: FinancialTitle) => {
+      if (isCash) {
+        return getTitleCashInPeriod(t, targetDrillDownMonths).totalInPeriod;
+      }
+      return t.originalAmount || 0;
+    };
+
+    const totalAmount = filteredDrillDownTitles.reduce((acc, t) => acc + getEffectiveAmount(t), 0);
     if (totalAmount <= 0) return null;
 
     const map = new Map<string, { counterpartyId: string; name: string; document: string; amount: number; count: number }>();
@@ -340,7 +383,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       const document = cObj?.document || '-';
 
       const cur = map.get(cId) || { counterpartyId: cId, name, document, amount: 0, count: 0 };
-      cur.amount += t.originalAmount;
+      cur.amount += getEffectiveAmount(t);
       cur.count += 1;
       map.set(cId, cur);
     }
@@ -378,7 +421,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       riskLevel,
       riskWarning
     };
-  }, [drillDownItem, filteredDrillDownTitles, counterparties]);
+  }, [drillDownItem, filteredDrillDownTitles, counterparties, targetDrillDownMonths, getTitleCashInPeriod]);
 
   // Dados do Planejamento Orçamentário para Análise Orçado vs Realizado (Sugestão 3)
   const budgetData = useMemo(() => {
@@ -1157,7 +1200,14 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
       {/* Global Period Banner */}
       <GlobalPeriodBanner
         moduleName="DRE Gerencial"
-        matchedCount={allTitles.filter(t => t.competence?.startsWith(String(effectiveYear))).length}
+        matchedCount={
+          regime === 'CAIXA'
+            ? allTitles.filter(t => {
+                const payDate = (t as any).actualPaymentDate || (t as any).paymentDate || (t as any).settlementDate || '';
+                return payDate.startsWith(String(effectiveYear)) || (t.dueDate || '').startsWith(String(effectiveYear));
+              }).length
+            : allTitles.filter(t => (t.competence || t.dueDate || '').startsWith(String(effectiveYear))).length
+        }
         totalCount={allTitles.length}
       />
 
@@ -2323,6 +2373,13 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-[var(--text-secondary)]">
                   <span>Período: <strong className="text-[var(--text-primary)]">{drillDownItem.monthName}</strong> • {filteredDrillDownTitles.length} lançamento(s) vinculados</span>
+                  <span className={`px-2.5 py-0.5 rounded-md font-mono font-bold text-[11px] border ${
+                    drillDownItem.regimeMode === 'CAIXA'
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                  }`} title="Soma total apurada dos lançamentos detalhados para esta rubrica no período">
+                    Total na DRE: {formatBRL(drillDownTotalAmount)}
+                  </span>
                   {drillDownItem.monthIdx > 0 && (() => {
                     const currentVal = drillDownItem.line.valuesByMonth[drillDownItem.monthIdx] || 0;
                     const prevVal = drillDownItem.line.valuesByMonth[drillDownItem.monthIdx - 1] || 0;
@@ -2689,7 +2746,14 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                             <th className="py-2.5 px-3 text-center">Competência</th>
                             <th className="py-2.5 px-3 text-center">Vencimento</th>
                             <th className="py-2.5 px-3 text-center">Data Pagamento</th>
-                            <th className="py-2.5 px-3 text-right">Valor</th>
+                            {drillDownItem.regimeMode === 'CAIXA' ? (
+                              <>
+                                <th className="py-2.5 px-3 text-right">Efetivo Caixa (Período)</th>
+                                <th className="py-2.5 px-3 text-right">Valor Original</th>
+                              </>
+                            ) : (
+                              <th className="py-2.5 px-3 text-right">Valor Competência</th>
+                            )}
                             <th className="py-2.5 px-3 text-center">Status</th>
                             <th className="py-2.5 px-3 text-center w-14">Ação</th>
                           </tr>
@@ -2760,20 +2824,43 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                                   )}
                                 </td>
 
-                                {/* Valor */}
-                                <td className="py-2.5 px-3 text-right font-bold text-[var(--text-primary)] font-mono">
-                                  {formatBRL(t.originalAmount)}
-                                  {drillDownItem.regimeMode === 'CAIXA' && paymentInfo.paidAmount > 0 && Math.abs(paymentInfo.paidAmount - t.originalAmount) > 0.01 && (
-                                    <div className="text-[10px] text-emerald-400 font-normal">
-                                      Liq: {formatBRL(paymentInfo.paidAmount)}
-                                    </div>
-                                  )}
-                                  {drillDownItem.regimeMode === 'CAIXA' && (t.settlementState === 'EM_ABERTO' || t.settlementState === 'PARCIAL') && (
-                                    <div className="text-[10px] text-amber-400 font-normal">
-                                      Aberto: {formatBRL(typeof t.balancePrincipal === 'number' ? t.balancePrincipal : (t.originalAmount - (t.settledPrincipal || 0)))}
-                                    </div>
-                                  )}
-                                </td>
+                                {/* Valor da linha conforme o Regime */}
+                                {drillDownItem.regimeMode === 'CAIXA' ? (
+                                  <>
+                                    <td className="py-2.5 px-3 text-right font-bold text-emerald-400 font-mono">
+                                      {(() => {
+                                        const cash = getTitleCashInPeriod(t, targetDrillDownMonths);
+                                        return (
+                                          <div>
+                                            <div>{formatBRL(cash.totalInPeriod)}</div>
+                                            {cash.settledInPeriod > 0 && cash.openDueInPeriod > 0 && (
+                                              <div className="text-[10px] text-slate-400 font-normal">
+                                                Liq: {formatBRL(cash.settledInPeriod)} | Aberto: {formatBRL(cash.openDueInPeriod)}
+                                              </div>
+                                            )}
+                                            {cash.settledInPeriod > 0 && cash.openDueInPeriod === 0 && (
+                                              <div className="text-[9px] text-emerald-500/80 font-normal">
+                                                Liquidado no período
+                                              </div>
+                                            )}
+                                            {cash.settledInPeriod === 0 && cash.openDueInPeriod > 0 && (
+                                              <div className="text-[9px] text-amber-400/80 font-normal">
+                                                Previsão a vencer
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-[var(--text-secondary)] font-mono text-xs">
+                                      {formatBRL(t.originalAmount)}
+                                    </td>
+                                  </>
+                                ) : (
+                                  <td className="py-2.5 px-3 text-right font-bold text-[var(--text-primary)] font-mono">
+                                    {formatBRL(t.originalAmount)}
+                                  </td>
+                                )}
 
                                 {/* Status */}
                                 <td className="py-2.5 px-3 text-center">
@@ -2812,6 +2899,24 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                             );
                           })}
                         </tbody>
+                        <tfoot className="bg-[var(--surface-elevated)] border-t-2 border-[var(--border-subtle)] font-semibold text-xs">
+                          <tr>
+                            <td colSpan={5} className="py-3 px-3 text-right uppercase tracking-wider text-[var(--text-secondary)] font-bold">
+                              Soma Total da Rubrica ({drillDownItem.regimeMode === 'CAIXA' ? 'Regime de Caixa' : 'Regime de Competência'}):
+                            </td>
+                            <td className={`py-3 px-3 text-right font-mono font-extrabold text-sm ${
+                              drillDownItem.regimeMode === 'CAIXA' ? 'text-emerald-400' : 'text-amber-400'
+                            }`}>
+                              {formatBRL(drillDownTotalAmount)}
+                            </td>
+                            {drillDownItem.regimeMode === 'CAIXA' && (
+                              <td className="py-3 px-3 text-right font-mono text-xs text-[var(--text-secondary)]">
+                                {formatBRL(filteredDrillDownTitles.reduce((acc, t) => acc + (t.originalAmount || 0), 0))}
+                              </td>
+                            )}
+                            <td colSpan={2}></td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   )}
@@ -2819,10 +2924,19 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
               )}
             </div>
 
-            <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
-              <span className="text-[11px] text-[var(--text-secondary)]">
-                Exibindo <strong>{filteredDrillDownTitles.length}</strong> lançamento(s) na rubrica {drillDownItem.line.name}
-              </span>
+            <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap justify-between items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
+                <span>
+                  Exibindo <strong>{filteredDrillDownTitles.length}</strong> lançamento(s) na rubrica {drillDownItem.line.name}
+                </span>
+                <span className={`px-2.5 py-1 rounded-lg font-mono font-bold border ${
+                  drillDownItem.regimeMode === 'CAIXA' 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                }`}>
+                  Soma Exata: {formatBRL(drillDownTotalAmount)}
+                </span>
+              </div>
               <button
                 onClick={() => setDrillDownItem(null)}
                 className="px-4 py-2 bg-amber-500 text-[#0f172a] font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors shadow-xs cursor-pointer"
