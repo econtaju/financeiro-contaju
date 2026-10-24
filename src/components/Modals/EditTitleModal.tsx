@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus, Repeat, CalendarClock } from 'lucide-react';
+import { X, Edit3, AlertCircle, CheckCircle2, FolderPlus, Wallet, Edit2, Plus, Repeat, CalendarClock, Layers, Tag } from 'lucide-react';
 import { FinancialTitle, Counterparty, ChartAccount, Contract, ContractAdjustment } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
@@ -224,7 +224,13 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       };
     });
 
-  const chartAccountOptions: SelectOption[] = formatChartAccountSelectOptions(chartAccounts || []);
+  const chartAccountOptions: SelectOption[] = useMemo(() => {
+    return formatChartAccountSelectOptions(chartAccounts || [], isReceber ? 'RECEBER' : 'PAGAR');
+  }, [chartAccounts, isReceber]);
+
+  const selectedAccount = useMemo(() => {
+    return (chartAccounts || []).find(a => a.id === accountId);
+  }, [chartAccounts, accountId]);
 
   const bankAccountOptions: SelectOption[] = [
     { value: '', label: 'Indiferente / Não definida' },
@@ -590,25 +596,38 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
   return (
     <>
       <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-        <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl max-w-xl w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] overflow-hidden border border-slate-200 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 my-0 sm:my-4 flex flex-col">
+        <div 
+          className="bg-white dark:bg-[#131720] rounded-none sm:rounded-3xl shadow-2xl max-w-4xl w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] overflow-hidden border border-slate-200 dark:border-[#273040] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 my-0 sm:my-4 flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
           
-          {/* Header Fixo */}
-          <div className="shrink-0 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between border-b border-slate-200 bg-slate-50 z-10">
-            <div className="flex items-center space-x-2 min-w-0">
-              <Edit3 className="w-5 h-5 text-amber-500 shrink-0" />
+          {/* Header Fixo com Ampla Proporção */}
+          <div className="shrink-0 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between border-b border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#1B212D]/80 z-10">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                isReceber ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400'
+              }`}>
+                <Edit3 className="w-5 h-5" />
+              </div>
               <div className="min-w-0">
-                <h2 className="text-sm sm:text-base font-semibold text-slate-900 truncate">
-                  Editar Lançamento: <span className="font-mono text-amber-600">{title.titleNumber}</span>
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate flex items-center gap-2">
+                  <span>Editar Lançamento:</span>
+                  <span className="font-mono text-amber-600 dark:text-amber-400">{title.titleNumber}</span>
+                  <span className={`text-[10px] sm:text-[11px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${
+                    isReceber ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                  }`}>
+                    {isReceber ? 'Conta a Receber' : 'Conta a Pagar'}
+                  </span>
                 </h2>
-                <p className="text-[11px] text-slate-700 truncate">
-                  Duplo clique ativado • {isReceber ? 'Conta a Receber' : 'Conta a Pagar'}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  Visualização ampla: ajuste Favorecido/Cliente, valores, competência, vencimento e Plano de Contas
                 </p>
               </div>
             </div>
             <button 
               type="button"
               onClick={onClose} 
-              className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer shrink-0"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
               aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
@@ -616,14 +635,14 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           </div>
 
           {errorMessage && (
-            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center text-xs text-rose-800">
+            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl flex items-center text-xs text-rose-700 dark:text-rose-300">
               <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {hasSettlements && (
-            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800">
+            <div className="shrink-0 mx-4 sm:mx-6 mt-3 p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300">
               ⚠️ Este lançamento possui baixas parciais ({formatBRL(title.settledPrincipal)} baixados de {formatBRL(title.originalAmount)}). O valor original não pode ser reduzido abaixo do total já baixado.
             </div>
           )}
@@ -638,13 +657,16 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
           )}
 
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs pb-28 sm:pb-6 scroll-smooth [scroll-padding-bottom:7rem]">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5 text-xs pb-28 sm:pb-6 scroll-smooth [scroll-padding-bottom:7rem]">
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
+            {/* Grid Principal dos Campos com Ampla Proporção */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 sm:gap-4">
+              
+              {/* Fornecedor / Favorecido / Cliente */}
+              <div className="md:col-span-8">
                 <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                   <div className="flex items-center gap-2">
-                    <label className="block font-medium text-slate-700 dark:text-slate-300">
+                    <label className="block font-semibold text-slate-800 dark:text-slate-200">
                       {isReceber ? 'Cliente *' : 'Fornecedor ou Cliente *'}
                     </label>
                     {!isReceber && (
@@ -714,8 +736,8 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                   options={counterpartyOptions}
                   value={counterpartyId}
                   onChange={setCounterpartyId}
-                  placeholder="Pesquise ou cadastre..."
-                  searchPlaceholder="Digite o nome..."
+                  placeholder="Pesquise por nome, CNPJ/CPF ou cadastre..."
+                  searchPlaceholder="Digite o nome do favorecido..."
                   allowQuickCreate={true}
                   quickCreateLabel={(q) => `+ Cadastrar rápido "${q}"`}
                   onQuickCreate={handleQuickCreateCounterparty}
@@ -723,91 +745,132 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+              {/* Valor Original R$ */}
+              <div className="md:col-span-4">
+                <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
                   Valor Original (R$) *
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">R$</span>
+                  <span className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-400">R$</span>
                   <input
                     type="number"
                     step="0.01"
                     min="0.01"
                     inputMode="decimal"
+                    style={{ colorScheme: 'light dark' }}
                     value={originalAmount || ''}
                     onWheel={(e) => (e.target as HTMLElement).blur()}
                     onChange={(e) => setOriginalAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] pl-9 pr-3 py-2 font-bold text-slate-900 dark:text-amber-400 text-sm sm:text-xs focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none"
+                    className="w-full rounded-xl sm:rounded-2xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#131720] pl-10 pr-3 py-2.5 font-bold text-slate-900 dark:text-amber-400 text-sm focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none min-h-[42px] sm:min-h-[46px]"
                     required
                   />
                 </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block font-medium text-slate-700 mb-1">
-                Descrição do Título *
-              </label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <label className="block font-medium text-slate-700">
-                    {isReceber ? 'Classificação de Receitas (Plano de Contas) *' : 'Classificação de Custos & Despesas (Plano de Contas) *'}
-                  </label>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    isReceber 
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                      : 'bg-rose-50 text-rose-700 border-rose-200'
-                  }`}>
-                    {isReceber ? 'Apenas Receitas' : 'Apenas Custos & Despesas'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsQuickAccountModalOpen(true)}
-                  className="px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 rounded text-[11px] font-semibold transition-colors flex items-center gap-1"
-                >
-                  <FolderPlus className="w-3 h-3 text-amber-500" />
-                  <span>+ Criar Categoria / Subcategoria</span>
-                </button>
+              {/* Descrição do Título */}
+              <div className="md:col-span-12">
+                <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">
+                  Descrição do Lançamento *
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Ex: Fornecimento de Licenças de TI, Honorários de Consultoria, Aluguel..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white px-3.5 py-2.5 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none"
+                  required
+                />
               </div>
-              <SearchableSelect
-                options={chartAccountOptions}
-                value={accountId}
-                onChange={setAccountId}
-                placeholder={isReceber ? "Selecione a conta analítica de receitas..." : "Selecione a conta analítica de custos ou despesas..."}
-                searchPlaceholder="Buscar por código ou descrição..."
-                required
-              />
-            </div>
 
-            {/* Datas */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Competência *
+              {/* SEÇÃO AMPLA E DEDICADA: PLANO DE CONTAS */}
+              <div className="md:col-span-12 p-4 sm:p-5 bg-slate-50 dark:bg-[#1B212D]/70 border border-slate-200 dark:border-[#273040] rounded-2xl sm:rounded-3xl space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                      <Layers className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <label className="block text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                        {isReceber ? 'Classificação de Receitas (Plano de Contas DRE) *' : 'Classificação de Custos & Despesas (Plano de Contas DRE) *'}
+                      </label>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Selecione a conta analítica para apuração precisa na DRE Gerencial e no Fluxo de Caixa
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                      isReceber 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                    }`}>
+                      {isReceber ? '✓ Apenas Receitas' : '✓ Apenas Custos & Despesas'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickAccountModalOpen(true)}
+                      className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
+                      <span>+ Criar Nova Conta</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Seletor com Visual Amplo, Altura Generosa e Busca Rápida */}
+                <SearchableSelect
+                  options={chartAccountOptions}
+                  value={accountId}
+                  onChange={setAccountId}
+                  placeholder={isReceber ? "Pesquise ou selecione a conta analítica de receitas..." : "Pesquise ou selecione a conta analítica de custos ou despesas..."}
+                  searchPlaceholder="Digite código contábil (ex: 4.1.01) ou descrição da conta..."
+                  size="lg"
+                  maxDropdownHeight="max-h-[380px] sm:max-h-[440px]"
+                  required
+                />
+
+                {/* Card Informativo com a Conta Selecionada */}
+                {selectedAccount && (
+                  <div className="p-3.5 bg-white dark:bg-[#131720] rounded-2xl border border-slate-200 dark:border-[#273040] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                        {selectedAccount.code}
+                      </span>
+                      <div>
+                        <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                          {selectedAccount.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {selectedAccount.group || (isReceber ? 'Receitas Operacionais' : 'Custos e Despesas Operacionais')} • Natureza {selectedAccount.nature || 'ANALÍTICA'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg self-start sm:self-auto">
+                      ✓ Conta Analítica Ativa
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Datas e Banco em 3 Colunas Equilibradas */}
+              <div className="md:col-span-4">
+                <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                  Competência Contábil *
                 </label>
                 <input
                   type="month"
                   value={competence}
                   onChange={(e) => setCompetence(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
+                  style={{ colorScheme: 'light dark' }}
+                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white px-3 py-2.5 text-xs sm:text-sm font-medium"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Vencimento *
+              <div className="md:col-span-4">
+                <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                  Data de Vencimento *
                 </label>
                 <input
                   type="date"
@@ -816,15 +879,14 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                     setDueDate(e.target.value);
                     setExpectedCashDate(e.target.value);
                   }}
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
+                  style={{ colorScheme: 'light dark' }}
+                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white px-3 py-2.5 text-xs sm:text-sm font-medium"
                   required
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
+              <div className="md:col-span-4">
+                <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
                   Conta Bancária Prevista
                 </label>
                 <SearchableSelect
@@ -835,8 +897,9 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
+              {/* Linha Digitável e Observações */}
+              <div className="md:col-span-6">
+                <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
                   Linha Digitável / Código de Barras do Boleto
                 </label>
                 <input
@@ -844,20 +907,20 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
                   value={barcode}
                   onChange={(e) => setBarcode(e.target.value)}
                   placeholder="Ex: 34191.79001 01043.510047 91020.150008 5 98450000185000"
-                  className="w-full font-mono text-xs rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full font-mono text-xs rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white px-3.5 py-2.5 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Observações
+              <div className="md:col-span-6">
+                <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                  Observações (Opcional)
                 </label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Informações adicionais..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  placeholder="Informações adicionais, centro de custo, etc..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-[#273040] bg-white dark:bg-[#1B212D] text-slate-900 dark:text-white px-3.5 py-2.5 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -1159,21 +1222,21 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
             </div>
 
             {/* Footer Fixo */}
-            <div className="shrink-0 sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 sm:p-4 z-10 flex items-center justify-end gap-3 shadow-lg">
+            <div className="shrink-0 sticky bottom-0 bg-white/95 dark:bg-[#131720]/95 backdrop-blur border-t border-slate-200 dark:border-[#273040] p-3 sm:p-4 z-10 flex items-center justify-end gap-3 shadow-lg">
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-[42px] px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                className="min-h-[42px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-[#1B212D] dark:hover:bg-slate-800 border border-slate-200 dark:border-[#273040] rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={isReconciled}
-                className={`min-h-[42px] px-5 sm:px-6 py-2.5 text-xs font-bold rounded-xl shadow-md transition-colors flex items-center justify-center ${
+                className={`min-h-[42px] px-6 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center ${
                   isReconciled
                     ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-300 dark:border-slate-700'
-                    : 'text-slate-950 bg-amber-500 hover:bg-amber-400 cursor-pointer'
+                    : 'text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 hover:brightness-105 cursor-pointer shadow-amber-500/10'
                 }`}
                 title={isReconciled ? 'Este título está conciliado via banco e não pode ser alterado diretamente.' : undefined}
               >
