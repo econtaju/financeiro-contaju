@@ -38,6 +38,7 @@ import {
   extractTextFromPdf, 
   parseInvoiceTextLines, 
   parseInvoiceSpreadsheet, 
+  parseInvoiceOFX,
   compareInvoiceItems 
 } from '../../utils/cardInvoiceParser';
 import { parseOFX } from '../../utils/ofxParser';
@@ -175,22 +176,15 @@ export const CreditCardInvoiceImportModal: React.FC<CreditCardInvoiceImportModal
         setImportedItems(parsed);
         toast.info(`${parsed.length} lançamentos extraídos da planilha de fatura.`);
       } else if (fileName.endsWith('.ofx')) {
-        // OFX parser
+        // OFX parser inteligente
         const textDecoder = new TextDecoder('latin1');
         const ofxStr = textDecoder.decode(new Uint8Array(arrayBuffer));
-        const ofxItems = parseOFX(ofxStr);
-        const mappedItems: ParsedInvoiceTransaction[] = ofxItems.map((it, idx) => ({
-          id: `ofx-${Date.now()}-${idx}`,
-          rawDate: it.date,
-          formattedDate: it.date,
-          description: it.description,
-          cleanDescription: it.description,
-          amount: Math.abs(it.amount),
-          suggestedChartAccountId: chartAccounts[0]?.id || 'acc-desp-1',
-          suggestedCounterpartyName: it.description
-        }));
-        setImportedItems(mappedItems);
-        toast.info(`${mappedItems.length} lançamentos extraídos do extrato OFX.`);
+        const ofxParsed = parseInvoiceOFX(ofxStr, invoiceMonth, chartAccounts, counterparties);
+        if (ofxParsed.length === 0) {
+          throw new Error('Nenhum lançamento legível encontrado no arquivo OFX.');
+        }
+        setImportedItems(ofxParsed);
+        toast.info(`${ofxParsed.length} lançamentos extraídos do extrato OFX.`);
       } else {
         throw new Error('Formato não suportado. Por favor, envie arquivos PDF, OFX, XLSX ou CSV.');
       }
@@ -305,6 +299,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
       newPurchases.push({
         id: purchaseId,
         cardId: card.id,
+        transactionType: it.transactionType || 'DESPESA',
         purchaseDate: it.formattedDate,
         description: edits.description,
         counterpartyId: edits.counterpartyId,
@@ -316,7 +311,7 @@ Vencimento: 15/${m}/${y} | Período de Compras
         installmentValue,
         invoiceMonth,
         installments,
-        notes: `Importado da fatura PDF do cartão ${card.name} (${invoiceMonth})`,
+        notes: `Importado de fatura/extrato do cartão ${card.name} (${invoiceMonth})`,
         createdAt: new Date().toISOString()
       });
     }
@@ -432,8 +427,15 @@ Vencimento: 15/${m}/${y} | Período de Compras
                       Selecione ou arraste a fatura do cartão
                     </h4>
                     <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                      Formatos aceitos: <strong>PDF</strong> (fatura original do banco), <strong>OFX</strong> (extrato bancário), <strong>XLSX</strong> ou <strong>CSV</strong>.
+                      Formatos aceitos: <strong>OFX</strong>, <strong>CSV</strong>, <strong>PDF</strong> ou <strong>Excel</strong>.
                     </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2">
+                      <span className="px-2 py-0.5 rounded-md bg-purple-950/60 border border-purple-800 text-[10px] text-purple-300 font-semibold">Nubank</span>
+                      <span className="px-2 py-0.5 rounded-md bg-orange-950/60 border border-orange-800 text-[10px] text-orange-300 font-semibold">Itaú</span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] text-slate-200 font-semibold">C6 Bank</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-800 text-[10px] text-amber-300 font-semibold">Inter</span>
+                      <span className="px-2 py-0.5 rounded-md bg-rose-950/60 border border-rose-800 text-[10px] text-rose-300 font-semibold">Bradesco</span>
+                    </div>
                   </div>
 
                   <label className="cursor-pointer mt-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-md transition-all flex items-center gap-2">

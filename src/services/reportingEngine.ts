@@ -90,6 +90,15 @@ export class ReportingEngine {
       const monthlyCash = new Array(12).fill(0);
       const titleIds: string[] = [];
 
+      const targetAcc = accounts.find(a => a.id === accId);
+      const isExpenseNature = Boolean(targetAcc && (
+        targetAcc.nature?.includes('DESPESA') || 
+        targetAcc.nature?.includes('CUSTO') || 
+        targetAcc.code?.startsWith('2') || 
+        targetAcc.code?.startsWith('3') || 
+        targetAcc.code?.startsWith('4')
+      ));
+
       const isTargetAccount = (title: FinancialTitle): boolean => {
         const tAccId = title.accountId || (title as any).chartAccountId;
         if (tAccId === accId) return true;
@@ -111,7 +120,8 @@ export class ReportingEngine {
 
         for (const title of matchingTitles) {
           if (!titleIds.includes(title.id)) titleIds.push(title.id);
-          monthlyComp[m] += title.originalAmount || 0;
+          const sign = (isExpenseNature && title.type === 'RECEBER') ? -1 : 1;
+          monthlyComp[m] += (title.originalAmount || 0) * sign;
         }
 
         // Conciliação de Vendas Confirmadas da competência:
@@ -230,7 +240,8 @@ export class ReportingEngine {
             }
           }
 
-          monthlyCash[m] += monthSettled;
+          const sign = (isExpenseNature && title.type === 'RECEBER') ? -1 : 1;
+          monthlyCash[m] += monthSettled * sign;
 
           // Saldo em aberto com previsão de pagamento / vencimento no mês selecionado
           // Regra de Caixa Gerencial: "o que for de caixa é o que tem o pagamento nesse mês, tanto o que foi feito quanto o que está em aberto, você tem que somar os dois"
@@ -241,7 +252,7 @@ export class ReportingEngine {
               : Math.max(0, (title.originalAmount || 0) - (title.settledPrincipal || 0));
 
             if (openBalance > 0.001) {
-              monthlyCash[m] += openBalance;
+              monthlyCash[m] += openBalance * sign;
               if (!titleIds.includes(title.id)) titleIds.push(title.id);
             }
           }

@@ -1901,6 +1901,22 @@ class StorageService {
         continue;
       }
 
+      // Expurgar títulos legados mockados de cartões de crédito
+      if (t.originType === 'CARTAO_CREDITO' || t.isCreditCardPurchase) {
+        if (t.creditCardId === 'card-1' || t.creditCardId === 'card-2') {
+          modified = true;
+          continue;
+        }
+        if (t.originId && /^pur-(?:[1-9]|1[0-9]|20)$/.test(t.originId)) {
+          modified = true;
+          continue;
+        }
+        if (t.id && /^title-cc-pur-(?:[1-9]|1[0-9]|20)-\d+$/.test(t.id)) {
+          modified = true;
+          continue;
+        }
+      }
+
       let updated = t;
       if (ACCOUNT_CORRECTIONS[t.id] && t.accountId !== ACCOUNT_CORRECTIONS[t.id]) {
         updated = { ...t, accountId: ACCOUNT_CORRECTIONS[t.id] };
@@ -2476,12 +2492,21 @@ class StorageService {
   // ==========================================
   // CREDIT CARDS & PURCHASES
   // ==========================================
+  public isMockCard(id?: string): boolean {
+    return Boolean(id && (id === 'card-1' || id === 'card-2'));
+  }
+
+  public isMockPurchase(id?: string): boolean {
+    return Boolean(id && /^pur-(?:[1-9]|1[0-9]|20)$/.test(id));
+  }
+
   public getCreditCards(): CreditCard[] {
-    return this.get<CreditCard[]>(STORAGE_KEYS.CREDIT_CARDS, INITIAL_CREDIT_CARDS);
+    const cards = this.get<CreditCard[]>(STORAGE_KEYS.CREDIT_CARDS, INITIAL_CREDIT_CARDS);
+    return cards.filter(c => !this.isMockCard(c.id));
   }
 
   public saveCreditCards(cards: CreditCard[]) {
-    this.set(STORAGE_KEYS.CREDIT_CARDS, cards);
+    this.set(STORAGE_KEYS.CREDIT_CARDS, cards.filter(c => !this.isMockCard(c.id)));
   }
 
   public addCreditCard(card: CreditCard) {
@@ -2574,29 +2599,29 @@ class StorageService {
   }
 
   public getCardPurchases(): CreditCardPurchase[] {
-    return this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES);
+    const purchases = this.get<CreditCardPurchase[]>(STORAGE_KEYS.CARD_PURCHASES, INITIAL_CARD_PURCHASES);
+    return purchases.filter(p => !this.isMockPurchase(p.id) && !this.isMockCard(p.cardId));
   }
 
   public saveCardPurchases(purchases: CreditCardPurchase[]) {
-    this.set(STORAGE_KEYS.CARD_PURCHASES, purchases);
+    this.set(STORAGE_KEYS.CARD_PURCHASES, purchases.filter(p => !this.isMockPurchase(p.id) && !this.isMockCard(p.cardId)));
   }
 
   public deleteCardPurchase(purchaseId: string): { success: boolean; error?: string } {
     const purchases = this.getCardPurchases();
     const target = purchases.find(p => p.id === purchaseId);
-    if (!target) {
-      return { success: false, error: 'Lançamento de compra não encontrado.' };
-    }
 
     // 1. Remove da lista de compras
     const remainingPurchases = purchases.filter(p => p.id !== purchaseId);
     this.saveCardPurchases(remainingPurchases);
 
-    // 2. Remove títulos vinculados no Contas a Pagar
+    // 2. Remove títulos vinculados no Contas a Pagar (inclusive se for lançamento órfão)
     const titles = this.getTitles();
     const titlesToRemove = titles.filter(t => 
       t.originId === purchaseId || 
-      t.id.startsWith(`title-cc-${purchaseId}-`)
+      t.id === purchaseId ||
+      t.id.startsWith(`title-cc-${purchaseId}-`) ||
+      t.id === `title-cc-${purchaseId}`
     );
     const titleIdsToRemove = new Set(titlesToRemove.map(t => t.id));
     const remainingTitles = titles.filter(t => !titleIdsToRemove.has(t.id));
@@ -2618,46 +2643,98 @@ class StorageService {
       action: 'EXCLUSAO_COMPRA_CARTAO',
       module: 'Cartões de Crédito',
       recordId: purchaseId,
-      details: `Compra no cartão excluída: ${target.description} (R$ ${target.totalAmount.toFixed(2)}). Removidas ${titlesToRemove.length} parcelas do Contas a Pagar.`
+      details: `Lançamento de cartão excluído: ${target?.description || purchaseId} (R$ ${(target?.totalAmount || 0).toFixed(2)}). Removidas ${titlesToRemove.length} parcelas do Contas a Pagar.`
+    });
+
+    return { success: true };
+  }
+
+  public updateCardPurchaseAndSyncTitles(updatedPurchase: CreditCardPurchase): { success: boolean; error?: string } {
+    const purchases = this.getCardPurchases();
+    const targetIndex = purchases.findIndex(p => p.id === updatedPurchase.id);
+    if (targetIndex === -1) {
+      purchases.unshift(updatedPurchase);
+    } else {
+      purchases[targetIndex] = updatedPurchase;
+    }
+    this.saveCardPurchases(purchases);
+
+    // Sincroniza títulos no Contas a Pagar
+    const cards = this.getCreditCards();
+    const card = cards.find(c => c.id === updatedPurchase.cardId);
+    const titles = this.getTitles();
+
+    // Remove títulos antigos desta compra
+    const filteredTitles = titles.filter(t => 
+      t.originId !== updatedPurchase.id && 
+      !t.id.startsWith(`title-cc-${updatedPurchase.id}-`)
+    );
+
+    // Recria os títulos com os dados atualizados das parcelas
+    const newTitles: FinancialTitle[] = [];
+    const isCredit = updatedPurchase.transactionType === 'ESTORNO' || updatedPurchase.transactionType === 'CASHBACK';
+
+    for (const inst of updatedPurchase.installments) {
+      const titleId = `title-cc-${updatedPurchase.id}-${inst.installmentNumber}`;
+      newTitles.push({
+        id: titleId,
+        companyId: 'comp-1',
+        type: isCredit ? 'RECEBER' : 'PAGAR',
+        titleNumber: `CC-${isCredit ? 'EST' : (card?.brand?.slice(0, 3) || 'CRD')}-${updatedPurchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
+        counterpartyId: updatedPurchase.counterpartyId || 'prov-2',
+        description: `[Cartão ${isCredit ? (updatedPurchase.transactionType === 'CASHBACK' ? 'Cashback' : 'Estorno') : (card?.name || 'Corporativo')}] ${updatedPurchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
+        accountId: updatedPurchase.chartAccountId || 'acc-desp-1',
+        launchDate: updatedPurchase.purchaseDate,
+        competence: inst.competence,
+        issueDate: updatedPurchase.purchaseDate,
+        dueDate: inst.dueDate,
+        expectedCashDate: inst.dueDate,
+        originalAmount: inst.amount,
+        settledPrincipal: isCredit ? inst.amount : (inst.settled ? inst.amount : 0),
+        balancePrincipal: isCredit ? 0 : (inst.settled ? 0 : inst.amount),
+        accruedInterest: 0,
+        accruedFine: 0,
+        documentState: 'CONFIRMADO',
+        settlementState: (isCredit || inst.settled) ? 'LIQUIDADO' : 'ABERTO',
+        originType: 'CARTAO_CREDITO',
+        originId: updatedPurchase.id,
+        installmentIndex: inst.installmentNumber,
+        totalInstallments: inst.totalInstallments,
+        creditCardId: updatedPurchase.cardId,
+        creditCardInvoiceMonth: inst.invoiceMonth,
+        isCreditCardPurchase: true,
+        expectedBankAccountId: card?.defaultPaymentBankAccountId || 'bank-1',
+        notes: isCredit 
+          ? `Crédito/Estorno de Cartão de Crédito - Fatura ${inst.invoiceMonth}` 
+          : `Parcela de Cartão de Crédito - Fatura ${inst.invoiceMonth}`,
+        createdAt: updatedPurchase.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    this.saveTitles([...newTitles, ...filteredTitles]);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.saveCardPurchaseDirectly(updatedPurchase);
+      supabaseSync.saveTitlesDirectly(newTitles);
+    }).catch(() => {});
+
+    // Log de auditoria
+    const currentUser = this.getCurrentUser();
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EDICAO_COMPRA_CARTAO',
+      module: 'Cartões de Crédito',
+      recordId: updatedPurchase.id,
+      details: `Lançamento de cartão atualizado: ${updatedPurchase.description} no valor de R$ ${updatedPurchase.totalAmount.toFixed(2)}. ${newTitles.length} títulos sincronizados no Contas a Pagar.`
     });
 
     return { success: true };
   }
 
   public updateCardPurchase(updatedPurchase: CreditCardPurchase): { success: boolean; error?: string } {
-    const purchases = this.getCardPurchases();
-    const targetIndex = purchases.findIndex(p => p.id === updatedPurchase.id);
-    if (targetIndex === -1) {
-      return { success: false, error: 'Lançamento de compra não encontrado.' };
-    }
-
-    purchases[targetIndex] = updatedPurchase;
-    this.saveCardPurchases(purchases);
-
-    // Atualiza descrição, categoria e fornecedor nos títulos vinculados
-    const titles = this.getTitles();
-    const cards = this.getCreditCards();
-    const card = cards.find(c => c.id === updatedPurchase.cardId);
-
-    const updatedTitles = titles.map(t => {
-      if (t.originId === updatedPurchase.id || t.id.startsWith(`title-cc-${updatedPurchase.id}-`)) {
-        return {
-          ...t,
-          description: `[Cartão ${card?.name || 'Corporativo'}] ${updatedPurchase.description} (${t.installmentIndex || 1}/${t.totalInstallments || 1})`,
-          counterpartyId: updatedPurchase.counterpartyId || t.counterpartyId,
-          accountId: updatedPurchase.chartAccountId || t.accountId,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return t;
-    });
-    this.saveTitles(updatedTitles);
-
-    import('./supabaseSyncService').then(({ supabaseSync }) => {
-      supabaseSync.saveCardPurchaseDirectly(updatedPurchase);
-    }).catch(() => {});
-
-    return { success: true };
+    return this.updateCardPurchaseAndSyncTitles(updatedPurchase);
   }
 
   public addCardPurchaseAndSyncTitles(purchase: CreditCardPurchase) {
@@ -2669,16 +2746,17 @@ class StorageService {
     const card = cards.find(c => c.id === purchase.cardId);
     const titles = this.getTitles();
     const newTitles: FinancialTitle[] = [];
+    const isCredit = purchase.transactionType === 'ESTORNO' || purchase.transactionType === 'CASHBACK';
 
     for (const inst of purchase.installments) {
       const titleId = `title-cc-${purchase.id}-${inst.installmentNumber}`;
       newTitles.push({
         id: titleId,
         companyId: 'comp-1',
-        type: 'PAGAR',
-        titleNumber: `CC-${card?.brand?.slice(0, 3) || 'CRD'}-${purchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
+        type: isCredit ? 'RECEBER' : 'PAGAR',
+        titleNumber: `CC-${isCredit ? 'EST' : (card?.brand?.slice(0, 3) || 'CRD')}-${purchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
         counterpartyId: purchase.counterpartyId || 'prov-2',
-        description: `[Cartão ${card?.name || 'Corporativo'}] ${purchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
+        description: `[Cartão ${isCredit ? (purchase.transactionType === 'CASHBACK' ? 'Cashback' : 'Estorno') : (card?.name || 'Corporativo')}] ${purchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
         accountId: purchase.chartAccountId || 'acc-desp-1',
         launchDate: purchase.purchaseDate,
         competence: inst.competence,
@@ -2686,12 +2764,12 @@ class StorageService {
         dueDate: inst.dueDate,
         expectedCashDate: inst.dueDate,
         originalAmount: inst.amount,
-        settledPrincipal: 0,
-        balancePrincipal: inst.amount,
+        settledPrincipal: isCredit ? inst.amount : 0,
+        balancePrincipal: isCredit ? 0 : inst.amount,
         accruedInterest: 0,
         accruedFine: 0,
         documentState: 'CONFIRMADO',
-        settlementState: 'ABERTO',
+        settlementState: isCredit ? 'LIQUIDADO' : 'ABERTO',
         originType: 'CARTAO_CREDITO',
         originId: purchase.id,
         installmentIndex: inst.installmentNumber,
@@ -2700,13 +2778,20 @@ class StorageService {
         creditCardInvoiceMonth: inst.invoiceMonth,
         isCreditCardPurchase: true,
         expectedBankAccountId: card?.defaultPaymentBankAccountId || 'bank-1',
-        notes: `Parcela de Cartão de Crédito - Fatura ${inst.invoiceMonth}`,
+        notes: isCredit 
+          ? `Crédito/Estorno de Cartão de Crédito - Fatura ${inst.invoiceMonth}` 
+          : `Parcela de Cartão de Crédito - Fatura ${inst.invoiceMonth}`,
         createdAt: purchase.createdAt,
         updatedAt: purchase.createdAt
       });
     }
 
     this.saveTitles([...newTitles, ...titles]);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.saveCardPurchaseDirectly(purchase);
+      supabaseSync.saveTitlesDirectly(newTitles);
+    }).catch(() => {});
   }
 
   public batchAddCardPurchasesAndSyncTitles(newPurchases: CreditCardPurchase[]) {
@@ -2721,16 +2806,17 @@ class StorageService {
 
     for (const purchase of newPurchases) {
       const card = cards.find(c => c.id === purchase.cardId);
+      const isCredit = purchase.transactionType === 'ESTORNO' || purchase.transactionType === 'CASHBACK';
 
       for (const inst of purchase.installments) {
         const titleId = `title-cc-${purchase.id}-${inst.installmentNumber}`;
         newTitles.push({
           id: titleId,
           companyId: 'comp-1',
-          type: 'PAGAR',
-          titleNumber: `CC-${card?.brand?.slice(0, 3) || 'CRD'}-${purchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
+          type: isCredit ? 'RECEBER' : 'PAGAR',
+          titleNumber: `CC-${isCredit ? 'EST' : (card?.brand?.slice(0, 3) || 'CRD')}-${purchase.id.slice(-4)}-${inst.installmentNumber}/${inst.totalInstallments}`,
           counterpartyId: purchase.counterpartyId || 'prov-2',
-          description: `[Cartão ${card?.name || 'Corporativo'}] ${purchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
+          description: `[Cartão ${isCredit ? (purchase.transactionType === 'CASHBACK' ? 'Cashback' : 'Estorno') : (card?.name || 'Corporativo')}] ${purchase.description} (${inst.installmentNumber}/${inst.totalInstallments})`,
           accountId: purchase.chartAccountId || 'acc-desp-1',
           launchDate: purchase.purchaseDate,
           competence: inst.competence,
@@ -2738,12 +2824,12 @@ class StorageService {
           dueDate: inst.dueDate,
           expectedCashDate: inst.dueDate,
           originalAmount: inst.amount,
-          settledPrincipal: 0,
-          balancePrincipal: inst.amount,
+          settledPrincipal: isCredit ? inst.amount : 0,
+          balancePrincipal: isCredit ? 0 : inst.amount,
           accruedInterest: 0,
           accruedFine: 0,
           documentState: 'CONFIRMADO',
-          settlementState: 'ABERTO',
+          settlementState: isCredit ? 'LIQUIDADO' : 'ABERTO',
           originType: 'CARTAO_CREDITO',
           originId: purchase.id,
           installmentIndex: inst.installmentNumber,
@@ -2752,7 +2838,9 @@ class StorageService {
           creditCardInvoiceMonth: inst.invoiceMonth,
           isCreditCardPurchase: true,
           expectedBankAccountId: card?.defaultPaymentBankAccountId || 'bank-1',
-          notes: `Lançamento importado da fatura - Fatura ${inst.invoiceMonth}`,
+          notes: isCredit 
+            ? `Crédito/Estorno importado de fatura - Fatura ${inst.invoiceMonth}` 
+            : `Lançamento importado da fatura - Fatura ${inst.invoiceMonth}`,
           createdAt: purchase.createdAt,
           updatedAt: purchase.createdAt
         });
@@ -2760,6 +2848,11 @@ class StorageService {
     }
 
     this.saveTitles([...newTitles, ...titles]);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.saveCardPurchasesDirectly(newPurchases);
+      supabaseSync.saveTitlesDirectly(newTitles);
+    }).catch(() => {});
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog({

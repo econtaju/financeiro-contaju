@@ -9,7 +9,9 @@ import {
   Building2, 
   Layers, 
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { CreditCard, Counterparty, ChartAccount, CreditCardPurchase, CreditCardInstallment } from '../../types';
 import { storage } from '../../services/storageService';
@@ -23,6 +25,8 @@ interface CreditCardPurchaseModalProps {
   counterparties: Counterparty[];
   chartAccounts: ChartAccount[];
   initialCardId?: string;
+  initialTransactionType?: 'DESPESA' | 'ESTORNO' | 'CASHBACK';
+  editingPurchase?: CreditCardPurchase | null;
   onSuccess: () => void;
 }
 
@@ -33,8 +37,11 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
   counterparties,
   chartAccounts,
   initialCardId,
+  initialTransactionType = 'DESPESA',
+  editingPurchase,
   onSuccess
 }) => {
+  const [transactionType, setTransactionType] = useState<'DESPESA' | 'ESTORNO' | 'CASHBACK'>(initialTransactionType);
   const [cardId, setCardId] = useState(initialCardId || cards[0]?.id || '');
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
@@ -51,12 +58,36 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialCardId) {
-      setCardId(initialCardId);
-    } else if (cards.length > 0 && !cardId) {
-      setCardId(cards[0].id);
+    if (editingPurchase) {
+      setCardId(editingPurchase.cardId);
+      setTransactionType(editingPurchase.transactionType || 'DESPESA');
+      setPurchaseDate(editingPurchase.purchaseDate);
+      setDescription(editingPurchase.description);
+      setCounterpartyId(editingPurchase.counterpartyId || '');
+      setCustomCounterpartyName(editingPurchase.counterpartyName || '');
+      setChartAccountId(editingPurchase.chartAccountId || 'acc-desp-1');
+      setInstallmentsCount(editingPurchase.installmentsCount || 1);
+      setCalculationMode(editingPurchase.calculationMode || 'TOTAL_DIVIDED');
+      setTotalAmountInput(String(editingPurchase.totalAmount));
+      setInstallmentValueInput(String(editingPurchase.installmentValue || editingPurchase.totalAmount));
+      setNotes(editingPurchase.notes || '');
+      setError(null);
+    } else {
+      setCardId(initialCardId || cards[0]?.id || '');
+      setTransactionType(initialTransactionType || 'DESPESA');
+      setPurchaseDate(new Date().toISOString().split('T')[0]);
+      setDescription('');
+      setCounterpartyId('');
+      setCustomCounterpartyName('');
+      setChartAccountId('acc-desp-1');
+      setInstallmentsCount(1);
+      setCalculationMode('TOTAL_DIVIDED');
+      setTotalAmountInput('');
+      setInstallmentValueInput('');
+      setNotes('');
+      setError(null);
     }
-  }, [initialCardId, cards]);
+  }, [editingPurchase, initialCardId, initialTransactionType, isOpen, cards]);
 
   const selectedCard = useMemo(() => {
     return cards.find(c => c.id === cardId) || cards[0];
@@ -137,12 +168,12 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
         competence: invoiceMonth,
         dueDate,
         invoiceMonth,
-        settled: false
+        settled: editingPurchase?.installments?.find(ins => ins.installmentNumber === i)?.settled || false
       });
     }
 
     return result;
-  }, [selectedCard, purchaseDate, finalTotalAmount, finalInstallmentValue, installmentsCount]);
+  }, [selectedCard, purchaseDate, finalTotalAmount, finalInstallmentValue, installmentsCount, editingPurchase]);
 
   if (!isOpen) return null;
 
@@ -156,56 +187,81 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
     }
 
     if (!description.trim()) {
-      setError('Por favor, informe a descrição da compra.');
+      setError('Por favor, informe a descrição do lançamento.');
       return;
     }
 
     if (finalTotalAmount <= 0) {
-      setError('O valor total da compra deve ser maior que zero.');
+      setError('O valor do lançamento deve ser maior que zero.');
       return;
     }
 
     const providerObj = counterparties.find(c => c.id === counterpartyId);
-    const providerName = providerObj?.name || customCounterpartyName.trim() || 'Fornecedor Cartão';
+    const providerName = providerObj?.name || customCounterpartyName.trim() || (transactionType === 'DESPESA' ? 'Fornecedor Cartão' : 'Crédito/Estorno Cartão');
 
-    const purchaseId = `pur-${Date.now()}`;
     const initialInvoiceMonth = previewInstallments[0]?.invoiceMonth || purchaseDate.slice(0, 7);
 
-    const newPurchase: CreditCardPurchase = {
-      id: purchaseId,
-      cardId: selectedCard.id,
-      purchaseDate,
-      description: description.trim(),
-      counterpartyId: counterpartyId || undefined,
-      counterpartyName: providerName,
-      chartAccountId,
-      totalAmount: finalTotalAmount,
-      installmentsCount,
-      calculationMode,
-      installmentValue: finalInstallmentValue,
-      invoiceMonth: initialInvoiceMonth,
-      installments: previewInstallments,
-      notes: notes.trim(),
-      createdAt: new Date().toISOString()
-    };
+    if (editingPurchase) {
+      const updatedPurchase: CreditCardPurchase = {
+        ...editingPurchase,
+        cardId: selectedCard.id,
+        transactionType,
+        purchaseDate,
+        description: description.trim(),
+        counterpartyId: counterpartyId || undefined,
+        counterpartyName: providerName,
+        chartAccountId,
+        totalAmount: finalTotalAmount,
+        installmentsCount,
+        calculationMode,
+        installmentValue: finalInstallmentValue,
+        invoiceMonth: initialInvoiceMonth,
+        installments: previewInstallments,
+        notes: notes.trim()
+      };
 
-    // Save purchase AND synchronize with FinancialTitle (Contas a Pagar)
-    storage.addCardPurchaseAndSyncTitles(newPurchase);
+      storage.updateCardPurchaseAndSyncTitles(updatedPurchase);
+    } else {
+      const purchaseId = `pur-${Date.now()}`;
+      const newPurchase: CreditCardPurchase = {
+        id: purchaseId,
+        cardId: selectedCard.id,
+        transactionType,
+        purchaseDate,
+        description: description.trim(),
+        counterpartyId: counterpartyId || undefined,
+        counterpartyName: providerName,
+        chartAccountId,
+        totalAmount: finalTotalAmount,
+        installmentsCount,
+        calculationMode,
+        installmentValue: finalInstallmentValue,
+        invoiceMonth: initialInvoiceMonth,
+        installments: previewInstallments,
+        notes: notes.trim(),
+        createdAt: new Date().toISOString()
+      };
 
-    // Audit log
-    const currentUser = storage.getCurrentUser();
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'LANCAMENTO_COMPRA_CARTAO',
-      module: 'Bancos e Contas',
-      recordId: newPurchase.id,
-      details: `Lançada compra no cartão ${selectedCard.name}: ${newPurchase.description} no valor de ${formatBRL(finalTotalAmount)} (${installmentsCount}x de ${formatBRL(finalInstallmentValue)}). Títulos gerados no Contas a Pagar.`
-    });
+      // Save purchase AND synchronize with FinancialTitle (Contas a Pagar)
+      storage.addCardPurchaseAndSyncTitles(newPurchase);
+
+      // Audit log
+      const currentUser = storage.getCurrentUser();
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: transactionType === 'DESPESA' ? 'LANCAMENTO_COMPRA_CARTAO' : 'LANCAMENTO_ESTORNO_CARTAO',
+        module: 'Cartões de Crédito',
+        recordId: newPurchase.id,
+        details: `Lançado ${transactionType} no cartão ${selectedCard.name}: ${newPurchase.description} no valor de ${formatBRL(finalTotalAmount)}. Sincronizado no Contas a Pagar.`
+      });
+    }
 
     onSuccess();
     onClose();
   };
+
+  const isCreditType = transactionType !== 'DESPESA';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
@@ -213,21 +269,33 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <ShoppingBag className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${
+              isCreditType
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+            }`}>
+              {transactionType === 'ESTORNO' ? (
+                <RotateCcw className="w-5 h-5" />
+              ) : transactionType === 'CASHBACK' ? (
+                <Sparkles className="w-5 h-5" />
+              ) : (
+                <ShoppingBag className="w-5 h-5" />
+              )}
             </div>
             <div>
               <h3 className="text-base font-bold text-white">
-                Nova Compra no Cartão de Crédito
+                {editingPurchase ? 'Editar Lançamento no Cartão' : isCreditType ? 'Novo Estorno / Crédito no Cartão' : 'Nova Compra no Cartão de Crédito'}
               </h3>
               <p className="text-xs text-slate-400">
-                Lançamento parcelado ou à vista com integração direta no Contas a Pagar.
+                {isCreditType
+                  ? 'Abate o total da fatura selecionada e recompõe o limite do cartão.'
+                  : 'Lançamento parcelado ou à vista com integração direta no Contas a Pagar.'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -238,6 +306,55 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
             <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-lg text-xs text-rose-300 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {/* Seletor de Tipo de Transação */}
+          <div className="grid grid-cols-3 gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setTransactionType('DESPESA')}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                transactionType === 'DESPESA'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              Compra / Despesa
+            </button>
+            <button
+              type="button"
+              onClick={() => setTransactionType('ESTORNO')}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                transactionType === 'ESTORNO'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Estorno / Devolução
+            </button>
+            <button
+              type="button"
+              onClick={() => setTransactionType('CASHBACK')}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                transactionType === 'CASHBACK'
+                  ? 'bg-teal-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Cashback / Recompensa
+            </button>
+          </div>
+
+          {isCreditType && (
+            <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span>
+                <strong>{transactionType === 'CASHBACK' ? 'Cashback:' : 'Estorno / Devolução:'}</strong> Este lançamento entrará como crédito líquido na fatura, diminuindo o valor a pagar e liberando o limite disponível do cartão.
+              </span>
             </div>
           )}
 
@@ -517,9 +634,13 @@ export const CreditCardPurchaseModal: React.FC<CreditCardPurchaseModalProps> = (
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow-lg transition-all"
+                className={`px-5 py-2 text-xs font-bold text-slate-950 rounded-lg shadow-lg transition-all cursor-pointer ${
+                  isCreditType
+                    ? 'bg-emerald-500 hover:bg-emerald-400'
+                    : 'bg-amber-500 hover:bg-amber-400'
+                }`}
               >
-                Confirmar Compra
+                {editingPurchase ? 'Salvar Alterações' : isCreditType ? 'Confirmar Estorno / Crédito' : 'Confirmar Compra'}
               </button>
             </div>
           </div>

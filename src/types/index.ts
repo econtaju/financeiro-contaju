@@ -456,6 +456,7 @@ export interface CreditCardInstallment {
 export interface CreditCardPurchase {
   id: string;
   cardId: string;
+  transactionType?: 'DESPESA' | 'ESTORNO' | 'CASHBACK';
   purchaseDate: string; // YYYY-MM-DD
   description: string;
   counterpartyId?: string; // Fornecedor/Estabelecimento

@@ -646,6 +646,15 @@ function mapCreditCardFromDb(row: any): CreditCard {
 }
 
 function mapCardPurchaseToDb(p: CreditCardPurchase, fallbackAccountId: string) {
+  let notesWithTag = p.notes || null;
+  if (p.transactionType && p.transactionType !== 'DESPESA') {
+    if (!notesWithTag) {
+      notesWithTag = `[TRANSACTION_TYPE:${p.transactionType}]`;
+    } else if (!notesWithTag.includes(`[TRANSACTION_TYPE:`)) {
+      notesWithTag = `[TRANSACTION_TYPE:${p.transactionType}] ${notesWithTag}`;
+    }
+  }
+
   return {
     id: p.id,
     card_id: p.cardId,
@@ -660,15 +669,24 @@ function mapCardPurchaseToDb(p: CreditCardPurchase, fallbackAccountId: string) {
     installment_value: p.installmentValue || null,
     installments: p.installments || [],
     invoice_month: p.invoiceMonth,
-    notes: p.notes || null,
+    notes: notesWithTag,
     created_at: p.createdAt || new Date().toISOString()
   };
 }
 
 function mapCardPurchaseFromDb(row: any): CreditCardPurchase {
+  let transType: 'DESPESA' | 'ESTORNO' | 'CASHBACK' = row.transaction_type || 'DESPESA';
+  if (row.notes && row.notes.includes('[TRANSACTION_TYPE:ESTORNO]')) {
+    transType = 'ESTORNO';
+  } else if (row.notes && row.notes.includes('[TRANSACTION_TYPE:CASHBACK]')) {
+    transType = 'CASHBACK';
+  }
+  const cleanNotes = row.notes ? row.notes.replace(/\[TRANSACTION_TYPE:[A-Z]+\]\s*/g, '').trim() : undefined;
+
   return {
     id: row.id,
     cardId: row.card_id,
+    transactionType: transType,
     purchaseDate: row.purchase_date,
     description: row.description,
     counterpartyId: row.counterparty_id || undefined,
@@ -680,7 +698,7 @@ function mapCardPurchaseFromDb(row: any): CreditCardPurchase {
     installmentValue: row.installment_value ? Number(row.installment_value) : undefined,
     installments: row.installments || [],
     invoiceMonth: row.invoice_month,
-    notes: row.notes || undefined,
+    notes: cleanNotes || undefined,
     createdAt: row.created_at
   };
 }
@@ -1412,20 +1430,40 @@ class SupabaseSyncService {
         stats.statements = stmtData.length;
       }
 
-      // 13. Cartões de Crédito
+      // 13. Cartões de Crédito (Higienizando dados mockados legados)
       const { data: cardsData, error: cardsErr } = await client.from(CONTAJU_TABLES.CREDIT_CARDS).select('*');
       if (cardsErr) errors.push(`Cartões: ${cardsErr.message}`);
-      else if (cardsData && cardsData.length > 0) {
-        storage.saveCreditCards(cardsData.map(mapCreditCardFromDb));
-        stats.creditCards = cardsData.length;
+      else if (cardsData) {
+        const sanitizedCards = cardsData
+          .filter(c => c.id !== 'card-1' && c.id !== 'card-2')
+          .map(mapCreditCardFromDb);
+        storage.saveCreditCards(sanitizedCards);
+        stats.creditCards = sanitizedCards.length;
+
+        // Limpa permanentemente mock cards do Supabase
+        const mockCards = cardsData.filter(c => c.id === 'card-1' || c.id === 'card-2');
+        if (mockCards.length > 0) {
+          Promise.resolve(client.from(CONTAJU_TABLES.CREDIT_CARDS).delete().in('id', ['card-1', 'card-2'])).catch(() => {});
+        }
       }
 
-      // 14. Compras de Cartão
+      // 14. Compras de Cartão (Higienizando dados mockados legados)
       const { data: purchasesData, error: purErr } = await client.from(CONTAJU_TABLES.CARD_PURCHASES).select('*');
       if (purErr) errors.push(`Compras Cartão: ${purErr.message}`);
-      else if (purchasesData && purchasesData.length > 0) {
-        storage.saveCardPurchases(purchasesData.map(mapCardPurchaseFromDb));
-        stats.cardPurchases = purchasesData.length;
+      else if (purchasesData) {
+        const isMockPur = (id: string) => Boolean(id && /^pur-(?:[1-9]|1[0-9]|20)$/.test(id));
+        const sanitizedPurchases = purchasesData
+          .filter(p => !isMockPur(p.id) && p.card_id !== 'card-1' && p.card_id !== 'card-2')
+          .map(mapCardPurchaseFromDb);
+        storage.saveCardPurchases(sanitizedPurchases);
+        stats.cardPurchases = sanitizedPurchases.length;
+
+        // Limpa permanentemente mock purchases do Supabase
+        const mockPurchases = purchasesData.filter(p => isMockPur(p.id) || p.card_id === 'card-1' || p.card_id === 'card-2');
+        if (mockPurchases.length > 0) {
+          const idsToDelete = mockPurchases.map(p => p.id);
+          Promise.resolve(client.from(CONTAJU_TABLES.CARD_PURCHASES).delete().in('id', idsToDelete)).catch(() => {});
+        }
       }
 
       // 15. Fechamentos de Período

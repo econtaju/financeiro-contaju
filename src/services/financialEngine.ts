@@ -2539,14 +2539,20 @@ export class FinancialEngine {
     const purchases = storage.getCardPurchases().filter(p => p.cardId === cardId);
     let used = 0;
     for (const pur of purchases) {
+      const isCredit = pur.transactionType === 'ESTORNO' || pur.transactionType === 'CASHBACK';
       for (const inst of pur.installments) {
         if (!inst.settled) {
-          used += inst.amount;
+          if (isCredit) {
+            used -= inst.amount;
+          } else {
+            used += inst.amount;
+          }
         }
       }
     }
+    used = Math.max(0, Math.round(used * 100) / 100);
 
-    const available = Math.max(0, card.creditLimit - used);
+    const available = Math.max(0, Math.round((card.creditLimit - used) * 100) / 100);
     return { limit: card.creditLimit, used, available };
   }
 
@@ -2574,10 +2580,15 @@ export class FinancialEngine {
     }>();
 
     for (const pur of purchases) {
+      const isCredit = pur.transactionType === 'ESTORNO' || pur.transactionType === 'CASHBACK';
       for (const inst of pur.installments) {
         const m = inst.invoiceMonth;
         const current = monthMap.get(m) || { total: 0, settledCount: 0, totalCount: 0 };
-        current.total += inst.amount;
+        if (isCredit) {
+          current.total -= inst.amount;
+        } else {
+          current.total += inst.amount;
+        }
         current.totalCount += 1;
         if (inst.settled) current.settledCount += 1;
         monthMap.set(m, current);
@@ -2619,10 +2630,11 @@ export class FinancialEngine {
         .filter(p => p.invoiceMonth === month)
         .reduce((sum, p) => sum + p.amountPaid, 0);
 
-      const balance = Math.max(0, data.total - paidForMonth);
+      const normalizedTotal = Math.max(0, Math.round(data.total * 100) / 100);
+      const balance = Math.max(0, Math.round((normalizedTotal - paidForMonth) * 100) / 100);
       let status: 'ABERTA' | 'FECHADA' | 'PAGA' = 'ABERTA';
 
-      if (data.total > 0 && (balance <= 0.01 || data.settledCount === data.totalCount)) {
+      if (normalizedTotal > 0 && (balance <= 0.01 || data.settledCount === data.totalCount)) {
         status = 'PAGA';
       } else if (todayStr >= closingDate) {
         status = 'FECHADA';
@@ -2634,7 +2646,7 @@ export class FinancialEngine {
         invoiceMonth: month,
         closingDate,
         dueDate,
-        totalAmount: data.total,
+        totalAmount: normalizedTotal,
         paidAmount: paidForMonth,
         balance,
         status,

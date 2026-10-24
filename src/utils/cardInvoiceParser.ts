@@ -14,11 +14,12 @@ import { ChartAccount, Counterparty } from '../types';
 
 export interface ParsedInvoiceTransaction {
   id: string;
+  transactionType?: 'DESPESA' | 'ESTORNO' | 'CASHBACK';
   rawDate: string; // ex: "14/09" ou "14/09/2026"
   formattedDate: string; // YYYY-MM-DD
   description: string;
   cleanDescription: string;
-  amount: number; // Valor positivo em R$
+  amount: number; // Valor em R$ (positivo)
   installmentText?: string; // ex: "02/05"
   installmentNumber?: number;
   totalInstallments?: number;
@@ -260,13 +261,22 @@ export function parseInvoiceTextLines(
 
       // Convert Brazilian number format (1.234,56 or 123,45)
       let amount = 0;
-      if (rawAmountStr.includes(',')) {
-        amount = parseFloat(rawAmountStr.replace(/\./g, '').replace(',', '.'));
+      let isNegative = rawAmountStr.startsWith('-') || /ESTORNO|REEMBOLSO|DEVOLUCAO|CASHBACK/i.test(descAndInst);
+      const cleanRawAmount = rawAmountStr.replace(/^-/, '');
+
+      if (cleanRawAmount.includes(',')) {
+        amount = parseFloat(cleanRawAmount.replace(/\./g, '').replace(',', '.'));
       } else {
-        amount = parseFloat(rawAmountStr);
+        amount = parseFloat(cleanRawAmount);
       }
 
-      if (isNaN(amount) || amount <= 0) continue;
+      if (isNaN(amount) || amount === 0) continue;
+      amount = Math.abs(amount);
+
+      let transactionType: 'DESPESA' | 'ESTORNO' | 'CASHBACK' = 'DESPESA';
+      if (isNegative) {
+        transactionType = /CASHBACK/i.test(descAndInst) ? 'CASHBACK' : 'ESTORNO';
+      }
 
       // Extract installment if present (e.g. 02/05 or Parc 2 de 5)
       let installmentText: string | undefined;
@@ -305,6 +315,7 @@ export function parseInvoiceTextLines(
 
       items.push({
         id: `inv-item-${Date.now()}-${idCounter++}`,
+        transactionType,
         rawDate: rawDateStr,
         formattedDate,
         description: descAndInst,
@@ -324,7 +335,8 @@ export function parseInvoiceTextLines(
 }
 
 /**
- * Parses spreadsheet (.xlsx / .csv) into parsed invoice transactions
+ * Parses spreadsheet (.xlsx / .csv) into parsed invoice transactions.
+ * Includes dedicated column mapping for Nubank, Itaú, C6 Bank, Banco Inter and Bradesco.
  */
 export function parseInvoiceSpreadsheet(
   buffer: ArrayBuffer,
@@ -343,59 +355,131 @@ export function parseInvoiceSpreadsheet(
 
   let idCounter = 1;
 
-  for (const row of rawRows) {
+  // 1. Check if first row is a recognizable header row (Nubank, Itaú, C6, Inter, Bradesco)
+  let dateCol = -1;
+  let descCol = -1;
+  let amountCol = -1;
+  let catCol = -1;
+  let instCol = -1;
+  let startIndex = 0;
+
+  if (rawRows.length > 0 && Array.isArray(rawRows[0])) {
+    const headerRow = rawRows[0].map(c => String(c || '').toLowerCase().trim());
+    headerRow.forEach((col, idx) => {
+      if (/(^date$|^data$|data_compra|data compra|data da transação)/i.test(col)) dateCol = idx;
+      else if (/(^title$|^descri|^lançamento|^histor|^estabelecimento|^merchant)/i.test(col)) descCol = idx;
+      else if (/(^amount$|^valor$|^total$|^vlr$)/i.test(col)) amountCol = idx;
+      else if (/(^category$|^categoria$)/i.test(col)) catCol = idx;
+      else if (/(^parcela$|^installment$)/i.test(col)) instCol = idx;
+    });
+
+    if (dateCol !== -1 && (descCol !== -1 || amountCol !== -1)) {
+      startIndex = 1; // Skip header
+    }
+  }
+
+  for (let r = startIndex; r < rawRows.length; r++) {
+    const row = rawRows[r];
     if (!Array.isArray(row) || row.length < 2) continue;
 
-    // Search row for date, description, amount
     let dateStr = '';
     let desc = '';
     let amount = 0;
+    let isNegative = false;
+    let explicitCategory = '';
+    let installmentText: string | undefined;
 
-    for (const cell of row) {
-      if (!cell) continue;
-      const valStr = String(cell).trim();
+    if (dateCol !== -1 && descCol !== -1 && amountCol !== -1) {
+      // Map using discovered bank headers
+      dateStr = String(row[dateCol] || '').trim();
+      desc = String(row[descCol] || '').trim();
+      const rawAmt = row[amountCol];
 
-      // Check date
-      if (!dateStr && /(\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?)/.test(valStr)) {
-        dateStr = valStr;
-        continue;
+      if (typeof rawAmt === 'number') {
+        isNegative = rawAmt < 0;
+        amount = Math.abs(rawAmt);
+      } else if (typeof rawAmt === 'string') {
+        const cleaned = rawAmt.replace(/[R\$\s]/g, '').trim();
+        isNegative = cleaned.startsWith('-') || /^-/.test(cleaned);
+        const numStr = cleaned.replace(/^-/, '');
+        amount = numStr.includes(',')
+          ? parseFloat(numStr.replace(/\./g, '').replace(',', '.'))
+          : parseFloat(numStr);
       }
 
-      // Check amount
-      if (typeof cell === 'number' && cell > 0 && amount === 0) {
-        amount = cell;
-        continue;
-      } else if (typeof cell === 'string') {
-        const cleanedVal = valStr.replace(/[R\$\s]/g, '');
-        if (/^[\d\.\,]+$/.test(cleanedVal)) {
-          const num = cleanedVal.includes(',') 
-            ? parseFloat(cleanedVal.replace(/\./g, '').replace(',', '.'))
-            : parseFloat(cleanedVal);
-          if (!isNaN(num) && num > 0 && amount === 0) {
-            amount = num;
-            continue;
+      if (catCol !== -1 && row[catCol]) explicitCategory = String(row[catCol]).trim();
+      if (instCol !== -1 && row[instCol]) installmentText = String(row[instCol]).trim();
+    } else {
+      // Fallback heuristics: search cells
+      for (const cell of row) {
+        if (!cell) continue;
+        const valStr = String(cell).trim();
+
+        if (!dateStr && /(\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?)/.test(valStr)) {
+          dateStr = valStr;
+          continue;
+        }
+
+        if (typeof cell === 'number' && amount === 0) {
+          isNegative = cell < 0;
+          amount = Math.abs(cell);
+          continue;
+        } else if (typeof cell === 'string') {
+          const cleanedVal = valStr.replace(/[R\$\s]/g, '');
+          if (/^-?[\d\.\,]+$/.test(cleanedVal)) {
+            isNegative = cleanedVal.startsWith('-');
+            const numStr = cleanedVal.replace(/^-/, '');
+            const num = numStr.includes(',') 
+              ? parseFloat(numStr.replace(/\./g, '').replace(',', '.'))
+              : parseFloat(numStr);
+            if (!isNaN(num) && num > 0 && amount === 0) {
+              amount = num;
+              continue;
+            }
           }
         }
-      }
 
-      // If text and longer than 2 chars, candidate for description
-      if (!desc && typeof cell === 'string' && valStr.length >= 2 && !/^(data|valor|descri|parcela)/i.test(valStr)) {
-        desc = valStr;
+        if (!desc && typeof cell === 'string' && valStr.length >= 2 && !/^(data|valor|descri|parcela|amount|date|category)/i.test(valStr)) {
+          desc = valStr;
+        }
       }
     }
 
     if (desc && amount > 0) {
       let formattedDate = new Date().toISOString().split('T')[0];
       if (dateStr) {
-        const parts = dateStr.replace(/[\-\.]/g, '/').split('/');
-        if (parts.length >= 2) {
-          const d = parseInt(parts[0], 10);
-          const m = parseInt(parts[1], 10);
-          let y = targetYear;
-          if (parts[2]) {
-            y = parts[2].length === 2 ? 2000 + parseInt(parts[2], 10) : parseInt(parts[2], 10);
+        // Handle ISO YYYY-MM-DD or Brazilian DD/MM/YYYY
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+          formattedDate = dateStr.slice(0, 10);
+        } else {
+          const parts = dateStr.replace(/[\-\.]/g, '/').split('/');
+          if (parts.length >= 2) {
+            const d = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            let y = targetYear;
+            if (parts[2]) {
+              y = parts[2].length === 2 ? 2000 + parseInt(parts[2], 10) : parseInt(parts[2], 10);
+            }
+            formattedDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
           }
-          formattedDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        }
+      }
+
+      // Detect Estorno / Cashback from description or negative value
+      let transactionType: 'DESPESA' | 'ESTORNO' | 'CASHBACK' = 'DESPESA';
+      if (isNegative || /ESTORNO|REEMBOLSO|DEVOLUCAO|CASHBACK|CREDITO\s+DE\s+PAGAMENTO/i.test(desc)) {
+        transactionType = /CASHBACK/i.test(desc) ? 'CASHBACK' : 'ESTORNO';
+      }
+
+      // Detect installment in description if not already extracted
+      let installmentNumber: number | undefined;
+      let totalInstallments: number | undefined;
+      if (!installmentText) {
+        const instMatch = desc.match(/(\d{1,2})\/(\d{1,2})/);
+        if (instMatch) {
+          installmentNumber = parseInt(instMatch[1], 10);
+          totalInstallments = parseInt(instMatch[2], 10);
+          installmentText = `${installmentNumber}/${totalInstallments}`;
         }
       }
 
@@ -403,16 +487,85 @@ export function parseInvoiceSpreadsheet(
 
       items.push({
         id: `inv-item-xls-${Date.now()}-${idCounter++}`,
+        transactionType,
         rawDate: dateStr || formattedDate,
         formattedDate,
         description: desc,
         cleanDescription: suggestions.counterpartyName,
         amount: Math.round(amount * 100) / 100,
+        installmentText,
+        installmentNumber,
+        totalInstallments,
         suggestedChartAccountId: suggestions.chartAccountId,
         suggestedCounterpartyId: suggestions.counterpartyId,
         suggestedCounterpartyName: suggestions.counterpartyName
       });
     }
+  }
+
+  return items;
+}
+
+/**
+ * Parses OFX credit card statement into parsed invoice transactions.
+ * Supports Nubank, Itaú, C6 Bank, Banco Inter, Bradesco and standard OFX 1.0/2.0.
+ */
+export function parseInvoiceOFX(
+  ofxContent: string,
+  targetInvoiceMonth: string,
+  chartAccounts: ChartAccount[] = [],
+  counterparties: Counterparty[] = []
+): ParsedInvoiceTransaction[] {
+  const ofxItems = parseOFX(ofxContent);
+  const items: ParsedInvoiceTransaction[] = [];
+  let idCounter = 1;
+
+  for (const it of ofxItems) {
+    if (!it.description || isNaN(it.amount)) continue;
+
+    const absAmount = Math.abs(it.amount);
+    if (absAmount <= 0) continue;
+
+    // Detect if Estorno / Cashback / Refund
+    const upperDesc = it.description.toUpperCase();
+    const isCredit = it.type === 'CREDIT' || it.amount > 0 || /ESTORNO|REEMBOLSO|DEVOLUCAO|CASHBACK/i.test(upperDesc);
+    let transactionType: 'DESPESA' | 'ESTORNO' | 'CASHBACK' = 'DESPESA';
+    if (isCredit && /ESTORNO|REEMBOLSO|DEVOLUCAO/i.test(upperDesc)) {
+      transactionType = 'ESTORNO';
+    } else if (isCredit && /CASHBACK|RECOMPENSA/i.test(upperDesc)) {
+      transactionType = 'CASHBACK';
+    } else if (isCredit) {
+      transactionType = 'ESTORNO';
+    }
+
+    // Extract installment if present in OFX memo/desc
+    let installmentText: string | undefined;
+    let installmentNumber: number | undefined;
+    let totalInstallments: number | undefined;
+    const instMatch = it.description.match(/(?:PARC(?:ELA)?\.?\s*)?(\d{1,2})\/(\d{1,2})/i);
+    if (instMatch) {
+      installmentNumber = parseInt(instMatch[1], 10);
+      totalInstallments = parseInt(instMatch[2], 10);
+      installmentText = `${installmentNumber}/${totalInstallments}`;
+    }
+
+    const suggestions = suggestCategoryAndCounterparty(it.description, chartAccounts, counterparties);
+
+    items.push({
+      id: `inv-ofx-${Date.now()}-${idCounter++}`,
+      transactionType,
+      rawDate: it.date,
+      formattedDate: it.date,
+      description: it.description,
+      cleanDescription: suggestions.counterpartyName,
+      amount: Math.round(absAmount * 100) / 100,
+      installmentText,
+      installmentNumber,
+      totalInstallments,
+      suggestedChartAccountId: suggestions.chartAccountId,
+      suggestedCounterpartyId: suggestions.counterpartyId,
+      suggestedCounterpartyName: suggestions.counterpartyName
+    });
   }
 
   return items;
