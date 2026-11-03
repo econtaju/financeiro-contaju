@@ -38,7 +38,8 @@ import {
   Scale,
   X,
   CheckCheck,
-  HandCoins
+  HandCoins,
+  MoreVertical
 } from 'lucide-react';
 import { FinancialTitle, Settlement, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
@@ -114,7 +115,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedMobileIds, setExpandedMobileIds] = useState<Record<string, boolean>>({});
   const [historyTitle, setHistoryTitle] = useState<FinancialTitle | null>(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Fechar dropdown de ações ao pressionar ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenActionMenuId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const duplicateCandidates = useMemo(() => {
     try {
@@ -280,6 +293,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       const conciliados = notCancelled.filter(t => t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank);
 
       return {
+        periodTotal: notCancelled.reduce((acc, t) => acc + (Number(t.originalAmount) || 0), 0),
+        periodCount: notCancelled.length,
         openTotal: open.reduce((acc, t) => acc + (Number(t.balancePrincipal) || 0), 0),
         openCount: open.length,
         hojeTotal: hoje.reduce((acc, t) => acc + (Number(t.balancePrincipal) || 0), 0),
@@ -298,6 +313,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
     } catch (err) {
       console.error('Erro ao calcular estatísticas de recebíveis:', err);
       return {
+        periodTotal: 0, periodCount: 0,
         openTotal: 0, openCount: 0,
         hojeTotal: 0, hojeCount: 0,
         semanaTotal: 0, semanaCount: 0,
@@ -811,6 +827,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       ];
     });
     exportToExcel(`contas-a-receber-${today}`, 'Contas a Receber', headers, rows);
+    setToastMessage({
+      type: 'success',
+      text: `${filteredTitles.length} título(s) a receber exportado(s) para Excel (.xlsx) com sucesso!`
+    });
   };
 
   const handleExportCSV = () => {
@@ -831,6 +851,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       ];
     });
     exportToCSV(`contas-a-receber-${today}`, headers, rows);
+    setToastMessage({
+      type: 'success',
+      text: `${filteredTitles.length} título(s) a receber exportado(s) para CSV com sucesso!`
+    });
   };
 
   const handleExportSelectedExcel = () => {
@@ -1182,8 +1206,42 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
         </div>
       </div>
 
-      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - Multidispositivo Adaptativo) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-3">
+      {/* Quick Date Filter Blocks (Visão Rápida / Indicadores - 6 Colunas Adaptativo) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
+        {/* Card: Todos do Período */}
+        <button
+          type="button"
+          onClick={() => {
+            setQuickDateFilter('ALL');
+            setStatusFilter(prev => prev === 'TODOS' ? 'ABERTO' : 'TODOS');
+          }}
+          className={`p-3.5 rounded-xl border text-left transition-all ${
+            quickDateFilter === 'ALL' && statusFilter === 'TODOS'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/30 dark:bg-slate-800 dark:border-slate-700 dark:ring-slate-600/40'
+              : 'bg-white dark:bg-[#131720] hover:bg-slate-50 dark:hover:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 shadow-2xs'
+          }`}
+          title="Clique para listar todos os títulos a receber do período (sem filtros de status)"
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${
+              quickDateFilter === 'ALL' && statusFilter === 'TODOS' ? 'text-slate-200' : 'text-slate-600 dark:text-slate-300'
+            }`}>
+              Todos do Período
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+              quickDateFilter === 'ALL' && statusFilter === 'TODOS' ? 'bg-slate-800 dark:bg-slate-700 text-slate-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700'
+            }`}>
+              {stats.periodCount}
+            </span>
+          </div>
+          <div className="text-base font-extrabold mt-1.5 truncate">
+            {formatBRL(stats.periodTotal)}
+          </div>
+          <div className={`text-[10px] mt-0.5 ${quickDateFilter === 'ALL' && statusFilter === 'TODOS' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+            Total geral no período
+          </div>
+        </button>
+
         {/* Card: Todos em Aberto */}
         <button
           type="button"
@@ -1314,7 +1372,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
             setQuickDateFilter(prev => prev === 'LIQUIDADO' ? 'ALL' : 'LIQUIDADO');
             setStatusFilter('LIQUIDADO');
           }}
-          className={`p-3.5 rounded-xl border text-left transition-all col-span-2 sm:col-span-1 ${
+          className={`p-3.5 rounded-xl border text-left transition-all ${
             quickDateFilter === 'LIQUIDADO' || statusFilter === 'LIQUIDADO'
               ? 'bg-emerald-700 text-white border-emerald-800 shadow-md ring-2 ring-emerald-400/40'
               : 'bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/45 border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-200 shadow-2xs'
@@ -2170,9 +2228,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                       </div>
                     )}
 
-                    {/* Ações Rápidas Mobile */}
-                    <div className="pt-2 border-t border-slate-200 dark:border-[#273040] flex flex-wrap gap-2 items-center">
-                      {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                    {/* Ações Rápidas Mobile: Botão Primário Largo + Menuzinho Dropdown */}
+                    <div className="pt-2 border-t border-slate-200 dark:border-[#273040] flex items-center gap-2 relative">
+                      {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' ? (
                         <button
                           type="button"
                           onClick={() => setSelectedTitleForSettlement(t)}
@@ -2181,150 +2239,190 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                           <CheckCircle2 className="w-4 h-4" />
                           <span>Receber / Baixar</span>
                         </button>
-                      )}
-
-                      {/* Voltar para Aberto (quando há valor recebido/liquidado) */}
-                      {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
-                        <button
-                          type="button"
-                          onClick={(e) => handleOpenSingleReopen(t, e)}
-                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                          className={`min-h-[42px] py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors ${
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
-                              : 'bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700/60 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 cursor-pointer'
-                          }`}
-                          title={
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'Bloqueado: Título conciliado via banco. Desfaça a conciliação na tela de Conciliação Bancária antes de estornar.'
-                              : 'Estornar recebimentos e voltar este título para EM ABERTO'
-                          }
-                        >
-                          <RotateCcw className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          <span>Voltar Aberto</span>
-                        </button>
-                      )}
-
-                      {/* Status de Conciliação Bancária */}
-                      {t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank ? (
-                        <span
-                          className="min-h-[40px] py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 select-none"
-                          title="Conciliado com o Extrato Bancário. Para desconciliar, utilize a tela de Conciliação Bancária."
-                        >
-                          <CheckCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Conciliado</span>
-                        </span>
+                      ) : (t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') ? (
+                        <div className="flex-1 py-2 px-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Recebido / Liquidado</span>
+                        </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleSingleReconciled(t, e)}
-                          className="min-h-[40px] py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50"
-                          title="Conciliar via extrato bancário na tela de Conciliação"
-                        >
-                          <CheckCheck className="w-4 h-4 text-slate-400" />
-                          <span>Conciliar</span>
-                        </button>
+                        <div className="flex-1 py-2 px-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold text-slate-500 text-center">
+                          {t.documentState === 'CANCELADO' ? 'Cancelado' : 'Sem saldo a receber'}
+                        </div>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => handleStartEditTitle(t)}
-                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                        className={`min-h-[40px] min-w-[40px] py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors ${
-                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                            ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
-                            : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer'
-                        }`}
-                        title={
-                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                            ? 'Bloqueado: Título conciliado via banco não pode ser editado. Desfaça a conciliação na tela de Conciliação Bancária.'
-                            : 'Editar recebimento'
-                        }
-                      >
-                        <Edit3 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                        <span>Editar</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => handleDuplicateOne(t, e)}
-                        className="min-h-[40px] min-w-[40px] py-2 px-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                        title="Duplicar lançamento"
-                      >
-                        <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                        <span>Duplicar</span>
-                      </button>
-
-                      {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                      {/* Botão de Menuzinho Dropdown Mobile */}
+                      <div className="relative">
                         <button
                           type="button"
-                          onClick={(e) => handleTriggerWhatsApp(t, e)}
-                          className="min-h-[40px] min-w-[40px] p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
-                          title="Enviar aviso/cobrança via WhatsApp"
-                        >
-                          <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => setHistoryTitle(t)}
-                        className="min-h-[40px] min-w-[40px] p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs shadow-2xs flex items-center justify-center cursor-pointer"
-                        title="Ver histórico de recebimentos"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-
-                      {/* Botão de Recibo Mobile */}
-                      {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
-                        <button
-                          type="button"
-                          onClick={() => setReceiptTitle(t)}
-                          className="min-h-[40px] py-2 px-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                          title="Gerar e Imprimir Recibo Oficial de Quitação"
-                        >
-                          <Printer className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Recibo</span>
-                        </button>
-                      )}
-
-                      {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
-                        <button
-                          type="button"
-                          onClick={(e) => handleOpenSingleCancel(t, e)}
-                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                          className={`min-h-[40px] min-w-[40px] p-2 rounded-xl text-xs shadow-2xs flex items-center justify-center transition-colors ${
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
-                              : 'bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-600/50 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 cursor-pointer'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionMenuId(prev => prev === `mob-${t.id}` ? null : `mob-${t.id}`);
+                          }}
+                          className={`min-h-[42px] min-w-[42px] p-2.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
+                            openActionMenuId === `mob-${t.id}`
+                              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 shadow-xs ring-2 ring-emerald-400/30'
+                              : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
                           }`}
-                          title={
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'Bloqueado: Título conciliado via banco não pode ser cancelado.'
-                              : 'Cancelar título'
-                          }
+                          title="Mais opções e ações do recebimento"
                         >
-                          <Ban className="w-4 h-4" />
+                          <MoreVertical className="w-5 h-5" />
                         </button>
-                      )}
 
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenSingleDelete(t, e)}
-                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                        className={`min-h-[40px] min-w-[40px] p-2 rounded-xl text-xs shadow-2xs flex items-center justify-center transition-colors ${
-                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                            ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
-                            : 'bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-600/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 cursor-pointer'
-                        }`}
-                        title={
-                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                            ? 'Bloqueado: Título conciliado via banco não pode ser excluído.'
-                            : 'Excluir definitivamente'
-                        }
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                        {/* Menu Dropdown Mobile */}
+                        {openActionMenuId === `mob-${t.id}` && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40 bg-black/20" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenActionMenuId(null);
+                              }} 
+                            />
+                            <div 
+                              className="absolute right-0 bottom-full mb-2 w-60 bg-white dark:bg-[#1a2234] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl py-1.5 z-50 text-left text-xs divide-y divide-slate-100 dark:divide-slate-800/80 animate-in fade-in zoom-in-95"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {/* Grupo 1: Detalhes, Edição e Duplicação */}
+                              <div className="py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setHistoryTitle(t);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left flex items-center gap-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                                  <span>Ver detalhes & histórico</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                  onClick={() => {
+                                    handleStartEditTitle(t);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                    t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                      ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer'
+                                  }`}
+                                  title={
+                                    t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                      ? 'Bloqueado: Título conciliado via banco.'
+                                      : 'Editar recebimento'
+                                  }
+                                >
+                                  <Edit3 className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                                  <span>Editar recebimento</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    handleDuplicateOne(t, e);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left flex items-center gap-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                >
+                                  <Copy className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                                  <span>Duplicar lançamento</span>
+                                </button>
+                              </div>
+
+                              {/* Grupo 2: Recibo, Comunicação e Conciliação */}
+                              <div className="py-1">
+                                {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReceiptTitle(t);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left flex items-center gap-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer font-medium"
+                                  >
+                                    <Printer className="w-4 h-4" />
+                                    <span>Gerar recibo oficial</span>
+                                  </button>
+                                )}
+
+                                {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      handleTriggerWhatsApp(t, e);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left flex items-center gap-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer font-medium"
+                                  >
+                                    <MessageCircle className="w-4 h-4" />
+                                    <span>Cobrança via WhatsApp</span>
+                                  </button>
+                                )}
+
+                                {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                                  <button
+                                    type="button"
+                                    disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                    onClick={(e) => {
+                                      handleOpenSingleReopen(t, e);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                      t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                        ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                        : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer font-medium'
+                                    }`}
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                    <span>Estornar / Voltar Aberto</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Grupo 3: Cancelamento & Exclusão */}
+                              <div className="py-1">
+                                {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
+                                  <button
+                                    type="button"
+                                    disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                    onClick={(e) => {
+                                      handleOpenSingleCancel(t, e);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                      t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                        ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                        : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer'
+                                    }`}
+                                  >
+                                    <Ban className="w-4 h-4" />
+                                    <span>Cancelar título</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                  onClick={(e) => {
+                                    handleOpenSingleDelete(t, e);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                    t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                      ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                      : 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer font-medium'
+                                  }`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  <span>Excluir definitivamente</span>
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                   </div>
@@ -2499,7 +2597,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                   </td>
                 </tr>
               ) : (
-                sortedTitles.map(t => {
+                sortedTitles.map((t, idx) => {
                   if (!t) return null;
                   const client = counterparties.find(c => c && c.id === t.counterpartyId);
                   const tempStatus = getTemporalStatus(t, today);
@@ -2699,126 +2797,202 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
-                          <button
-                            onClick={() => setSelectedTitleForSettlement(t)}
-                            className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-2xs transition-colors inline-flex items-center"
-                            title="Efetuar baixa de recebimento"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                            Baixar
-                          </button>
-                        )}
+                      <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center justify-end gap-1.5 relative">
+                          {/* Botão Primário: Baixar (quando houver saldo a receber e não cancelado) */}
+                          {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTitleForSettlement(t)}
+                              className="px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-2xs transition-colors inline-flex items-center cursor-pointer"
+                              title="Efetuar baixa de recebimento"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Baixar
+                            </button>
+                          )}
 
-                        <button
-                          onClick={() => handleStartEditTitle(t)}
-                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                          className={`p-1 rounded transition-colors ${
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
-                              : 'text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
-                          }`}
-                          title={
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'Bloqueado: Título conciliado via banco não pode ser editado. Desfaça a conciliação na tela de Conciliação Bancária.'
-                              : 'Editar lançamento (ou dê duplo clique na linha)'
-                          }
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
+                          {/* Botão de Menuzinho Dropdown (Mais Opções) */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenActionMenuId(prev => prev === t.id ? null : t.id);
+                              }}
+                              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                openActionMenuId === t.id
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 shadow-xs ring-2 ring-emerald-400/30'
+                                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
+                              }`}
+                              title="Mais opções e ações do recebimento"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
 
-                        <button
-                          onClick={(e) => handleDuplicateOne(t, e)}
-                          className="p-1 text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
-                          title="Duplicar este lançamento"
-                        >
-                          <Copy className="w-4 h-4" />
-                        </button>
+                            {/* Menu Dropdown Suspenso */}
+                            {openActionMenuId === t.id && (
+                              <>
+                                <div 
+                                  className="fixed inset-0 z-40" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenActionMenuId(null);
+                                  }} 
+                                />
+                                <div 
+                                  className={`absolute right-0 ${
+                                    idx >= sortedTitles.length - 2 && sortedTitles.length > 2 ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                                  } w-56 bg-white dark:bg-[#1a2234] border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl py-1 z-50 text-left text-xs divide-y divide-slate-100 dark:divide-slate-800/80 animate-in fade-in zoom-in-95`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Grupo 1: Detalhes, Edição e Duplicação */}
+                                  <div className="py-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setHistoryTitle(t);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                    >
+                                      <Eye className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                                      <span>Ver detalhes & histórico</span>
+                                    </button>
 
-                        {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
-                          <button
-                            onClick={(e) => handleTriggerWhatsApp(t, e)}
-                            className="p-1 text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors cursor-pointer"
-                            title="Enviar aviso de cobrança via WhatsApp"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                          </button>
-                        )}
+                                    <button
+                                      type="button"
+                                      disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                      onClick={() => {
+                                        handleStartEditTitle(t);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                        t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                          ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer'
+                                      }`}
+                                      title={
+                                        t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                          ? 'Bloqueado: Título conciliado via banco não pode ser editado.'
+                                          : 'Editar lançamento (ou dê duplo clique na linha)'
+                                      }
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                                      <span>Editar recebimento</span>
+                                    </button>
 
-                        <button
-                          onClick={() => setHistoryTitle(t)}
-                          className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded cursor-pointer"
-                          title="Ver detalhes e histórico de liquidações"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        handleDuplicateOne(t, e);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                    >
+                                      <Copy className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                                      <span>Duplicar lançamento</span>
+                                    </button>
+                                  </div>
 
-                        {/* Gerar Recibo Oficial para o Cliente */}
-                        {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
-                          <button
-                            onClick={() => setReceiptTitle(t)}
-                            className="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors"
-                            title="Gerar e Imprimir Recibo Oficial de Quitação para o Cliente"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
-                        )}
+                                  {/* Grupo 2: Recibo, WhatsApp e Estorno */}
+                                  <div className="py-1">
+                                    {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptTitle(t);
+                                          setOpenActionMenuId(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left flex items-center gap-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer font-medium"
+                                      >
+                                        <Printer className="w-3.5 h-3.5" />
+                                        <span>Gerar recibo oficial</span>
+                                      </button>
+                                    )}
 
-                        {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
-                          <button
-                            onClick={(e) => handleOpenSingleReopen(t, e)}
-                            disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                            className={`p-1 rounded transition-colors ${
-                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
-                                : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer'
-                            }`}
-                            title={
-                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                                ? 'Bloqueado: Título conciliado via banco. Desfaça a conciliação na tela de Conciliação Bancária antes de estornar.'
-                                : 'Voltar para Em Aberto (estorna recebimentos e devolve saldo)'
-                            }
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
-                        )}
+                                    {t.balancePrincipal > 0 && t.documentState !== 'CANCELADO' && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          handleTriggerWhatsApp(t, e);
+                                          setOpenActionMenuId(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left flex items-center gap-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer font-medium"
+                                      >
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                        <span>Cobrança via WhatsApp</span>
+                                      </button>
+                                    )}
 
-                        {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
-                          <button
-                            onClick={(e) => handleOpenSingleCancel(t, e)}
-                            disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                            className={`p-1 rounded transition-colors ${
-                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
-                                : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50 cursor-pointer'
-                            }`}
-                            title={
-                              t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                                ? 'Bloqueado: Título conciliado via banco não pode ser cancelado.'
-                                : 'Cancelar Título (muda status para CANCELADO)'
-                            }
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
-                        )}
+                                    {(t.settledPrincipal > 0 || t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL') && (
+                                      <button
+                                        type="button"
+                                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                        onClick={(e) => {
+                                          handleOpenSingleReopen(t, e);
+                                          setOpenActionMenuId(null);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                            ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                            : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer font-medium'
+                                        }`}
+                                        title={
+                                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                            ? 'Bloqueado: Título conciliado via banco.'
+                                            : 'Voltar para Em Aberto (estorna recebimentos e devolve saldo)'
+                                        }
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        <span>Estornar / Voltar Aberto</span>
+                                      </button>
+                                    )}
+                                  </div>
 
-                        <button
-                          onClick={(e) => handleOpenSingleDelete(t, e)}
-                          disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
-                          className={`p-1 rounded transition-colors ${
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-60'
-                              : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer'
-                          }`}
-                          title={
-                            t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
-                              ? 'Bloqueado: Título conciliado via banco não pode ser excluído.'
-                              : 'Excluir Lançamento Definitivamente'
-                          }
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                                  {/* Grupo 3: Cancelamento & Exclusão */}
+                                  <div className="py-1">
+                                    {t.balancePrincipal === t.originalAmount && t.documentState !== 'CANCELADO' && (
+                                      <button
+                                        type="button"
+                                        disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                        onClick={(e) => {
+                                          handleOpenSingleCancel(t, e);
+                                          setOpenActionMenuId(null);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                          t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                            ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                            : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer'
+                                        }`}
+                                      >
+                                        <Ban className="w-3.5 h-3.5" />
+                                        <span>Cancelar título</span>
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      disabled={t.reconciliationStatus === 'CONCILIADO' || Boolean(t.reconciledViaBank)}
+                                      onClick={(e) => {
+                                        handleOpenSingleDelete(t, e);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className={`w-full px-3 py-2 text-left flex items-center gap-2 transition-colors ${
+                                        t.reconciliationStatus === 'CONCILIADO' || t.reconciledViaBank
+                                          ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                          : 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer font-medium'
+                                      }`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Excluir definitivamente</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   );
