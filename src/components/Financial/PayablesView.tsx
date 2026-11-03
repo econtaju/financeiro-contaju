@@ -51,6 +51,7 @@ import { ConfirmReopenTitlesModal } from '../Modals/ConfirmReopenTitlesModal';
 import { DeduplicationWizardModal } from '../Modals/DeduplicationWizardModal';
 import { BoletoBatchSettlementModal } from './BoletoBatchSettlementModal';
 import { TitleSettlementHistoryModal } from './TitleSettlementHistoryModal';
+import { SavedFilterViewsBar, SavedFilterView } from './SavedFilterViewsBar';
 import { ModulePeriodNavigator } from '../Common/ModulePeriodNavigator';
 import { SwipeableCard } from '../Common/SwipeableCard';
 import { useModulePeriod } from '../../hooks/useModulePeriod';
@@ -81,6 +82,8 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
   const [counterpartyFilter, setCounterpartyFilter] = useState<string>('ALL');
   const [bankFilter, setBankFilter] = useState<string>('ALL');
   const [originFilter, setOriginFilter] = useState<'ALL' | 'CARTAO_CREDITO' | 'OUTROS'>('ALL');
+  const [minValue, setMinValue] = useState<number | null>(null);
+  const [maxValue, setMaxValue] = useState<number | null>(null);
 
   // Sorting state
   const [sortField, setSortField] = useState<string>('dueDate');
@@ -466,15 +469,21 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
         // Status pill tab filter (only applied if quickDateFilter is ALL)
         if (quickDateFilter === 'ALL') {
-          if (statusFilter === 'TODOS') return true;
-          if (statusFilter === 'CANCELADO') return t.documentState === 'CANCELADO';
-          if (t.documentState === 'CANCELADO') return false;
-
-          if (statusFilter === 'ABERTO') return balance > 0;
-          if (statusFilter === 'VENCIDO') return balance > 0 && due < today;
-          if (statusFilter === 'LIQUIDADO') return t.settlementState === 'LIQUIDADO';
-          if (statusFilter === 'CONCILIADO') return t.reconciliationStatus === 'CONCILIADO';
+          if (statusFilter === 'CANCELADO') {
+            if (t.documentState !== 'CANCELADO') return false;
+          } else {
+            if (t.documentState === 'CANCELADO') return false;
+            if (statusFilter === 'ABERTO' && balance <= 0) return false;
+            if (statusFilter === 'VENCIDO' && (balance <= 0 || due >= today)) return false;
+            if (statusFilter === 'LIQUIDADO' && t.settlementState !== 'LIQUIDADO') return false;
+            if (statusFilter === 'CONCILIADO' && t.reconciliationStatus !== 'CONCILIADO') return false;
+          }
         }
+
+        // Filtro por faixa de valor monetário
+        const amountToCompare = Number(t.balancePrincipal) || Number(t.originalAmount) || 0;
+        if (minValue != null && amountToCompare < minValue) return false;
+        if (maxValue != null && amountToCompare > maxValue) return false;
 
         return true;
       });
@@ -482,7 +491,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       console.error('Erro ao filtrar títulos a pagar:', err);
       return [];
     }
-  }, [periodTitles, searchTerm, categoryFilter, counterpartyFilter, bankFilter, originFilter, quickDateFilter, statusFilter, today, weekRange, counterparties, chartAccounts]);
+  }, [periodTitles, searchTerm, categoryFilter, counterpartyFilter, bankFilter, originFilter, quickDateFilter, statusFilter, minValue, maxValue, today, weekRange, counterparties, chartAccounts]);
 
   // Sorting
   const sortedTitles = useMemo(() => {
@@ -561,9 +570,55 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
     setOriginFilter('ALL');
     setQuickDateFilter('ALL');
     setStatusFilter('ABERTO');
+    setMinValue(null);
+    setMaxValue(null);
   };
 
-  const hasActiveFilters = searchTerm !== '' || categoryFilter !== 'ALL' || counterpartyFilter !== 'ALL' || bankFilter !== 'ALL' || originFilter !== 'ALL' || quickDateFilter !== 'ALL';
+  const handleClearSingleFilter = (key: string) => {
+    switch (key) {
+      case 'searchTerm':
+        setSearchTerm('');
+        break;
+      case 'categoryFilter':
+        setCategoryFilter('ALL');
+        break;
+      case 'counterpartyFilter':
+        setCounterpartyFilter('ALL');
+        break;
+      case 'bankFilter':
+        setBankFilter('ALL');
+        break;
+      case 'originFilter':
+        setOriginFilter('ALL');
+        break;
+      case 'quickDateFilter':
+        setQuickDateFilter('ALL');
+        break;
+      case 'statusFilter':
+        setStatusFilter('TODOS');
+        break;
+      case 'valueRange':
+        setMinValue(null);
+        setMaxValue(null);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleApplySavedFilters = (f: Partial<SavedFilterView['filters']>) => {
+    if (f.statusFilter !== undefined) setStatusFilter(f.statusFilter);
+    if (f.quickDateFilter !== undefined) setQuickDateFilter(f.quickDateFilter);
+    if (f.categoryFilter !== undefined) setCategoryFilter(f.categoryFilter);
+    if (f.counterpartyFilter !== undefined) setCounterpartyFilter(f.counterpartyFilter);
+    if (f.bankFilter !== undefined) setBankFilter(f.bankFilter);
+    if (f.originFilter !== undefined) setOriginFilter(f.originFilter as any);
+    if (f.searchTerm !== undefined) setSearchTerm(f.searchTerm);
+    if (f.minValue !== undefined) setMinValue(f.minValue);
+    if (f.maxValue !== undefined) setMaxValue(f.maxValue);
+  };
+
+  const hasActiveFilters = searchTerm !== '' || categoryFilter !== 'ALL' || counterpartyFilter !== 'ALL' || bankFilter !== 'ALL' || originFilter !== 'ALL' || quickDateFilter !== 'ALL' || statusFilter !== 'ABERTO' || minValue != null || maxValue != null;
 
   // Batch selection helpers - Permite selecionar qualquer lançamento, inclusive cancelados para exclusão em lote
   const selectableTitles = filteredTitles;
@@ -1265,6 +1320,32 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
           </div>
         </button>
       </div>
+
+      {/* Barra de Visões Salvas / Favoritos & Filtros Combinados Avançados */}
+      <SavedFilterViewsBar
+        moduleType="PAYABLES"
+        currentFilters={{
+          statusFilter,
+          quickDateFilter,
+          categoryFilter,
+          counterpartyFilter,
+          bankFilter,
+          originFilter,
+          searchTerm,
+          minValue,
+          maxValue
+        }}
+        onApplyFilters={handleApplySavedFilters}
+        onClearFilter={handleClearSingleFilter}
+        onClearAll={handleClearFilters}
+        chartAccounts={chartAccounts}
+        counterparties={counterparties}
+        bankAccounts={bankAccounts}
+        totalCount={periodTitles.length}
+        filteredCount={filteredTitles.length}
+        onMinValueChange={setMinValue}
+        onMaxValueChange={setMaxValue}
+      />
 
       {/* Top Filter Bar (Superior Filters) */}
       <div className="bg-white dark:bg-[#131720] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
