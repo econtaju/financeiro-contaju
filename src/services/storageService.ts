@@ -67,6 +67,16 @@ import { INITIAL_RECONCILIATION_RULES } from '../data/reconciliationRulesData';
 import { INITIAL_AGENT_DEFINITIONS } from '../data/initialAgentsData';
 import { advanceCompetence, addMonthsSafe } from '../utils/dateUtils';
 
+export interface DeletedRecordVaultEntry {
+  id: string;
+  recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'OTHER';
+  recordId: string;
+  deletedAt: string;
+  deletedBy: string;
+  reason?: string;
+  data: any;
+}
+
 const STORAGE_KEYS = {
   AGENT_DEFINITIONS: 'contaju_agent_definitions',
   AGENT_RUNS: 'contaju_agent_runs',
@@ -110,7 +120,9 @@ const STORAGE_KEYS = {
   REMEMBERED_USERS: 'contaju_remembered_users',
   AI_CONFIG: 'contaju_ai_config',
   DISCOVERED_AI_MODELS: 'contaju_discovered_ai_models',
-  KPI_TARGETS: 'contaju_kpi_targets'
+  KPI_TARGETS: 'contaju_kpi_targets',
+  DELETED_VAULT: 'contaju_deleted_vault',
+  SAFETY_SNAPSHOT: 'contaju_safety_snapshot'
 };
 
 export const DEFAULT_AI_CONFIG: AiProviderConfig = {
@@ -1840,6 +1852,10 @@ class StorageService {
     if (!contract) return { success: false, message: 'Contrato não encontrado.', cancelledCount: 0 };
 
     const currentUser = this.getCurrentUser();
+
+    // Proteção: Salva cópia de segurança no cofre antes da exclusão
+    this.saveToDeletedVault([contract], `Exclusão do contrato ${contract.contractNumber}`, 'CONTRACT');
+
     const updatedContracts = contracts.filter(c => c.id !== contractId);
     this.saveContracts(updatedContracts);
 
@@ -2291,6 +2307,10 @@ class StorageService {
 
     const validDeleteIds = new Set(titlesToDelete.map(t => t.id));
 
+    // 0. Proteção: Snapshot de emergência e arquivamento no cofre de segurança antes da exclusão
+    this.createSafetySnapshot(`Exclusão de ${deletedCount} título(s)`);
+    this.saveToDeletedVault(titlesToDelete, 'Exclusão em lote de títulos', 'TITLE');
+
     // 1. Remove titles from titles list and record IDs to prevent future resurrection
     const remainingTitles = titles.filter(t => !validDeleteIds.has(t.id));
     this.saveTitles(remainingTitles);
@@ -2365,6 +2385,58 @@ class StorageService {
   public deleteTitle(id: string): boolean {
     const res = this.batchDeleteTitles([id]);
     return res.deletedCount > 0;
+  }
+
+  // Cofre de Segurança (Soft Delete Vault - Arquiva registros excluídos para garantir recuperação)
+  public saveToDeletedVault(records: any[], reason?: string, recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'OTHER' = 'OTHER'): void {
+    if (!Array.isArray(records) || records.length === 0) return;
+    try {
+      const currentUser = this.getCurrentUser();
+      const existing = this.get<DeletedRecordVaultEntry[]>(STORAGE_KEYS.DELETED_VAULT, []);
+      const newEntries: DeletedRecordVaultEntry[] = records.map(r => ({
+        id: `vault-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        recordType,
+        recordId: r?.id || 'unknown',
+        deletedAt: new Date().toISOString(),
+        deletedBy: currentUser?.name || 'Sistema',
+        reason: reason || 'Exclusão solicitada pelo usuário',
+        data: r
+      }));
+
+      // Mantém os últimos 500 registros arquivados no cofre para auditoria e recuperação
+      const updated = [...newEntries, ...existing].slice(0, 500);
+      this.set(STORAGE_KEYS.DELETED_VAULT, updated, { skipRemoteSync: true });
+    } catch (err) {
+      console.warn('Erro ao arquivar no cofre de segurança:', err);
+    }
+  }
+
+  public getDeletedVault(): DeletedRecordVaultEntry[] {
+    return this.get<DeletedRecordVaultEntry[]>(STORAGE_KEYS.DELETED_VAULT, []);
+  }
+
+  public clearDeletedVault(): void {
+    this.set(STORAGE_KEYS.DELETED_VAULT, [], { skipRemoteSync: true });
+  }
+
+  // Snapshot de emergência da base de dados antes de operações potencialmente destrutivas
+  public createSafetySnapshot(label: string): { timestamp: string; label: string } {
+    try {
+      const fullJson = this.exportFullBackup();
+      const snapshot = {
+        label,
+        timestamp: new Date().toISOString(),
+        data: fullJson
+      };
+      this.set(STORAGE_KEYS.SAFETY_SNAPSHOT, snapshot, { skipRemoteSync: true });
+      return { timestamp: snapshot.timestamp, label };
+    } catch {
+      return { timestamp: new Date().toISOString(), label };
+    }
+  }
+
+  public getSafetySnapshot(): { label: string; timestamp: string; data: string } | null {
+    return this.get<{ label: string; timestamp: string; data: string } | null>(STORAGE_KEYS.SAFETY_SNAPSHOT, null);
   }
 
   // Duplicate titles (single or multiple)
@@ -2971,6 +3043,9 @@ class StorageService {
       const payload = (parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object')
         ? parsed.data
         : parsed;
+
+      // 0. Proteção: Snapshot automático pré-restauração para permitir reversão se necessário
+      this.createSafetySnapshot('Snapshot anterior à restauração de arquivo JSON');
 
       let keysRestored = 0;
       for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {

@@ -16,7 +16,17 @@ export interface AutoBackupConfig {
   lastSentRecipients?: string[];
 }
 
+export interface WeeklyLocalSnapshot {
+  id: string;
+  filename: string;
+  date: string;
+  sizeKb: number;
+  stats: BackupEmailStats;
+  jsonContent: string;
+}
+
 const STORAGE_KEY_CONFIG = 'contaju_auto_backup_config';
+const STORAGE_KEY_WEEKLY_SNAPSHOTS = 'contaju_weekly_local_snapshots';
 
 export const DEFAULT_AUTO_BACKUP_CONFIG: AutoBackupConfig = {
   enabled: true,
@@ -29,6 +39,7 @@ export const DEFAULT_AUTO_BACKUP_CONFIG: AutoBackupConfig = {
 class AutomaticBackupService {
   private isExecuting = false;
   private intervalTimer: any = null;
+  private inMemorySnapshots: WeeklyLocalSnapshot[] = [];
 
   public getConfig(): AutoBackupConfig {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
@@ -66,6 +77,93 @@ class AutomaticBackupService {
     }
 
     return updated;
+  }
+
+  // Salva uma cópia física local no cofre de snapshots semanais
+  public saveWeeklyLocalSnapshot(
+    filename: string,
+    jsonContent: string,
+    stats: BackupEmailStats,
+    sizeKb: number
+  ): WeeklyLocalSnapshot {
+    const snapshots = this.getWeeklyLocalSnapshots();
+    const newSnapshot: WeeklyLocalSnapshot = {
+      id: `snap-${Date.now()}`,
+      filename,
+      date: new Date().toISOString(),
+      sizeKb,
+      stats,
+      jsonContent
+    };
+
+    // Mantém os 8 snapshots semanais mais recentes (2 meses de histórico retroativo)
+    const updated = [newSnapshot, ...snapshots.filter(s => s.filename !== filename)].slice(0, 8);
+    this.inMemorySnapshots = updated;
+
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_WEEKLY_SNAPSHOTS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Erro ao salvar snapshot semanal no localStorage:', e);
+      }
+    }
+
+    return newSnapshot;
+  }
+
+  // Retorna a lista de snapshots semanais arquivados localmente
+  public getWeeklyLocalSnapshots(): WeeklyLocalSnapshot[] {
+    if (this.inMemorySnapshots.length > 0) {
+      return this.inMemorySnapshots;
+    }
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return this.inMemorySnapshots;
+    }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_WEEKLY_SNAPSHOTS);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        this.inMemorySnapshots = parsed;
+      }
+      return parsed;
+    } catch {
+      return this.inMemorySnapshots;
+    }
+  }
+
+  // Realiza download direto do arquivo .JSON do snapshot semanal no navegador
+  public downloadWeeklySnapshot(id: string): boolean {
+    const snapshots = this.getWeeklyLocalSnapshots();
+    const target = snapshots.find(s => s.id === id);
+    if (!target) return false;
+
+    if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+
+    try {
+      const blob = new Blob([target.jsonContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = target.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Remove um snapshot semanal do histórico local
+  public deleteWeeklySnapshot(id: string): void {
+    const snapshots = this.getWeeklyLocalSnapshots();
+    const updated = snapshots.filter(s => s.id !== id);
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_WEEKLY_SNAPSHOTS, JSON.stringify(updated));
+      } catch {}
+    }
   }
 
   // Executa o envio do backup com snapshot atual da base
@@ -126,6 +224,9 @@ class AutomaticBackupService {
         totalMovements: movements.length,
         totalBankAccounts: bankAccounts.length
       };
+
+      // 2.1 Garantia de integridade física: Arquiva cópia completa no cofre local de snapshots semanais
+      this.saveWeeklyLocalSnapshot(filename, jsonContent, stats, sizeKb);
 
       // 3. Tenta envio prioritário para os destinatários configurados
       let sendResult = await resendService.sendBackupEmail({
