@@ -28,7 +28,8 @@ import {
   RotateCcw,
   Trash2,
   History,
-  Search
+  Search,
+  CreditCard
 } from 'lucide-react';
 import { storage, DeletedRecordVaultEntry } from '../../services/storageService';
 import { automaticBackupService, AutoBackupConfig, WeeklyLocalSnapshot } from '../../services/automaticBackupService';
@@ -752,7 +753,11 @@ export const BackupView: React.FC = () => {
                   >
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${
-                        entry.recordType === 'CONTRACT'
+                        entry.recordType === 'CLIENT'
+                          ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                          : entry.recordType === 'CARD_PURCHASE'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                          : entry.recordType === 'CONTRACT'
                           ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
                           : entry.recordType === 'SALE'
                           ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
@@ -760,13 +765,23 @@ export const BackupView: React.FC = () => {
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                           : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                       }`}>
-                        <FileText className="w-4 h-4" />
+                        {entry.recordType === 'CLIENT' ? (
+                          <Users className="w-4 h-4" />
+                        ) : entry.recordType === 'CARD_PURCHASE' ? (
+                          <CreditCard className="w-4 h-4" />
+                        ) : (
+                          <FileText className="w-4 h-4" />
+                        )}
                       </div>
 
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            entry.recordType === 'CONTRACT'
+                            entry.recordType === 'CLIENT'
+                              ? 'bg-cyan-100 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300'
+                              : entry.recordType === 'CARD_PURCHASE'
+                              ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                              : entry.recordType === 'CONTRACT'
                               ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                               : entry.recordType === 'SALE'
                               ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
@@ -774,7 +789,11 @@ export const BackupView: React.FC = () => {
                               ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                               : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
                           }`}>
-                            {entry.recordType === 'CONTRACT'
+                            {entry.recordType === 'CLIENT'
+                              ? 'Cliente'
+                              : entry.recordType === 'CARD_PURCHASE'
+                              ? 'Cartão de Crédito'
+                              : entry.recordType === 'CONTRACT'
                               ? 'Contrato'
                               : entry.recordType === 'SALE'
                               ? 'Venda'
@@ -784,8 +803,14 @@ export const BackupView: React.FC = () => {
                           </span>
 
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                            {data.description || data.clientName || data.titleNumber || 'Registro sem descrição'}
+                            {data.name || data.tradeName || data.description || data.clientName || data.titleNumber || 'Registro sem descrição'}
                           </span>
+
+                          {data.document && (
+                            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                              CNPJ/CPF: {data.document}
+                            </span>
+                          )}
 
                           {data.titleNumber && (
                             <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">

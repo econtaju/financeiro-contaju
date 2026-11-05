@@ -25,7 +25,8 @@ import {
   FileSpreadsheet,
   Download,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Counterparty, Contract, FinancialTitle } from '../../types';
@@ -57,6 +58,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Counterparty | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<Counterparty | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
 
   const counterparties = storage.getCounterparties();
@@ -804,10 +806,17 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                       </button>
                       <button
                         onClick={() => handleEdit(client)}
-                        className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] rounded-lg transition-colors"
+                        className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)] rounded-lg transition-colors cursor-pointer"
                         title="Editar cadastro"
                       >
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setClientToDelete(client)}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                        title="Excluir cadastro do cliente"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </td>
                   </tr>
@@ -966,25 +975,154 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ initialSearch = '' }) 
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-subtle)]">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs font-bold text-[#071321] bg-amber-400 hover:bg-amber-300 rounded-xl shadow-[0_0_12px_rgba(245,158,11,0.25)] transition-all"
-                >
-                  Salvar Cliente
-                </button>
+              <div className="flex items-center justify-between pt-4 border-t border-[var(--border-subtle)]">
+                {editingClient ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toDelete = editingClient;
+                      setIsFormOpen(false);
+                      setClientToDelete(toDelete);
+                    }}
+                    className="px-3.5 py-2 text-xs font-semibold text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir Cadastro</span>
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(false)}
+                    className="px-4 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 text-xs font-bold text-[#071321] bg-amber-400 hover:bg-amber-300 rounded-xl shadow-[0_0_12px_rgba(245,158,11,0.25)] transition-all cursor-pointer"
+                  >
+                    Salvar Cliente
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmação de Exclusão de Cliente */}
+      {clientToDelete && (() => {
+        const clientContracts = contracts.filter(c => c.customerId === clientToDelete.id);
+        const clientTitles = storage.getTitles().filter(t => t.counterpartyId === clientToDelete.id);
+        const liquidatedCount = clientTitles.filter(t => t.settlementState === 'LIQUIDADO').length;
+        const openTitlesCount = clientTitles.length - liquidatedCount;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+            <div 
+              className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+                <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Excluir Cadastro do Cliente
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {clientToDelete.name}
+                  </p>
+                </div>
+              </div>
+
+              {clientContracts.length === 0 && clientTitles.length === 0 ? (
+                <div className="p-3 bg-slate-50 dark:bg-[#1B212D] rounded-xl border border-slate-200 dark:border-[#273040] text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                  <p>
+                    Este cliente não possui nenhum contrato ou lançamento financeiro vinculado.
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    O cadastro será removido da listagem e arquivado com segurança no Cofre de Registros para recuperação imediata se necessário.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      Registros Vinculados Encontrados:
+                    </div>
+                    <ul className="list-disc list-inside text-[11px] space-y-0.5 pt-1">
+                      <li>{clientContracts.length} contrato(s) cadastrado(s)</li>
+                      <li>{openTitlesCount} título(s) em aberto no Contas a Receber</li>
+                      {liquidatedCount > 0 && (
+                        <li className="font-semibold text-rose-600 dark:text-rose-400">
+                          {liquidatedCount} título(s) já liquidados/pagos no histórico
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+
+                  {liquidatedCount > 0 ? (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      <strong>Aviso Contábil:</strong> Por possuir lançamentos já recebidos no caixa, a opção recomendada é <strong>"Inativar Cliente"</strong> para manter o histórico fiscal. Se for um cadastro preenchido errado, você pode confirmar a exclusão.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Ao excluir, o cliente será removido da base ativa e salvo no Cofre de Segurança.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-[#273040]">
+                <button
+                  type="button"
+                  onClick={() => setClientToDelete(null)}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+
+                {clientContracts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const client = clientToDelete;
+                      setClientToDelete(null);
+                      handleToggleClientStatus(client);
+                    }}
+                    className="px-3.5 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Apenas Inativar
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = storage.deleteCounterparty(clientToDelete.id, { force: true });
+                    if (res.success) {
+                      setToastMessage(res.message);
+                      setTimeout(() => setToastMessage(''), 5000);
+                      setClientToDelete(null);
+                    } else {
+                      alert(res.message);
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirmar Exclusão</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal de Importação de Clientes em Lote */}
       <ImportClientsModal

@@ -15,7 +15,11 @@ import {
   FileSpreadsheet,
   Trash2,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  CheckSquare,
+  Square,
+  X,
+  Layers
 } from 'lucide-react';
 import { 
   CreditCard as CreditCardType, 
@@ -30,6 +34,7 @@ import { CreditCardFormModal } from './CreditCardFormModal';
 import { CreditCardPurchaseModal } from './CreditCardPurchaseModal';
 import { CreditCardInvoicePaymentModal } from './CreditCardInvoicePaymentModal';
 import { CreditCardInvoiceImportModal } from './CreditCardInvoiceImportModal';
+import { CreditCardBatchEditModal } from './CreditCardBatchEditModal';
 
 interface CreditCardsViewProps {
   onNavigateToPayables?: () => void;
@@ -57,7 +62,21 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
   const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
   const [isImportInvoiceModalOpen, setIsImportInvoiceModalOpen] = useState(false);
   const [cardToDelete, setCardToDelete] = useState<CreditCardType | null>(null);
-  const [purchaseToDelete, setPurchaseToDelete] = useState<{ id: string; description: string; amount: number } | null>(null);
+  
+  // Seleção e Ações em Lote
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
+  const [deletionTarget, setDeletionTarget] = useState<{
+    items: Array<{
+      purchaseId: string;
+      installmentNumber: number;
+      description: string;
+      amount: number;
+      totalInstallments: number;
+    }>;
+    hasFuture: boolean;
+    selectedMode: 'CURRENT_ONLY' | 'CURRENT_AND_ALL_FUTURE';
+  } | null>(null);
 
   const handleOpenNewPurchase = (type: 'DESPESA' | 'ESTORNO' = 'DESPESA') => {
     setEditingPurchase(null);
@@ -182,6 +201,104 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
       .filter(p => p.cardId === activeCard.id)
       .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   }, [activeCard]);
+
+  // Limpar seleção ao trocar de cartão ou mês de fatura
+  useEffect(() => {
+    setSelectedKeys(new Set());
+  }, [selectedCardId, selectedInvoiceMonth]);
+
+  const selectedItems = useMemo(() => {
+    return currentInvoiceItems.filter(item => selectedKeys.has(`${item.purchaseId}__${item.installmentNumber}`));
+  }, [currentInvoiceItems, selectedKeys]);
+
+  const selectedTotalAmount = useMemo(() => {
+    return selectedItems.reduce((sum, item) => {
+      return sum + (item.transactionType === 'ESTORNO' || item.transactionType === 'CASHBACK' ? -item.amount : item.amount);
+    }, 0);
+  }, [selectedItems]);
+
+  const hasFutureInSelected = useMemo(() => {
+    return selectedItems.some(item => item.totalInstallments > item.installmentNumber);
+  }, [selectedItems]);
+
+  const isAllSelected = currentInvoiceItems.length > 0 && currentInvoiceItems.every(it => selectedKeys.has(`${it.purchaseId}__${it.installmentNumber}`));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedKeys(new Set());
+    } else {
+      const all = new Set(currentInvoiceItems.map(it => `${it.purchaseId}__${it.installmentNumber}`));
+      setSelectedKeys(all);
+    }
+  };
+
+  const toggleSelectItem = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleTriggerSingleDelete = (item: typeof currentInvoiceItems[0]) => {
+    const hasFuture = item.totalInstallments > item.installmentNumber;
+    setDeletionTarget({
+      items: [{
+        purchaseId: item.purchaseId,
+        installmentNumber: item.installmentNumber,
+        description: item.description,
+        amount: item.amount,
+        totalInstallments: item.totalInstallments
+      }],
+      hasFuture,
+      selectedMode: hasFuture ? 'CURRENT_AND_ALL_FUTURE' : 'CURRENT_ONLY'
+    });
+  };
+
+  const handleTriggerBatchDelete = () => {
+    if (selectedItems.length === 0) return;
+    const hasFuture = selectedItems.some(it => it.totalInstallments > it.installmentNumber);
+    setDeletionTarget({
+      items: selectedItems.map(it => ({
+        purchaseId: it.purchaseId,
+        installmentNumber: it.installmentNumber,
+        description: it.description,
+        amount: it.amount,
+        totalInstallments: it.totalInstallments
+      })),
+      hasFuture,
+      selectedMode: hasFuture ? 'CURRENT_AND_ALL_FUTURE' : 'CURRENT_ONLY'
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deletionTarget) return;
+
+    const mode = deletionTarget.hasFuture ? deletionTarget.selectedMode : 'CURRENT_ONLY';
+
+    storage.deleteCardPurchasesBatch({
+      items: deletionTarget.items.map(it => ({
+        purchaseId: it.purchaseId,
+        installmentNumber: it.installmentNumber
+      })),
+      mode,
+      reason: `Exclusão no Cartão de Crédito (${mode})`
+    });
+
+    const deletedKeys = new Set(deletionTarget.items.map(it => `${it.purchaseId}__${it.installmentNumber}`));
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      deletedKeys.forEach(k => next.delete(k));
+      return next;
+    });
+
+    setDeletionTarget(null);
+    loadData();
+  };
 
   const handleOpenNewCard = () => {
     setEditingCard(null);
@@ -558,6 +675,56 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                 </div>
               </div>
 
+              {/* Barra de Ações em Lote */}
+              {selectedItems.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs flex items-center justify-center">
+                      {selectedItems.length}
+                    </span>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {selectedItems.length === 1 ? 'Lançamento selecionado' : 'Lançamentos selecionados'}
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                      • Total: <strong className="text-amber-600 dark:text-amber-400 font-bold">{formatBRL(selectedTotalAmount)}</strong>
+                    </span>
+                    {hasFutureInSelected && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-semibold">
+                        Possui parcelas futuras vinculadas
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsBatchEditModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-900 bg-amber-500 hover:bg-amber-400 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      Editar em Lote
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTriggerBatchDelete}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Excluir Selecionados
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedKeys(new Set())}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Limpar seleção"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Desmarcar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {currentInvoiceItems.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 dark:bg-[#1B212D]/40 rounded-xl border border-slate-200 dark:border-[#273040] text-slate-500 text-xs">
                   Nenhum lançamento encontrado nesta fatura ({selectedInvoiceMonth}).
@@ -567,6 +734,20 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                   <table className="w-full text-left text-xs min-w-[700px] lg:min-w-full">
                     <thead className="bg-slate-50 dark:bg-[#1B212D] text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-[#273040]">
                       <tr>
+                        <th className="p-3 w-10 text-center">
+                          <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="text-slate-400 hover:text-amber-500 transition-colors cursor-pointer flex items-center justify-center mx-auto"
+                            title={isAllSelected ? 'Desmarcar todos' : 'Selecionar todos os lançamentos desta fatura'}
+                          >
+                            {isAllSelected ? (
+                              <CheckSquare className="w-4 h-4 text-amber-500" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </th>
                         <th className="p-3">Data</th>
                         <th className="p-3">Descrição do Lançamento</th>
                         <th className="hidden md:table-cell p-3">Estabelecimento / Favorecido</th>
@@ -579,83 +760,107 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-[#273040] text-slate-700 dark:text-slate-300">
-                      {currentInvoiceItems.map((item) => (
-                        <tr key={`${item.purchaseId}-${item.installmentNumber}`} className="hover:bg-slate-50 dark:hover:bg-[#1B212D]/60 transition-colors">
-                          <td className="p-3 font-mono text-slate-500 dark:text-slate-400">
-                            {item.purchaseDate}
-                          </td>
-                          <td className="p-3 font-semibold text-slate-900 dark:text-white">
-                            {item.description}
-                          </td>
-                          <td className="hidden md:table-cell p-3 text-slate-700 dark:text-slate-300">
-                            {item.counterpartyName}
-                          </td>
-                          <td className="hidden lg:table-cell p-3 text-slate-500 dark:text-slate-400">
-                            {item.chartAccountName}
-                          </td>
-                          <td className="p-3 text-center">
-                            {item.transactionType === 'ESTORNO' ? (
-                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 font-mono text-[10px] text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 font-bold">
-                                ESTORNO
-                              </span>
-                            ) : item.transactionType === 'CASHBACK' ? (
-                              <span className="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 font-mono text-[10px] text-teal-700 dark:text-teal-400 border border-teal-300 dark:border-teal-800 font-bold">
-                                CASHBACK
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 font-mono text-[11px] text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 font-bold">
-                                {item.installmentNumber}/{item.totalInstallments}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-right font-mono font-bold">
-                            {item.transactionType === 'ESTORNO' || item.transactionType === 'CASHBACK' ? (
-                              <span className="text-emerald-600 dark:text-emerald-400">
-                                - {formatBRL(item.amount)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-900 dark:text-white">
-                                {formatBRL(item.amount)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              item.settled
-                                ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                                : 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                            }`}>
-                              {item.settled ? 'LIQUIDADO' : 'EM ABERTO'}
-                            </span>
-                          </td>
-                          <td className="hidden xl:table-cell p-3">
-                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Contas a Pagar
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
+                      {currentInvoiceItems.map((item) => {
+                        const rowKey = `${item.purchaseId}__${item.installmentNumber}`;
+                        const isSelected = selectedKeys.has(rowKey);
+                        return (
+                          <tr 
+                            key={rowKey} 
+                            className={`transition-colors ${
+                              isSelected 
+                                ? 'bg-amber-500/10 dark:bg-amber-500/15' 
+                                : 'hover:bg-slate-50 dark:hover:bg-[#1B212D]/60'
+                            }`}
+                          >
+                            <td className="p-3 w-10 text-center">
                               <button
                                 type="button"
-                                onClick={() => handleOpenEditPurchase(item.purchaseId)}
-                                className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-colors cursor-pointer"
-                                title="Editar lançamento de cartão"
+                                onClick={() => toggleSelectItem(rowKey)}
+                                className="text-slate-400 hover:text-amber-500 transition-colors cursor-pointer flex items-center justify-center mx-auto"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-500" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setPurchaseToDelete({ id: item.purchaseId, description: item.description, amount: item.amount })}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
-                                title="Excluir lançamento da fatura e parcelas no Contas a Pagar"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="p-3 font-mono text-slate-500 dark:text-slate-400">
+                              {item.purchaseDate}
+                            </td>
+                            <td className="p-3 font-semibold text-slate-900 dark:text-white">
+                              {item.description}
+                            </td>
+                            <td className="hidden md:table-cell p-3 text-slate-700 dark:text-slate-300">
+                              {item.counterpartyName}
+                            </td>
+                            <td className="hidden lg:table-cell p-3 text-slate-500 dark:text-slate-400">
+                              {item.chartAccountName}
+                            </td>
+                            <td className="p-3 text-center">
+                              {item.transactionType === 'ESTORNO' ? (
+                                <span className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 font-mono text-[10px] text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 font-bold">
+                                  ESTORNO
+                                </span>
+                              ) : item.transactionType === 'CASHBACK' ? (
+                                <span className="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 font-mono text-[10px] text-teal-700 dark:text-teal-400 border border-teal-300 dark:border-teal-800 font-bold">
+                                  CASHBACK
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 font-mono text-[11px] text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 font-bold">
+                                  {item.installmentNumber}/{item.totalInstallments}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold">
+                              {item.transactionType === 'ESTORNO' || item.transactionType === 'CASHBACK' ? (
+                                <span className="text-emerald-600 dark:text-emerald-400">
+                                  - {formatBRL(item.amount)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-900 dark:text-white">
+                                  {formatBRL(item.amount)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                item.settled
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                                  : 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
+                              }`}>
+                                {item.settled ? 'LIQUIDADO' : 'EM ABERTO'}
+                              </span>
+                            </td>
+                            <td className="hidden xl:table-cell p-3">
+                              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Contas a Pagar
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditPurchase(item.purchaseId)}
+                                  className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-colors cursor-pointer"
+                                  title="Editar lançamento de cartão"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTriggerSingleDelete(item)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                  title="Excluir lançamento da fatura e parcelas no Contas a Pagar"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -800,40 +1005,139 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
         </div>
       )}
 
-      {/* Modal de Confirmação de Exclusão de Compra */}
-      {purchaseToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+      {/* Modal de Edição em Lote */}
+      <CreditCardBatchEditModal
+        isOpen={isBatchEditModalOpen}
+        onClose={() => setIsBatchEditModalOpen(false)}
+        selectedItems={selectedItems.map(it => ({
+          purchaseId: it.purchaseId,
+          installmentNumber: it.installmentNumber,
+          description: it.description,
+          amount: it.amount,
+          totalInstallments: it.totalInstallments
+        }))}
+        chartAccounts={chartAccounts}
+        counterparties={counterparties}
+        hasFutureInstallments={hasFutureInSelected}
+        onSuccess={() => {
+          setSelectedKeys(new Set());
+          loadData();
+        }}
+      />
+
+      {/* Modal Inteligente de Confirmação de Exclusão (Individual ou em Lote com Pergunta de Futuros) */}
+      {deletionTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn overflow-y-auto">
           <div 
-            className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-3xl w-full max-w-md p-6 shadow-2xl"
+            className="bg-white dark:bg-[#131720] border border-slate-200 dark:border-[#273040] rounded-3xl w-full max-w-lg p-6 shadow-2xl my-8 transition-all"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-500 mb-4">
               <Trash2 className="w-6 h-6" />
             </div>
+
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
-              Excluir Lançamento de Compra?
+              {deletionTarget.items.length === 1 
+                ? 'Excluir Lançamento de Cartão?' 
+                : `Excluir ${deletionTarget.items.length} Lançamentos Selecionados?`}
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
-              Deseja excluir a compra <strong className="text-slate-900 dark:text-white">{purchaseToDelete.description}</strong> no valor de <strong className="text-slate-900 dark:text-white">{formatBRL(purchaseToDelete.amount)}</strong>? As parcelas vinculadas serão removidas do Contas a Pagar.
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+              {deletionTarget.items.length === 1 ? (
+                <>
+                  Você está prestes a excluir <strong className="text-slate-900 dark:text-white">{deletionTarget.items[0].description}</strong> no valor de <strong className="text-slate-900 dark:text-white">{formatBRL(deletionTarget.items[0].amount)}</strong>.
+                </>
+              ) : (
+                <>
+                  Você está prestes a excluir <strong className="text-slate-900 dark:text-white">{deletionTarget.items.length} lançamentos</strong> selecionados nesta fatura, totalizando <strong className="text-slate-900 dark:text-white">{formatBRL(deletionTarget.items.reduce((sum, it) => sum + it.amount, 0))}</strong>.
+                </>
+              )}
             </p>
+
+            {/* Pergunta de Lançamentos Futuros Vinculados */}
+            {deletionTarget.hasFuture ? (
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl mb-6 space-y-3">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400 text-xs font-bold">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+                  <span>Atenção: Existem parcelas futuras vinculadas a este(s) lançamento(s)</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Selecione como deseja prosseguir com a exclusão no sistema:
+                </p>
+
+                <div className="space-y-2.5">
+                  <div 
+                    onClick={() => setDeletionTarget(prev => prev ? { ...prev, selectedMode: 'CURRENT_AND_ALL_FUTURE' } : null)}
+                    className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                      deletionTarget.selectedMode === 'CURRENT_AND_ALL_FUTURE'
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-800 shadow-xs'
+                        : 'bg-white dark:bg-[#1B212D] border-slate-200 dark:border-[#273040] hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteFutureMode"
+                      checked={deletionTarget.selectedMode === 'CURRENT_AND_ALL_FUTURE'}
+                      onChange={() => {}}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                        Excluir este(s) e todos os lançamentos futuros seguintes
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-snug">
+                        Cancela a parcela desta fatura e cancela todas as parcelas das faturas futuras vinculadas no Contas a Pagar.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div 
+                    onClick={() => setDeletionTarget(prev => prev ? { ...prev, selectedMode: 'CURRENT_ONLY' } : null)}
+                    className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                      deletionTarget.selectedMode === 'CURRENT_ONLY'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-800 shadow-xs'
+                        : 'bg-white dark:bg-[#1B212D] border-slate-200 dark:border-[#273040] hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteFutureMode"
+                      checked={deletionTarget.selectedMode === 'CURRENT_ONLY'}
+                      onChange={() => {}}
+                      className="mt-0.5 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                        Excluir apenas o(s) lançamento(s) desta fatura
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-snug">
+                        Mantém as faturas e parcelas dos próximos meses no Contas a Pagar.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040] rounded-xl mb-6 text-[11px] text-slate-500 dark:text-slate-400">
+                Os títulos associados serão removidos do Contas a Pagar e o registro será guardado com segurança no Cofre de Registros para recuperação.
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2.5">
               <button
                 type="button"
-                onClick={() => setPurchaseToDelete(null)}
+                onClick={() => setDeletionTarget(null)}
                 className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-[#1B212D] dark:hover:bg-slate-800 border border-slate-200 dark:border-[#273040] rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  storage.deleteCardPurchase(purchaseToDelete.id);
-                  setPurchaseToDelete(null);
-                  loadData();
-                }}
-                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-md transition-all cursor-pointer"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
               >
-                Sim, Excluir Compra
+                <Trash2 className="w-3.5 h-3.5" />
+                Confirmar Exclusão
               </button>
             </div>
           </div>

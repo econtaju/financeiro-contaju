@@ -69,7 +69,7 @@ import { advanceCompetence, addMonthsSafe } from '../utils/dateUtils';
 
 export interface DeletedRecordVaultEntry {
   id: string;
-  recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'OTHER';
+  recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'CLIENT' | 'CARD_PURCHASE' | 'OTHER';
   recordId: string;
   deletedAt: string;
   deletedBy: string;
@@ -1363,6 +1363,82 @@ class StorageService {
     this.set(STORAGE_KEYS.COUNTERPARTIES, parties);
   }
 
+  public deleteCounterparty(
+    counterpartyId: string,
+    options?: { force?: boolean; reason?: string }
+  ): { 
+    success: boolean; 
+    message: string; 
+    linkedContractsCount: number; 
+    linkedTitlesCount: number;
+    hasLiquidatedTitles: boolean;
+  } {
+    const counterparties = this.getCounterparties();
+    const target = counterparties.find(c => c.id === counterpartyId);
+    if (!target) {
+      return { 
+        success: false, 
+        message: 'Cliente ou fornecedor não encontrado.', 
+        linkedContractsCount: 0, 
+        linkedTitlesCount: 0,
+        hasLiquidatedTitles: false
+      };
+    }
+
+    const contracts = this.getContracts().filter(c => c.customerId === counterpartyId);
+    const titles = this.getTitles().filter(t => t.counterpartyId === counterpartyId);
+    const liquidatedTitles = titles.filter(t => t.settlementState === 'LIQUIDADO');
+
+    // Se houver títulos liquidados e não for forçado pelo usuário
+    if (liquidatedTitles.length > 0 && !options?.force) {
+      return {
+        success: false,
+        message: `Este cadastro possui ${liquidatedTitles.length} lançamento(s) já liquidados no histórico financeiro. Por segurança contábil, recomenda-se inativar o cliente. Caso queira forçar a exclusão por cadastro incorreto, confirme novamente.`,
+        linkedContractsCount: contracts.length,
+        linkedTitlesCount: titles.length,
+        hasLiquidatedTitles: true
+      };
+    }
+
+    const currentUser = this.getCurrentUser();
+
+    // 1. Arquiva cópia de segurança no cofre (Soft Delete Vault)
+    this.saveToDeletedVault(
+      [target], 
+      options?.reason || 'Exclusão solicitada pelo usuário no módulo de Clientes', 
+      'CLIENT'
+    );
+
+    // 2. Remove da lista de clientes/fornecedores
+    const updated = counterparties.filter(c => c.id !== counterpartyId);
+    this.saveCounterparties(updated);
+
+    // 3. Remove diretamente no banco de dados Supabase
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.deleteCounterpartyDirectly(counterpartyId);
+    }).catch(() => {});
+
+    // 4. Log de auditoria
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'EXCLUSAO_CLIENTE',
+      module: 'Comercial & Clientes',
+      recordId: counterpartyId,
+      details: `Exclusão definitiva do cliente/fornecedor ${target.name} (${target.document || 'Sem doc'}). Vinculava ${contracts.length} contrato(s) e ${titles.length} título(s).`
+    });
+
+    this.notify();
+
+    return {
+      success: true,
+      message: `Cadastro de "${target.name}" excluído com sucesso! Uma cópia de recuperação foi preservada no cofre de segurança.`,
+      linkedContractsCount: contracts.length,
+      linkedTitlesCount: titles.length,
+      hasLiquidatedTitles: liquidatedTitles.length > 0
+    };
+  }
+
   // Services
   public getServices(): ServiceItem[] {
     return this.get(STORAGE_KEYS.SERVICES, INITIAL_SERVICES);
@@ -2390,7 +2466,7 @@ class StorageService {
   }
 
   // Cofre de Segurança (Soft Delete Vault - Arquiva registros excluídos para garantir recuperação)
-  public saveToDeletedVault(records: any[], reason?: string, recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'OTHER' = 'OTHER'): void {
+  public saveToDeletedVault(records: any[], reason?: string, recordType: 'TITLE' | 'CONTRACT' | 'SALE' | 'CLIENT' | 'CARD_PURCHASE' | 'OTHER' = 'OTHER'): void {
     if (!Array.isArray(records) || records.length === 0) return;
     try {
       const currentUser = this.getCurrentUser();
@@ -2480,6 +2556,22 @@ class StorageService {
         }
         const updatedSales = [restoredItem, ...sales];
         this.saveSales(updatedSales);
+      } else if (entry.recordType === 'CLIENT') {
+        const counterparties = this.getCounterparties();
+        const existingIdx = counterparties.findIndex(c => c.id === entry.recordId);
+        if (existingIdx !== -1) {
+          return { success: false, message: 'O cliente já se encontra ativo na base de dados.' };
+        }
+        const updatedCounterparties = [restoredItem, ...counterparties];
+        this.saveCounterparties(updatedCounterparties);
+      } else if (entry.recordType === 'CARD_PURCHASE') {
+        const purchases = this.getCardPurchases();
+        const existingIdx = purchases.findIndex(p => p.id === entry.recordId);
+        if (existingIdx !== -1) {
+          return { success: false, message: 'O lançamento de cartão já se encontra ativo na base de dados.' };
+        }
+        // Restaura a compra e sincroniza as parcelas no Contas a Pagar
+        this.updateCardPurchaseAndSyncTitles(restoredItem);
       }
 
       // Marca o registro como restaurado no cofre
@@ -2788,15 +2880,20 @@ class StorageService {
     this.set(STORAGE_KEYS.CARD_PURCHASES, purchases.filter(p => !this.isMockPurchase(p.id) && !this.isMockCard(p.cardId)));
   }
 
-  public deleteCardPurchase(purchaseId: string): { success: boolean; error?: string } {
+  public deleteCardPurchase(purchaseId: string, options?: { reason?: string; skipVault?: boolean }): { success: boolean; error?: string } {
     const purchases = this.getCardPurchases();
     const target = purchases.find(p => p.id === purchaseId);
 
-    // 1. Remove da lista de compras
+    // 1. Arquiva no Cofre de Segurança para auditoria e restauração garantida
+    if (target && !options?.skipVault) {
+      this.saveToDeletedVault([target], options?.reason || `Exclusão do lançamento de cartão: ${target.description}`, 'CARD_PURCHASE');
+    }
+
+    // 2. Remove da lista de compras
     const remainingPurchases = purchases.filter(p => p.id !== purchaseId);
     this.saveCardPurchases(remainingPurchases);
 
-    // 2. Remove títulos vinculados no Contas a Pagar (inclusive se for lançamento órfão)
+    // 3. Remove títulos vinculados no Contas a Pagar (inclusive se for lançamento órfão)
     const titles = this.getTitles();
     const titlesToRemove = titles.filter(t => 
       t.originId === purchaseId || 
@@ -2808,7 +2905,7 @@ class StorageService {
     const remainingTitles = titles.filter(t => !titleIdsToRemove.has(t.id));
     this.saveTitles(remainingTitles);
 
-    // 3. Sincroniza exclusão no Supabase de forma assíncrona
+    // 4. Sincroniza exclusão no Supabase de forma assíncrona
     import('./supabaseSyncService').then(({ supabaseSync }) => {
       supabaseSync.deleteCardPurchaseDirectly(purchaseId);
       if (titleIdsToRemove.size > 0) {
@@ -2816,7 +2913,7 @@ class StorageService {
       }
     }).catch(() => {});
 
-    // 4. Log de auditoria
+    // 5. Log de auditoria
     const currentUser = this.getCurrentUser();
     this.addAuditLog({
       userName: currentUser.name,
@@ -2828,6 +2925,185 @@ class StorageService {
     });
 
     return { success: true };
+  }
+
+  public deleteCardPurchasesBatch(options: {
+    items: Array<{ purchaseId: string; installmentNumber: number }>;
+    mode: 'CURRENT_ONLY' | 'CURRENT_AND_ALL_FUTURE' | 'ENTIRE_PURCHASE';
+    reason?: string;
+  }): { success: boolean; affectedCount: number } {
+    const { items, mode, reason } = options;
+    if (!items || items.length === 0) return { success: true, affectedCount: 0 };
+
+    let affectedCount = 0;
+
+    if (mode === 'ENTIRE_PURCHASE') {
+      const uniquePurchaseIds = Array.from(new Set(items.map(it => it.purchaseId)));
+      for (const purId of uniquePurchaseIds) {
+        const res = this.deleteCardPurchase(purId, { reason });
+        if (res.success) affectedCount++;
+      }
+      return { success: true, affectedCount };
+    }
+
+    // CURRENT_ONLY ou CURRENT_AND_ALL_FUTURE
+    const purchases = this.getCardPurchases();
+    const itemsByPurchase = new Map<string, number[]>();
+    for (const it of items) {
+      const list = itemsByPurchase.get(it.purchaseId) || [];
+      list.push(it.installmentNumber);
+      itemsByPurchase.set(it.purchaseId, list);
+    }
+
+    for (const [purId, instNumbers] of itemsByPurchase.entries()) {
+      const purchase = purchases.find(p => p.id === purId);
+      if (!purchase) continue;
+
+      if (!purchase.installments || purchase.installments.length <= 1) {
+        this.deleteCardPurchase(purId, { reason });
+        affectedCount++;
+        continue;
+      }
+
+      if (mode === 'CURRENT_ONLY') {
+        const numbersToRemove = new Set(instNumbers);
+        const remainingInstallments = purchase.installments.filter(inst => !numbersToRemove.has(inst.installmentNumber));
+        if (remainingInstallments.length === 0) {
+          this.deleteCardPurchase(purId, { reason });
+        } else {
+          this.saveToDeletedVault([purchase], reason || `Remoção de parcelas (${Array.from(numbersToRemove).join(', ')}) da compra ${purchase.description}`, 'CARD_PURCHASE');
+          const newTotal = remainingInstallments.reduce((sum, inst) => sum + inst.amount, 0);
+          const updatedPurchase: CreditCardPurchase = {
+            ...purchase,
+            totalAmount: Math.round(newTotal * 100) / 100,
+            installmentsCount: remainingInstallments.length,
+            installments: remainingInstallments
+          };
+          this.updateCardPurchaseAndSyncTitles(updatedPurchase);
+        }
+        affectedCount++;
+      } else if (mode === 'CURRENT_AND_ALL_FUTURE') {
+        const minInstNumber = Math.min(...instNumbers);
+        if (minInstNumber <= 1) {
+          this.deleteCardPurchase(purId, { reason });
+        } else {
+          const keptInstallments = purchase.installments.filter(inst => inst.installmentNumber < minInstNumber);
+          if (keptInstallments.length === 0) {
+            this.deleteCardPurchase(purId, { reason });
+          } else {
+            this.saveToDeletedVault([purchase], reason || `Remoção da parcela ${minInstNumber} e parcelas futuras seguintes da compra ${purchase.description}`, 'CARD_PURCHASE');
+            const newTotal = keptInstallments.reduce((sum, inst) => sum + inst.amount, 0);
+            const updatedPurchase: CreditCardPurchase = {
+              ...purchase,
+              totalAmount: Math.round(newTotal * 100) / 100,
+              installmentsCount: keptInstallments.length,
+              installments: keptInstallments
+            };
+            this.updateCardPurchaseAndSyncTitles(updatedPurchase);
+          }
+        }
+        affectedCount++;
+      }
+    }
+
+    return { success: true, affectedCount };
+  }
+
+  public updateCardPurchasesBatch(options: {
+    items: Array<{ purchaseId: string; installmentNumber: number }>;
+    applyToFuture: boolean;
+    changes: {
+      chartAccountId?: string;
+      counterpartyId?: string;
+      counterpartyName?: string;
+      description?: string;
+      notes?: string;
+    };
+  }): { success: boolean; affectedCount: number } {
+    const { items, applyToFuture, changes } = options;
+    if (!items || items.length === 0) return { success: true, affectedCount: 0 };
+
+    const purchases = this.getCardPurchases();
+    let affectedCount = 0;
+
+    const itemsByPurchase = new Map<string, number[]>();
+    for (const it of items) {
+      const list = itemsByPurchase.get(it.purchaseId) || [];
+      list.push(it.installmentNumber);
+      itemsByPurchase.set(it.purchaseId, list);
+    }
+
+    for (const [purId, instNumbers] of itemsByPurchase.entries()) {
+      const purchase = purchases.find(p => p.id === purId);
+      if (!purchase) continue;
+
+      if (applyToFuture || (!purchase.installments || purchase.installments.length <= 1)) {
+        // Atualiza a compra inteira e todas as parcelas/faturas futuras vinculadas
+        const updatedPurchase: CreditCardPurchase = {
+          ...purchase,
+          ...(changes.chartAccountId ? { chartAccountId: changes.chartAccountId } : {}),
+          ...(changes.counterpartyId !== undefined ? { counterpartyId: changes.counterpartyId } : {}),
+          ...(changes.counterpartyName ? { counterpartyName: changes.counterpartyName } : {}),
+          ...(changes.description ? { description: changes.description } : {}),
+          ...(changes.notes !== undefined ? { notes: changes.notes } : {})
+        };
+        this.updateCardPurchaseAndSyncTitles(updatedPurchase);
+        affectedCount++;
+      } else {
+        // Altera apenas o lançamento desta fatura desmembrando as parcelas selecionadas
+        const targetNumbers = new Set(instNumbers);
+        const splitInstallments = purchase.installments.filter(inst => targetNumbers.has(inst.installmentNumber));
+        const remainingInstallments = purchase.installments.filter(inst => !targetNumbers.has(inst.installmentNumber));
+
+        if (splitInstallments.length > 0) {
+          for (const spInst of splitInstallments) {
+            const splitPurchase: CreditCardPurchase = {
+              id: `cp-split-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              cardId: purchase.cardId,
+              transactionType: purchase.transactionType,
+              purchaseDate: purchase.purchaseDate,
+              description: changes.description || purchase.description,
+              counterpartyId: changes.counterpartyId !== undefined ? changes.counterpartyId : purchase.counterpartyId,
+              counterpartyName: changes.counterpartyName || purchase.counterpartyName,
+              chartAccountId: changes.chartAccountId || purchase.chartAccountId,
+              totalAmount: spInst.amount,
+              installmentsCount: 1,
+              calculationMode: 'PER_INSTALLMENT',
+              installmentValue: spInst.amount,
+              invoiceMonth: spInst.invoiceMonth,
+              installments: [{
+                installmentNumber: 1,
+                totalInstallments: 1,
+                amount: spInst.amount,
+                competence: spInst.competence,
+                dueDate: spInst.dueDate,
+                invoiceMonth: spInst.invoiceMonth,
+                settled: spInst.settled
+              }],
+              notes: changes.notes !== undefined ? changes.notes : purchase.notes,
+              createdAt: new Date().toISOString()
+            };
+            this.addCardPurchaseAndSyncTitles(splitPurchase);
+          }
+
+          if (remainingInstallments.length === 0) {
+            this.deleteCardPurchase(purId, { skipVault: true });
+          } else {
+            const newTotal = remainingInstallments.reduce((sum, inst) => sum + inst.amount, 0);
+            const updatedOriginal: CreditCardPurchase = {
+              ...purchase,
+              totalAmount: Math.round(newTotal * 100) / 100,
+              installmentsCount: remainingInstallments.length,
+              installments: remainingInstallments
+            };
+            this.updateCardPurchaseAndSyncTitles(updatedOriginal);
+          }
+          affectedCount++;
+        }
+      }
+    }
+
+    return { success: true, affectedCount };
   }
 
   public updateCardPurchaseAndSyncTitles(updatedPurchase: CreditCardPurchase): { success: boolean; error?: string } {
