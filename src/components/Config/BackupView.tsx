@@ -24,9 +24,13 @@ import {
   Lock,
   Archive,
   FolderDown,
-  Shield
+  Shield,
+  RotateCcw,
+  Trash2,
+  History,
+  Search
 } from 'lucide-react';
-import { storage } from '../../services/storageService';
+import { storage, DeletedRecordVaultEntry } from '../../services/storageService';
 import { automaticBackupService, AutoBackupConfig, WeeklyLocalSnapshot } from '../../services/automaticBackupService';
 
 export const BackupView: React.FC = () => {
@@ -47,6 +51,13 @@ export const BackupView: React.FC = () => {
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [weeklySnapshots, setWeeklySnapshots] = useState<WeeklyLocalSnapshot[]>(() => automaticBackupService.getWeeklyLocalSnapshots());
 
+  const [vaultEntries, setVaultEntries] = useState<DeletedRecordVaultEntry[]>(() => storage.getDeletedVault());
+  const [safetySnapshot, setSafetySnapshot] = useState<{ label: string; timestamp: string; data: string } | null>(() => storage.getSafetySnapshot());
+  const [vaultFilter, setVaultFilter] = useState<'ALL' | 'PENDING' | 'RESTORED'>('ALL');
+  const [vaultSearch, setVaultSearch] = useState('');
+  const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
+  const [restoringEntryId, setRestoringEntryId] = useState<string | null>(null);
+
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restorePreview, setRestorePreview] = useState<{
@@ -66,8 +77,77 @@ export const BackupView: React.FC = () => {
       const latestConfig = automaticBackupService.getConfig();
       setAutoConfig(latestConfig);
       setWeeklySnapshots(automaticBackupService.getWeeklyLocalSnapshots());
+      setVaultEntries(storage.getDeletedVault());
+      setSafetySnapshot(storage.getSafetySnapshot());
     });
   }, []);
+
+  const handleRestoreVaultEntry = (entry: DeletedRecordVaultEntry) => {
+    setRestoringEntryId(entry.id);
+    try {
+      const res = storage.restoreFromDeletedVault(entry.id);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          text: res.message
+        });
+        setVaultEntries(storage.getDeletedVault());
+      } else {
+        setNotification({
+          type: 'error',
+          text: res.message
+        });
+      }
+    } finally {
+      setRestoringEntryId(null);
+    }
+  };
+
+  const handleDeleteVaultEntry = (entryId: string) => {
+    if (window.confirm('Tem certeza que deseja remover este item permanentemente do cofre de segurança?')) {
+      storage.deleteVaultEntry(entryId);
+      setVaultEntries(storage.getDeletedVault());
+      setNotification({
+        type: 'info',
+        text: 'Registro removido permanentemente do cofre.'
+      });
+    }
+  };
+
+  const handleClearVault = () => {
+    if (window.confirm('Atenção: Deseja realmente esvaziar todo o cofre de segurança? Registros arquivados não poderão mais ser recuperados por esta tela.')) {
+      storage.clearDeletedVault();
+      setVaultEntries([]);
+      setNotification({
+        type: 'info',
+        text: 'Cofre de segurança esvaziado com sucesso.'
+      });
+    }
+  };
+
+  const handleRestoreSafetySnapshot = () => {
+    if (!safetySnapshot) return;
+    if (window.confirm(`Tem certeza que deseja reverter o sistema para o ponto de emergência "${safetySnapshot.label}" criado em ${new Date(safetySnapshot.timestamp).toLocaleString('pt-BR')}? Os dados serão restaurados para o momento anterior à operação.`)) {
+      setIsRestoringSnapshot(true);
+      try {
+        const res = storage.restoreSafetySnapshot();
+        if (res.success) {
+          setNotification({
+            type: 'success',
+            text: `Base de dados restaurada com sucesso para o ponto de emergência! ${res.keysRestored || 0} áreas foram recuperadas.`
+          });
+          setSafetySnapshot(storage.getSafetySnapshot());
+        } else {
+          setNotification({
+            type: 'error',
+            text: res.message
+          });
+        }
+      } finally {
+        setIsRestoringSnapshot(false);
+      }
+    }
+  };
 
   const handleToggleAutoBackup = () => {
     const nextState = !autoConfig.enabled;
@@ -518,6 +598,270 @@ export const BackupView: React.FC = () => {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Seção: Lixeira Contábil & Cofre de Registros Excluídos */}
+      <div className="bg-white dark:bg-[#131720] p-6 rounded-2xl border border-indigo-500/30 dark:border-indigo-500/20 shadow-md space-y-6 relative overflow-hidden">
+        {/* Glow de fundo sutil */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-indigo-500/10 via-transparent to-transparent rounded-bl-full pointer-events-none" />
+
+        {/* Header da Lixeira / Cofre */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 dark:border-[#273040] pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 text-indigo-500 border border-indigo-500/30 shadow-xs">
+              <Archive className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  Lixeira Contábil & Cofre de Registros Excluídos
+                </h2>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
+                  {vaultEntries.length} {vaultEntries.length === 1 ? 'registro' : 'registros'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Todos os lançamentos e contratos excluídos são protegidos aqui. Restaure qualquer item com 1 clique.
+              </p>
+            </div>
+          </div>
+
+          {vaultEntries.length > 0 && (
+            <button
+              onClick={handleClearVault}
+              className="text-xs font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 flex items-center gap-1.5 transition-colors cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
+              title="Esvaziar permanentemente o cofre"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Esvaziar Cofre</span>
+            </button>
+          )}
+        </div>
+
+        {/* Card do Snapshot de Emergência Rápido (Se existir) */}
+        {safetySnapshot && (
+          <div className="p-4 bg-gradient-to-r from-indigo-50/80 via-slate-50 to-indigo-50/50 dark:from-indigo-950/20 dark:via-[#1B212D] dark:to-indigo-950/10 rounded-xl border border-indigo-200/80 dark:border-indigo-900/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                <History className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                    Ponto de Restauração de Emergência
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                    Disponível
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  <strong className="text-slate-800 dark:text-slate-200">{safetySnapshot.label}</strong> • Criado em {new Date(safetySnapshot.timestamp).toLocaleString('pt-BR')}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Permite reverter a base integralmente para o estado exato antes da última operação em lote.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleRestoreSafetySnapshot}
+              disabled={isRestoringSnapshot}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {isRestoringSnapshot ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              <span>Reverter Base para este Ponto</span>
+            </button>
+          </div>
+        )}
+
+        {/* Barra de Filtros e Busca do Cofre */}
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={vaultSearch}
+              onChange={(e) => setVaultSearch(e.target.value)}
+              placeholder="Buscar por descrição, número, usuário ou motivo..."
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#1B212D] border border-slate-200 dark:border-[#273040] rounded-xl text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-hidden focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 self-end sm:self-auto bg-slate-100 dark:bg-[#1B212D] p-1 rounded-xl border border-slate-200 dark:border-[#273040]">
+            <button
+              onClick={() => setVaultFilter('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                vaultFilter === 'ALL'
+                  ? 'bg-white dark:bg-[#131720] text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Todos ({vaultEntries.length})
+            </button>
+            <button
+              onClick={() => setVaultFilter('PENDING')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                vaultFilter === 'PENDING'
+                  ? 'bg-white dark:bg-[#131720] text-amber-600 dark:text-amber-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              No Cofre ({vaultEntries.filter(e => !e.restoredAt).length})
+            </button>
+            <button
+              onClick={() => setVaultFilter('RESTORED')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                vaultFilter === 'RESTORED'
+                  ? 'bg-white dark:bg-[#131720] text-emerald-600 dark:text-emerald-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Restaurados ({vaultEntries.filter(e => Boolean(e.restoredAt)).length})
+            </button>
+          </div>
+        </div>
+
+        {/* Listagem de Registros Excluídos */}
+        {(() => {
+          const filtered = vaultEntries.filter(entry => {
+            if (vaultFilter === 'PENDING' && entry.restoredAt) return false;
+            if (vaultFilter === 'RESTORED' && !entry.restoredAt) return false;
+            if (!vaultSearch.trim()) return true;
+            const query = vaultSearch.toLowerCase();
+            const desc = (entry.data?.description || entry.data?.titleNumber || entry.data?.contractNumber || entry.reason || '').toLowerCase();
+            const who = (entry.deletedBy || '').toLowerCase();
+            return desc.includes(query) || who.includes(query) || (entry.recordId || '').toLowerCase().includes(query);
+          });
+
+          return filtered.length > 0 ? (
+            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+              {filtered.map((entry) => {
+                const isRestored = Boolean(entry.restoredAt);
+                const data = entry.data || {};
+                const titleType = data.type; // 'PAGAR' ou 'RECEBER'
+                const amount = Number(data.originalAmount || data.amount || data.totalAmount || 0);
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`p-3.5 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                      isRestored
+                        ? 'bg-slate-50/70 dark:bg-[#1B212D]/40 border-slate-200/80 dark:border-[#273040] opacity-80'
+                        : 'bg-white dark:bg-[#1B212D] border-slate-200 dark:border-[#273040] hover:border-indigo-300 dark:hover:border-indigo-800'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${
+                        entry.recordType === 'CONTRACT'
+                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                          : entry.recordType === 'SALE'
+                          ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                          : titleType === 'RECEBER'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                      }`}>
+                        <FileText className="w-4 h-4" />
+                      </div>
+
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            entry.recordType === 'CONTRACT'
+                              ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                              : entry.recordType === 'SALE'
+                              ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                              : titleType === 'RECEBER'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                          }`}>
+                            {entry.recordType === 'CONTRACT'
+                              ? 'Contrato'
+                              : entry.recordType === 'SALE'
+                              ? 'Venda'
+                              : titleType === 'RECEBER'
+                              ? 'A Receber'
+                              : 'A Pagar'}
+                          </span>
+
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                            {data.description || data.clientName || data.titleNumber || 'Registro sem descrição'}
+                          </span>
+
+                          {data.titleNumber && (
+                            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                              #{data.titleNumber}
+                            </span>
+                          )}
+
+                          {amount > 0 && (
+                            <span className="text-xs font-mono font-bold text-slate-900 dark:text-white ml-auto md:ml-0">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <span>Excluído em: <strong>{new Date(entry.deletedAt).toLocaleString('pt-BR')}</strong></span>
+                          <span>Por: <strong>{entry.deletedBy}</strong></span>
+                          {entry.reason && <span className="italic">Motivo: "{entry.reason}"</span>}
+                        </div>
+
+                        {isRestored && (
+                          <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Restaurado em {new Date(entry.restoredAt!).toLocaleString('pt-BR')} por {entry.restoredBy || 'Sistema'}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end md:self-center shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-[#273040] w-full md:w-auto justify-end">
+                      {!isRestored ? (
+                        <button
+                          onClick={() => handleRestoreVaultEntry(entry)}
+                          disabled={restoringEntryId === entry.id}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                          title="Restaurar este registro de volta para a base ativa"
+                        >
+                          {restoringEntryId === entry.id ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          )}
+                          <span>Restaurar Registro</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-md border border-emerald-200 dark:border-emerald-800">
+                          Ativo na Base
+                        </span>
+                      )}
+
+                      <button
+                        onClick={() => handleDeleteVaultEntry(entry.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                        title="Excluir permanentemente do cofre"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 bg-slate-50 dark:bg-[#1B212D]/40 rounded-xl border border-dashed border-slate-200 dark:border-[#273040] space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <Archive className="w-8 h-8 mx-auto text-slate-400 opacity-50" />
+              <p className="font-semibold text-slate-700 dark:text-slate-300">
+                {vaultSearch.trim() || vaultFilter !== 'ALL'
+                  ? 'Nenhum registro encontrado para os filtros selecionados.'
+                  : 'O cofre de segurança está vazio.'}
+              </p>
+              <p className="text-[11px]">
+                Quando qualquer título ou contrato for excluído pelo sistema, ele será arquivado aqui para recuperação imediata.
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Seção Nova: Rotina Automática de Exportação Semanal por E-mail (.JSON) */}

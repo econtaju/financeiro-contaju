@@ -75,6 +75,8 @@ export interface DeletedRecordVaultEntry {
   deletedBy: string;
   reason?: string;
   data: any;
+  restoredAt?: string;
+  restoredBy?: string;
 }
 
 const STORAGE_KEYS = {
@@ -2419,6 +2421,96 @@ class StorageService {
     this.set(STORAGE_KEYS.DELETED_VAULT, [], { skipRemoteSync: true });
   }
 
+  public deleteVaultEntry(vaultEntryId: string): void {
+    const vault = this.getDeletedVault();
+    const updated = vault.filter(e => e.id !== vaultEntryId);
+    this.set(STORAGE_KEYS.DELETED_VAULT, updated, { skipRemoteSync: true });
+    this.notify();
+  }
+
+  public restoreFromDeletedVault(vaultEntryId: string): { success: boolean; message: string; restoredRecord?: any } {
+    try {
+      const vault = this.getDeletedVault();
+      const entryIndex = vault.findIndex(e => e.id === vaultEntryId);
+      if (entryIndex === -1) {
+        return { success: false, message: 'Registro não encontrado no cofre de segurança.' };
+      }
+
+      const entry = vault[entryIndex];
+      if (entry.restoredAt) {
+        return { success: false, message: `Este registro já foi restaurado anteriormente em ${new Date(entry.restoredAt).toLocaleString('pt-BR')}.` };
+      }
+
+      const currentUser = this.getCurrentUser();
+      const restoredItem = entry.data;
+
+      if (entry.recordType === 'TITLE') {
+        const titles = this.getTitles();
+        // Remove dos IDs marcados como deletados no Supabase
+        const deletedIds = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
+        if (deletedIds.includes(entry.recordId)) {
+          this.set(STORAGE_KEYS.DELETED_TITLE_IDS, deletedIds.filter(id => id !== entry.recordId));
+        }
+
+        const existingIdx = titles.findIndex(t => t.id === entry.recordId);
+        if (existingIdx !== -1) {
+          return { success: false, message: 'O título já se encontra ativo na base de dados.' };
+        }
+
+        // Restaura na base de títulos
+        const updatedTitles = [restoredItem, ...titles];
+        this.saveTitles(updatedTitles);
+      } else if (entry.recordType === 'CONTRACT') {
+        const contracts = this.getContracts();
+        const existingIdx = contracts.findIndex(c => c.id === entry.recordId);
+        if (existingIdx !== -1) {
+          return { success: false, message: 'O contrato já se encontra ativo na base de dados.' };
+        }
+        const updatedContracts = [restoredItem, ...contracts];
+        this.saveContracts(updatedContracts);
+      } else if (entry.recordType === 'SALE') {
+        const sales = this.getSales();
+        const deletedSaleIds = this.get<string[]>(STORAGE_KEYS.DELETED_SALE_IDS, []);
+        if (deletedSaleIds.includes(entry.recordId)) {
+          this.set(STORAGE_KEYS.DELETED_SALE_IDS, deletedSaleIds.filter(id => id !== entry.recordId));
+        }
+        const existingIdx = sales.findIndex(s => s.id === entry.recordId);
+        if (existingIdx !== -1) {
+          return { success: false, message: 'A venda já se encontra ativa na base de dados.' };
+        }
+        const updatedSales = [restoredItem, ...sales];
+        this.saveSales(updatedSales);
+      }
+
+      // Marca o registro como restaurado no cofre
+      vault[entryIndex] = {
+        ...entry,
+        restoredAt: new Date().toISOString(),
+        restoredBy: currentUser?.name || 'Sistema'
+      };
+      this.set(STORAGE_KEYS.DELETED_VAULT, vault, { skipRemoteSync: true });
+
+      // Adiciona na trilha de auditoria
+      this.addAuditLog({
+        userName: currentUser?.name || 'Sistema',
+        userRole: currentUser?.role || 'ADMIN',
+        action: 'RESTAURACAO_COFRE',
+        module: 'Segurança e Backup',
+        recordId: entry.recordId,
+        details: `Item ${entry.recordType} (${entry.recordId}) restaurado do cofre de segurança.`
+      });
+
+      this.notify();
+      return {
+        success: true,
+        message: `Registro (${entry.recordType === 'TITLE' ? 'Título' : entry.recordType === 'CONTRACT' ? 'Contrato' : 'Item'}) restaurado com sucesso para a base ativa!`,
+        restoredRecord: restoredItem
+      };
+    } catch (err: any) {
+      return { success: false, message: `Erro ao restaurar registro: ${err?.message || 'Falha desconhecida'}` };
+    }
+  }
+
   // Snapshot de emergência da base de dados antes de operações potencialmente destrutivas
   public createSafetySnapshot(label: string): { timestamp: string; label: string } {
     try {
@@ -2437,6 +2529,23 @@ class StorageService {
 
   public getSafetySnapshot(): { label: string; timestamp: string; data: string } | null {
     return this.get<{ label: string; timestamp: string; data: string } | null>(STORAGE_KEYS.SAFETY_SNAPSHOT, null);
+  }
+
+  public restoreSafetySnapshot(): { success: boolean; message: string; keysRestored?: number } {
+    try {
+      const snapshot = this.getSafetySnapshot();
+      if (!snapshot || !snapshot.data) {
+        return { success: false, message: 'Nenhum snapshot de emergência encontrado no dispositivo.' };
+      }
+
+      // Cria um snapshot preventivo antes de reverter
+      this.createSafetySnapshot('Snapshot anterior à restauração do snapshot de emergência');
+
+      const result = this.importFullBackup(snapshot.data);
+      return result;
+    } catch (err: any) {
+      return { success: false, message: `Erro ao restaurar snapshot: ${err?.message || 'Falha desconhecida'}` };
+    }
   }
 
   // Duplicate titles (single or multiple)
