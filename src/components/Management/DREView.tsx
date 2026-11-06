@@ -563,7 +563,9 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
     } else {
       // Modo Expandido: exibe todas as categorias e subcategorias (com suporte a recolhimento pontual por chevron)
       lines = lines.filter(l => {
-        if (l.level === 0 || l.isSummary) return true;
+        // Linhas de resumo/saldo restante em cascata SEMPRE permanecem visíveis
+        if (l.isSummary) return true;
+        if (l.level === 0) return true;
 
         // Oculta se o grupo principal está recolhido
         if (l.groupId && collapsedSections.has(l.groupId)) return false;
@@ -577,7 +579,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
 
     if (hideZeroRows) {
       lines = lines.filter(l => {
-        // Preserva cabeçalhos de grupos e sumários essenciais
+        // Preserva cabeçalhos de grupos e sumários essenciais de saldos restantes
         if (l.level === 0 || l.isSummary) return true;
         // Filtra linhas analíticas sem movimentação no período ativo
         return activeMonthIndices.some(idx => Math.abs(l.valuesByMonth[idx] || 0) > 0.001);
@@ -1828,7 +1830,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
             </thead>
 
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {visibleLines.map(line => {
+              {visibleLines.filter(l => l.id !== 's-final').map(line => {
                 const isSummary = line.isSummary;
                 const isRevenue = line.type === 'RECEITA' || line.code?.startsWith('1') || line.id === 'h-1';
                 const isDeduction = line.type === 'DEDUCAO' || line.code?.startsWith('2') || line.id === 'h-2';
@@ -1846,10 +1848,10 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                 let valueColor = 'text-slate-900 dark:text-slate-100 font-semibold';
 
                 if (isSummary) {
-                  // Linhas de Resumo Executivo / Resultados Parciais
-                  rowBg = 'bg-amber-500/15 dark:bg-amber-500/20 font-black text-amber-950 dark:text-amber-300 border-y-2 border-amber-500/50';
-                  stickyBg = 'bg-amber-100 dark:bg-[#1c1a14] text-amber-950 dark:text-amber-300';
-                  valueColor = 'text-amber-950 dark:text-amber-300 font-black';
+                  // Linhas de Resumo Executivo / Resultados Parciais e Saldos Restantes em Cascata
+                  rowBg = 'bg-amber-500/20 dark:bg-amber-500/25 font-black text-amber-950 dark:text-amber-200 border-y-2 border-amber-500/60 shadow-xs';
+                  stickyBg = 'bg-amber-100/90 dark:bg-[#1f1b13] text-amber-950 dark:text-amber-200';
+                  valueColor = 'text-amber-950 dark:text-amber-200 font-black';
                 } else if (line.level === 0) {
                   // Cabeçalho de Grupo Principal
                   if (isRevenue || isDeduction) {
@@ -1905,12 +1907,34 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           </span>
                         )}
 
-                        <span 
-                          className={`truncate text-xs ${isSummary || line.level === 0 ? 'font-extrabold text-slate-950 dark:text-white' : 'font-semibold text-slate-900 dark:text-slate-100'}`} 
-                          title={line.name}
-                        >
-                          {line.name}
-                        </span>
+                        <div className="flex flex-col min-w-0">
+                          <span 
+                            className={`truncate text-xs ${isSummary || line.level === 0 ? 'font-extrabold text-slate-950 dark:text-white' : 'font-semibold text-slate-900 dark:text-slate-100'}`} 
+                            title={line.name}
+                          >
+                            {line.name}
+                          </span>
+                          {line.id === 's-net-rev' && (
+                            <span className="text-[9px] text-amber-800/80 dark:text-amber-400/80 font-normal truncate">
+                              Saldo Restante: Faturamento Bruto - Deduções
+                            </span>
+                          )}
+                          {line.id === 's-gross-profit' && (
+                            <span className="text-[9px] text-amber-800/80 dark:text-amber-400/80 font-normal truncate">
+                              Saldo Restante: Faturamento Líquido - Custos
+                            </span>
+                          )}
+                          {line.id === 's-op-result' && (
+                            <span className="text-[9px] text-amber-800/80 dark:text-amber-400/80 font-normal truncate">
+                              Saldo Restante: Lucro Bruto - Despesas
+                            </span>
+                          )}
+                          {line.id === 's-lair' && (
+                            <span className="text-[9px] text-amber-800/80 dark:text-amber-400/80 font-normal truncate">
+                              Saldo Restante: Operacional +/- Financeiro
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
 
@@ -1928,7 +1952,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           key={mIdx} 
                           onClick={() => !isSummary && handleOpenDrillDown(line, mIdx, regime === 'COMPARATIVO' ? 'COMPETENCIA' : regime)}
                           title={`${line.name} • ${dreData.months[mIdx]}/${effectiveYear}: ${formatBRL(val)}${monthPct !== null ? ` (${monthPct.toFixed(1)}% da Rec. Bruta)` : ''} (Clique para auditar)`}
-                          className={`py-2 px-1 sm:px-1.5 text-right font-mono border-r border-slate-200 dark:border-slate-800 transition-colors tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                          className={`py-1.5 px-1 sm:px-1.5 text-right font-mono border-r border-slate-200 dark:border-slate-800 transition-colors tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-[10.5px] sm:text-[11px] leading-tight ${
                             !isSummary ? 'cursor-pointer hover:bg-amber-500/20 hover:text-amber-900 dark:hover:text-amber-200' : ''
                           } ${
                             isEven ? 'bg-slate-50/70 dark:bg-slate-900/40' : ''
@@ -1990,7 +2014,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           <td 
                             onClick={() => !isSummary && handleOpenDrillDown(line, -1, 'COMPETENCIA')}
                             title={`Competência • ${line.name}: ${formatBRL(compVal)}`}
-                            className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/10 dark:bg-amber-500/15 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                            className={`py-1.5 px-1 sm:px-1.5 text-right font-bold font-mono bg-amber-500/10 dark:bg-amber-500/15 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-[10.5px] sm:text-[11px] leading-tight ${
                               !isSummary ? 'cursor-pointer hover:bg-amber-500/25' : ''
                             } ${valueColor}`}
                           >
@@ -2000,7 +2024,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           <td 
                             onClick={() => !isSummary && handleOpenDrillDown(line, -1, 'CAIXA')}
                             title={`Caixa Realizado • ${line.name}: ${formatBRL(cashVal)}`}
-                            className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-emerald-500/10 dark:bg-emerald-500/15 border-l border-emerald-500/30 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                            className={`py-1.5 px-1 sm:px-1.5 text-right font-bold font-mono bg-emerald-500/10 dark:bg-emerald-500/15 border-l border-emerald-500/30 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-[10.5px] sm:text-[11px] leading-tight ${
                               !isSummary ? 'cursor-pointer hover:bg-emerald-500/25' : ''
                             } ${cashVal > 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-400'}`}
                           >
@@ -2009,7 +2033,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           {/* Gap (R$) */}
                           <td 
                             title={`Gap Financeiro (Competência - Caixa) • ${line.name}: ${formatBRL(gapVal)}`}
-                            className={`py-2 px-1.5 text-right font-mono text-xs border-l border-slate-200 dark:border-slate-800 tabular-nums whitespace-nowrap overflow-hidden ${
+                            className={`py-1.5 px-1 text-right font-mono text-[10px] sm:text-[10.5px] border-l border-slate-200 dark:border-slate-800 tabular-nums whitespace-nowrap overflow-hidden leading-tight ${
                               gapVal === 0 ? 'text-slate-400' : gapVal > 0 ? 'text-amber-700 dark:text-amber-300 font-semibold' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
                             }`}
                           >
@@ -2018,7 +2042,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                           {/* % Realizado */}
                           <td 
                             title={`Taxa de Realização Financeira em Caixa: ${realRate}%`}
-                            className={`py-2 px-1 text-right font-mono text-[11px] font-bold border-l border-amber-500/30 tabular-nums whitespace-nowrap overflow-hidden ${
+                            className={`py-1.5 px-1 text-right font-mono text-[10px] sm:text-[10.5px] font-bold border-l border-amber-500/30 tabular-nums whitespace-nowrap overflow-hidden leading-tight ${
                               compVal === 0 ? 'text-slate-400' :
                               realRate >= 80 ? 'text-emerald-700 dark:text-emerald-400' :
                               realRate < 50 ? 'text-rose-700 dark:text-rose-400' :
@@ -2033,7 +2057,7 @@ export const DREView: React.FC<DREViewProps> = ({ isFocusMode, onToggleFocusMode
                       <td 
                         onClick={() => !isSummary && handleOpenDrillDown(line, -1, regime)}
                         title={`Total Exercício • ${line.name}: ${formatBRL(periodTotal)}`}
-                        className={`py-2 px-1.5 sm:px-2 text-right font-bold font-mono bg-amber-500/15 dark:bg-amber-500/20 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-xs ${
+                        className={`py-1.5 px-1 sm:px-1.5 text-right font-bold font-mono bg-amber-500/15 dark:bg-amber-500/20 border-l-2 border-amber-500/50 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis text-[10.5px] sm:text-[11px] leading-tight ${
                           !isSummary ? 'cursor-pointer hover:bg-amber-500/25 hover:text-amber-950 dark:hover:text-amber-200' : ''
                         } ${valueColor}`}
                       >

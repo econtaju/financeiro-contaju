@@ -2445,6 +2445,93 @@ class StorageService {
       this.saveMovements(remainingMovements);
     }
 
+    // 2.1 Sincronização bidirecional com Cartão de Crédito:
+    // Se algum título excluído veio de compra/fatura de cartão de crédito,
+    // atualiza ou exclui a compra e suas parcelas correspondentes na fatura do cartão.
+    const isCCTitle = (t: FinancialTitle) =>
+      t.originType === 'CARTAO_CREDITO' ||
+      Boolean(t.isCreditCardPurchase) ||
+      Boolean(t.creditCardId) ||
+      (typeof t.id === 'string' && t.id.startsWith('title-cc-'));
+
+    const ccTitles = titlesToDelete.filter(isCCTitle);
+    if (ccTitles.length > 0) {
+      const allPurchases = this.getCardPurchases();
+      const purchasesMap = new Map(allPurchases.map(p => [p.id, p]));
+      const deletedInstallmentsByPurId = new Map<string, Set<number>>();
+
+      for (const t of ccTitles) {
+        let purId = t.originId;
+        let instNum = t.installmentIndex;
+        if (!purId || instNum === undefined) {
+          const match = t.id.match(/^title-cc-(.+)-(\d+)$/);
+          if (match) {
+            if (!purId) purId = match[1];
+            if (instNum === undefined) instNum = parseInt(match[2], 10);
+          }
+        }
+        if (!purId && t.creditCardId) {
+          const matchedPurchase = allPurchases.find(p => 
+            p.cardId === t.creditCardId && 
+            p.installments?.some(inst => inst.dueDate === t.dueDate && Math.abs(inst.amount - t.originalAmount) < 0.01)
+          );
+          if (matchedPurchase) {
+            purId = matchedPurchase.id;
+            const matchedInst = matchedPurchase.installments.find(inst => inst.dueDate === t.dueDate && Math.abs(inst.amount - t.originalAmount) < 0.01);
+            if (matchedInst && instNum === undefined) instNum = matchedInst.installmentNumber;
+          }
+        }
+
+        if (purId) {
+          const instSet = deletedInstallmentsByPurId.get(purId) || new Set<number>();
+          if (instNum !== undefined) instSet.add(instNum);
+          deletedInstallmentsByPurId.set(purId, instSet);
+        }
+      }
+
+      let updatedPurchases = [...allPurchases];
+      let purchasesModified = false;
+
+      for (const [purId, deletedInstNums] of deletedInstallmentsByPurId.entries()) {
+        const purchase = purchasesMap.get(purId);
+        if (!purchase) continue;
+
+        const remainingInstallments = (purchase.installments || []).filter(
+          inst => !deletedInstNums.has(inst.installmentNumber)
+        );
+
+        if (remainingInstallments.length === 0 || deletedInstNums.size === 0) {
+          // Exclui a compra inteira da fatura do cartão
+          updatedPurchases = updatedPurchases.filter(p => p.id !== purId);
+          purchasesModified = true;
+          this.saveToDeletedVault([purchase], `Exclusão sincronizada via Contas a Pagar: ${purchase.description}`, 'CARD_PURCHASE');
+          import('./supabaseSyncService').then(({ supabaseSync }) => {
+            supabaseSync.deleteCardPurchaseDirectly(purId);
+          }).catch(() => {});
+        } else {
+          // Mantém as demais parcelas na fatura do cartão com total recalculado
+          const newTotal = remainingInstallments.reduce((sum, inst) => sum + inst.amount, 0);
+          const updatedPurchase: CreditCardPurchase = {
+            ...purchase,
+            totalAmount: Math.round(newTotal * 100) / 100,
+            installmentsCount: remainingInstallments.length,
+            installments: remainingInstallments,
+            updatedAt: new Date().toISOString()
+          };
+          updatedPurchases = updatedPurchases.map(p => p.id === purId ? updatedPurchase : p);
+          purchasesModified = true;
+          this.saveToDeletedVault([purchase], `Remoção de parcelas (${Array.from(deletedInstNums).join(', ')}) via Contas a Pagar: ${purchase.description}`, 'CARD_PURCHASE');
+          import('./supabaseSyncService').then(({ supabaseSync }) => {
+            supabaseSync.saveCardPurchaseDirectly(updatedPurchase);
+          }).catch(() => {});
+        }
+      }
+
+      if (purchasesModified) {
+        this.saveCardPurchases(updatedPurchases);
+      }
+    }
+
     // 3. Add audit log
     const currentUser = this.getCurrentUser();
     this.addAuditLog({
@@ -2905,6 +2992,11 @@ class StorageService {
     const remainingTitles = titles.filter(t => !titleIdsToRemove.has(t.id));
     this.saveTitles(remainingTitles);
 
+    if (titleIdsToRemove.size > 0) {
+      const currentDeleted = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
+      this.set(STORAGE_KEYS.DELETED_TITLE_IDS, Array.from(new Set([...currentDeleted, ...Array.from(titleIdsToRemove)])));
+    }
+
     // 4. Sincroniza exclusão no Supabase de forma assíncrona
     import('./supabaseSyncService').then(({ supabaseSync }) => {
       supabaseSync.deleteCardPurchaseDirectly(purchaseId);
@@ -3170,6 +3262,20 @@ class StorageService {
     }
 
     this.saveTitles([...newTitles, ...filteredTitles]);
+
+    // Registra IDs removidos desta compra em DELETED_TITLE_IDS e remove do Supabase
+    const removedTitles = titles.filter(t => 
+      (t.originId === updatedPurchase.id || t.id.startsWith(`title-cc-${updatedPurchase.id}-`)) &&
+      !newTitles.some(nt => nt.id === t.id)
+    );
+    if (removedTitles.length > 0) {
+      const removedIds = removedTitles.map(t => t.id);
+      const currentDeleted = this.get<string[]>(STORAGE_KEYS.DELETED_TITLE_IDS, []);
+      this.set(STORAGE_KEYS.DELETED_TITLE_IDS, Array.from(new Set([...currentDeleted, ...removedIds])));
+      import('./supabaseSyncService').then(({ supabaseSync }) => {
+        supabaseSync.deleteTitlesDirectly(removedIds);
+      }).catch(() => {});
+    }
 
     import('./supabaseSyncService').then(({ supabaseSync }) => {
       supabaseSync.saveCardPurchaseDirectly(updatedPurchase);

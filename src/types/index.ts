@@ -74,6 +74,7 @@ export interface Counterparty {
   status: 'ATIVO' | 'INATIVO';
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ServiceItem {
@@ -438,6 +439,7 @@ export interface CreditCard {
   status: 'ATIVO' | 'INATIVO';
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreditCardInstallment {
@@ -470,6 +472,7 @@ export interface CreditCardPurchase {
   invoiceMonth: string; // YYYY-MM da 1ª parcela / fatura inicial
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreditCardInvoicePayment {

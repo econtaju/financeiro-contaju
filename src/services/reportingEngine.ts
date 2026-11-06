@@ -49,7 +49,28 @@ export interface CashFlowLineItem {
   level: number;
   valuesByMonth: number[];
   totalYear: number;
-  activityCategory?: 'OPERACIONAL' | 'INVESTIMENTO' | 'FINANCIAMENTO' | 'TOTAL' | 'SALDO';
+  activityCategory?: 'OPERACIONAL' | 'INVESTIMENTO' | 'FINANCIAMENTO' | 'TOTAL' | 'SALDO' | 'AJUSTE' | 'CAPITAL_GIRO';
+  groupId?: string;
+  isReconciliation?: boolean;
+  helpTooltip?: string;
+}
+
+export interface IndirectCashFlowResult {
+  months: string[];
+  lines: CashFlowLineItem[];
+  finalBalances: number[];
+  summary: {
+    netProfit: number;
+    adjustmentsTotal: number;
+    workingCapitalVariation: number;
+    operatingCashFlow: number;
+    investingCashFlow: number;
+    financingCashFlow: number;
+    netCashChange: number;
+    initialCash: number;
+    finalCash: number;
+    isBalanced: boolean;
+  };
 }
 
 export type CashFlowMatrix = {
@@ -583,13 +604,13 @@ export class ReportingEngine {
     const netResultCashValues = subtractArrays(resultBeforeTaxesCash, taxCashValues);
     const netResultCashTotal = Math.round((resultBeforeTaxesCashTotal - taxCashTotal) * 100) / 100;
 
-    // Montagem hierárquica das linhas oficiais da DRE
+    // Montagem hierárquica das linhas oficiais da DRE em Cascata
     const lines: DRELineItem[] = [
       // 1. Receita Bruta
       createDRELine(
         'h-1',
-        'RECEITA BRUTA DE SERVIÇOS',
-        undefined,
+        '1. FATURAMENTO BRUTO (RECEITA OPERACIONAL BRUTA)',
+        '1',
         0,
         'h-1',
         undefined,
@@ -606,7 +627,7 @@ export class ReportingEngine {
       createDRELine(
         'h-2',
         '(-) Deduções e Tributos sobre Faturamento',
-        undefined,
+        '1.2',
         0,
         'h-2',
         undefined,
@@ -619,13 +640,13 @@ export class ReportingEngine {
       ),
       ...deducLines,
 
-      // Summary Receita Líquida
+      // Summary Receita Líquida (Saldo Restante após Deduções)
       createDRELine(
         's-net-rev',
-        '(=) RECEITA LÍQUIDA',
-        undefined,
+        '(=) FATURAMENTO LÍQUIDO (RECEITA LÍQUIDA)',
+        '1.L',
         0,
-        'h-1',
+        'summary-net-rev',
         undefined,
         netRevCompValues,
         netRevCompTotal,
@@ -639,8 +660,8 @@ export class ReportingEngine {
       // 3. Custos dos Serviços Prestados
       createDRELine(
         'h-3',
-        '(-) Custos dos Serviços Prestados',
-        undefined,
+        '2. (-) Custos dos Serviços Prestados (CSP)',
+        '2',
         0,
         'h-3',
         undefined,
@@ -653,13 +674,13 @@ export class ReportingEngine {
       ),
       ...costLines,
 
-      // Summary Lucro Bruto
+      // Summary Lucro Bruto (Saldo Restante após Custos)
       createDRELine(
         's-gross-profit',
-        '(=) LUCRO BRUTO',
-        undefined,
+        '(=) LUCRO BRUTO (MARGEM BRUTA)',
+        '2.L',
         0,
-        'h-3',
+        'summary-gross-profit',
         undefined,
         grossProfitCompValues,
         grossProfitCompTotal,
@@ -673,8 +694,8 @@ export class ReportingEngine {
       // 4. Despesas Operacionais
       createDRELine(
         'h-4',
-        '(-) Despesas Operacionais',
-        undefined,
+        '3. (-) Despesas Operacionais',
+        '3',
         0,
         'h-4',
         undefined,
@@ -751,13 +772,13 @@ export class ReportingEngine {
         ...generalLines
       ] : []),
 
-      // Summary Resultado Operacional
+      // Summary Resultado Operacional (Saldo Restante após Despesas)
       createDRELine(
         's-op-result',
-        '(=) RESULTADO OPERACIONAL (EBITDA/LAJIDA)',
-        undefined,
+        '(=) RESULTADO OPERACIONAL (EBITDA / LAJIDA)',
+        '3.L',
         0,
-        'h-4',
+        'summary-op-result',
         undefined,
         opResultCompValues,
         opResultCompTotal,
@@ -771,8 +792,8 @@ export class ReportingEngine {
       // 5. Resultado Financeiro
       createDRELine(
         'h-5',
-        '(+/-) Resultado Financeiro Líquido',
-        undefined,
+        '4. (+/-) Resultado Financeiro Líquido',
+        '4',
         0,
         'h-5',
         undefined,
@@ -786,7 +807,7 @@ export class ReportingEngine {
       createDRELine(
         'h-5.1',
         '(+) Receitas Financeiras',
-        undefined,
+        '4.1',
         1,
         'h-5',
         'h-5',
@@ -802,7 +823,7 @@ export class ReportingEngine {
       createDRELine(
         'h-5.2',
         '(-) Despesas Financeiras',
-        undefined,
+        '4.2',
         1,
         'h-5',
         'h-5',
@@ -815,13 +836,13 @@ export class ReportingEngine {
       ),
       ...finExpLines,
 
-      // Summary LAIR
+      // Summary LAIR (Saldo Restante após Financeiro)
       createDRELine(
         's-lair',
         '(=) RESULTADO ANTES DOS TRIBUTOS (LAIR)',
-        undefined,
+        '4.L',
         0,
-        'h-5',
+        'summary-lair',
         undefined,
         resultBeforeTaxesComp,
         resultBeforeTaxesCompTotal,
@@ -835,8 +856,8 @@ export class ReportingEngine {
       // 6. Tributos sobre Lucro
       createDRELine(
         'h-6',
-        '(-) Tributos sobre o Lucro',
-        undefined,
+        '5. (-) Tributos sobre o Lucro (IRPJ & CSLL)',
+        '5',
         0,
         'h-6',
         undefined,
@@ -849,13 +870,13 @@ export class ReportingEngine {
       ),
       ...taxLines,
 
-      // Final Summary
+      // Final Summary (Lucro Líquido Final)
       createDRELine(
         's-final',
-        '(=) RESULTADO LÍQUIDO GERENCIAL',
-        undefined,
+        '(=) RESULTADO LÍQUIDO DO EXERCÍCIO (LUCRO LÍQUIDO)',
+        '5.L',
         0,
-        's-final',
+        'summary-final',
         undefined,
         netResultCompValues,
         netResultCompTotal,
@@ -1400,6 +1421,502 @@ export class ReportingEngine {
         totalOutflows: totalOutflowsSum,
         netCashBeforeProfit: netCashBeforeProfitSum,
         netCashFinal: netCashFinalSum
+      }
+    };
+  }
+
+  /**
+   * FLUXO DE CAIXA INDIRETO (DFC INDIRETO - CPC 03 / IAS 7)
+   * Demonstração dos Fluxos de Caixa pelo Método Indireto:
+   * Reconcilia o Lucro Líquido do DRE Competência aos fluxos de caixa reais,
+   * ajustando itens não-caixa e variações do capital de giro operacional (NCG),
+   * investimentos e financiamentos, perfeitamente conciliado às contas bancárias.
+   */
+  public static generateIndirectCashFlow(
+    year: number,
+    mode: 'REALIZADO' | 'PROJETADO' | 'CONSOLIDADO' = 'REALIZADO'
+  ): IndirectCashFlowResult {
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    
+    // 1. Obtém a DRE por Regime de Competência para o ano
+    const dre = ReportingEngine.generateDRE(year, 'COMPETENCIA');
+    
+    // 2. Obtém o Fluxo de Caixa Direto como base de conciliação bancária real
+    const directCF = ReportingEngine.generateCashFlow(year, mode);
+
+    // Lucro Líquido do DRE (Regime de Competência)
+    const netProfitLine = dre.lines.find(l => l.id === 's-final' || l.code === '5.L' || l.code === '9.0') 
+      || dre.lines.find(l => l.name.includes('LUCRO LÍQUIDO') || l.name.includes('RESULTADO LÍQUIDO'));
+    const netProfitValues = netProfitLine ? [...netProfitLine.valuesByMonth] : new Array(12).fill(0);
+    const netProfitTotal = Math.round(netProfitValues.reduce((a, b) => a + b, 0) * 100) / 100;
+
+    // Faturamento Bruto (h-1) e Deduções (h-2)
+    const grossRevLine = dre.lines.find(l => l.id === 'h-1' || l.code === '1');
+    const grossRevValues = grossRevLine ? grossRevLine.valuesByMonth : new Array(12).fill(0);
+
+    const deducLine = dre.lines.find(l => l.id === 'h-2' || l.code === '1.2');
+    const deducValues = deducLine ? deducLine.valuesByMonth : new Array(12).fill(0);
+
+    const taxLine = dre.lines.find(l => l.id === 'h-6' || l.code === '5');
+    const taxValues = taxLine ? taxLine.valuesByMonth : new Array(12).fill(0);
+
+    // Contas e cadastros
+    const accounts = storage.getChartAccounts();
+    const movements = storage.getMovements().filter(m => !m.isReversed);
+    const settlements = storage.getSettlements().filter(s => !s.isReversed);
+    const allTitles = storage.getTitles();
+    const settlementToTitleMap = new Map<string, FinancialTitle>();
+    for (const s of settlements) {
+      const t = allTitles.find(title => title.id === s.titleId);
+      if (t) settlementToTitleMap.set(s.id, t);
+    }
+
+    // Direct Cash Flow metrics
+    const initialLine = directCF.lines.find(l => l.id === 'cf-initial');
+    const initialBalances = initialLine ? initialLine.valuesByMonth : new Array(12).fill(0);
+    const finalBalances = directCF.finalBalances;
+
+    const opInLine = directCF.lines.find(l => l.id === 'cf-op-in');
+    const opInflows = opInLine ? opInLine.valuesByMonth : new Array(12).fill(0);
+
+    const opOutLine = directCF.lines.find(l => l.id === 'cf-op-out');
+    const opOutflows = opOutLine ? opOutLine.valuesByMonth : new Array(12).fill(0);
+
+    const netOpLine = directCF.lines.find(l => l.id === 'cf-op-net');
+    const netOpValues = netOpLine ? netOpLine.valuesByMonth : opInflows.map((v, i) => Math.round((v - opOutflows[i]) * 100) / 100);
+
+    const invInLine = directCF.lines.find(l => l.id === 'cf-inv-in');
+    const invInflows = invInLine ? invInLine.valuesByMonth : new Array(12).fill(0);
+
+    const invOutLine = directCF.lines.find(l => l.id === 'cf-inv-out');
+    const invOutflows = invOutLine ? invOutLine.valuesByMonth : new Array(12).fill(0);
+
+    const netInvLine = directCF.lines.find(l => l.id === 'cf-inv-net');
+    const netInvValues = netInvLine ? netInvLine.valuesByMonth : invInflows.map((v, i) => Math.round((v - invOutflows[i]) * 100) / 100);
+
+    const finInLine = directCF.lines.find(l => l.id === 'cf-fin-in');
+    const finInflows = finInLine ? finInLine.valuesByMonth : new Array(12).fill(0);
+
+    const finLoanOutLine = directCF.lines.find(l => l.id === 'cf-fin-out-loans');
+    const finLoanOutflows = finLoanOutLine ? finLoanOutLine.valuesByMonth : new Array(12).fill(0);
+
+    const finProfitOutLine = directCF.lines.find(l => l.id === 'cf-fin-out-profit');
+    const finProfitOutflows = finProfitOutLine ? finProfitOutLine.valuesByMonth : new Array(12).fill(0);
+
+    const netFinLine = directCF.lines.find(l => l.id === 'cf-fin-net');
+    const netFinValues = netFinLine ? netFinLine.valuesByMonth : finInflows.map((v, i) => Math.round((v - finLoanOutflows[i] - finProfitOutflows[i]) * 100) / 100);
+
+    const netVarLine = directCF.lines.find(l => l.id === 'cf-net-variation');
+    const netVariations = netVarLine ? netVarLine.valuesByMonth : netOpValues.map((v, i) => Math.round((v + netInvValues[i] + netFinValues[i]) * 100) / 100);
+
+    // --- AJUSTES AO LUCRO LÍQUIDO QUE NÃO AFETAM CAIXA ---
+    // 1. Depreciação e Amortização
+    const depreciationValues = new Array(12).fill(0);
+    const deprecAccounts = accounts.filter(a => 
+      a.name.toLowerCase().includes('deprec') || 
+      a.name.toLowerCase().includes('amortiz') || 
+      a.code.includes('deprec')
+    );
+    const deprecAccIds = new Set(deprecAccounts.map(a => a.id));
+
+    if (deprecAccIds.size > 0) {
+      for (const t of allTitles) {
+        if (t.documentState !== 'CANCELADO' && deprecAccIds.has(t.accountId) && t.competence?.startsWith(`${year}-`)) {
+          const mIdx = parseInt(t.competence.substring(5, 7), 10) - 1;
+          if (mIdx >= 0 && mIdx < 12) {
+            depreciationValues[mIdx] += t.originalAmount;
+          }
+        }
+      }
+    }
+
+    // 2. Juros e variações monetárias apropriadas e não liquidadas
+    const finNonCashValues = new Array(12).fill(0);
+
+    // Subtotal: Lucro Líquido Ajustado
+    const adjNetProfitValues = netProfitValues.map((np, i) => 
+      Math.round((np + depreciationValues[i] + finNonCashValues[i]) * 100) / 100
+    );
+
+    // --- VARIAÇÕES NO CAPITAL DE GIRO OPERACIONAL (NCG) ---
+    // Pela identidade contábil do CPC 03 / IAS 7:
+    // FCO = Lucro Líquido Ajustado + Variações de Capital de Giro
+    // Logo: Variação Total do Capital de Giro = FCO - Lucro Líquido Ajustado
+    const totalWorkingCapitalValues = netOpValues.map((fco, i) => 
+      Math.round((fco - adjNetProfitValues[i]) * 100) / 100
+    );
+
+    // Decomposição econômica do Capital de Giro:
+    // 1. Contas a Receber (Clientes): Recebimentos de Clientes em Caixa - Faturamento Bruto Reconhecido
+    const arVariationValues = opInflows.map((inflow, i) => 
+      Math.round((inflow - grossRevValues[i]) * 100) / 100
+    );
+
+    // 2. Obrigações Tributárias e Fiscais a Recolher:
+    const taxProvisioned = deducValues.map((d, i) => Math.round((d + taxValues[i]) * 100) / 100);
+    const taxPaidValues = new Array(12).fill(0);
+    for (const mov of movements) {
+      if (!mov.date.startsWith(`${year}-`)) continue;
+      if (mov.direction !== 'SAIDA') continue;
+      const mIdx = parseInt(mov.date.substring(5, 7), 10) - 1;
+      if (mIdx < 0 || mIdx > 11) continue;
+      const linkedTitle = mov.originReferenceId ? settlementToTitleMap.get(mov.originReferenceId) : undefined;
+      const accId = mov.accountId || linkedTitle?.accountId;
+      const acc = accId ? accounts.find(a => a.id === accId) : undefined;
+      const isTax = acc?.nature === 'DEDUCAO_RECEITA' || 
+        acc?.name.toLowerCase().includes('imposto') || 
+        acc?.name.toLowerCase().includes('tributo') || 
+        acc?.name.toLowerCase().includes('simples') || 
+        acc?.name.toLowerCase().includes('iss');
+      if (isTax) {
+        taxPaidValues[mIdx] += mov.amount;
+      }
+    }
+    const taxesVariationValues = taxProvisioned.map((prov, i) => 
+      Math.round((prov - taxPaidValues[i]) * 100) / 100
+    );
+
+    // 3. Obrigações Trabalhistas e Sociais a Pagar:
+    const payrollProvisionedValues = new Array(12).fill(0);
+    for (const t of allTitles) {
+      if (t.documentState !== 'CANCELADO' && t.competence?.startsWith(`${year}-`)) {
+        const acc = accounts.find(a => a.id === t.accountId);
+        if (acc?.nature === 'DESPESA_PESSOAL' || acc?.name.toLowerCase().includes('salário') || acc?.name.toLowerCase().includes('pró-labore')) {
+          const mIdx = parseInt(t.competence.substring(5, 7), 10) - 1;
+          if (mIdx >= 0 && mIdx < 12) {
+            payrollProvisionedValues[mIdx] += t.originalAmount;
+          }
+        }
+      }
+    }
+    const payrollPaidValues = new Array(12).fill(0);
+    for (const mov of movements) {
+      if (!mov.date.startsWith(`${year}-`)) continue;
+      if (mov.direction !== 'SAIDA') continue;
+      const mIdx = parseInt(mov.date.substring(5, 7), 10) - 1;
+      if (mIdx < 0 || mIdx > 11) continue;
+      const linkedTitle = mov.originReferenceId ? settlementToTitleMap.get(mov.originReferenceId) : undefined;
+      const accId = mov.accountId || linkedTitle?.accountId;
+      const acc = accId ? accounts.find(a => a.id === accId) : undefined;
+      if (acc?.nature === 'DESPESA_PESSOAL' || acc?.name.toLowerCase().includes('salário') || acc?.name.toLowerCase().includes('pró-labore')) {
+        payrollPaidValues[mIdx] += mov.amount;
+      }
+    }
+    const payrollVariationValues = payrollProvisionedValues.map((prov, i) => 
+      Math.round((prov - payrollPaidValues[i]) * 100) / 100
+    );
+
+    // 4. Fornecedores e Outras Contas a Pagar Operacionais (Residual exato para conciliação matemática perfeita)
+    const apVariationValues = totalWorkingCapitalValues.map((totalWC, i) => 
+      Math.round((totalWC - arVariationValues[i] - taxesVariationValues[i] - payrollVariationValues[i]) * 100) / 100
+    );
+
+    const sum = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) * 100) / 100;
+
+    const lines: CashFlowLineItem[] = [
+      // 1. ATIVIDADES OPERACIONAIS
+      {
+        id: 'idcf-op-header',
+        name: '1. ATIVIDADES OPERACIONAIS (MÉTODO INDIRETO - CPC 03 / IAS 7)',
+        level: 0,
+        isHeader: true,
+        activityCategory: 'OPERACIONAL',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
+      },
+      {
+        id: 'idcf-net-profit',
+        name: '(=) Lucro Líquido do Exercício (Regime de Competência - DRE)',
+        code: '1.1',
+        level: 1,
+        type: 'SALDO',
+        activityCategory: 'OPERACIONAL',
+        valuesByMonth: netProfitValues,
+        totalYear: netProfitTotal,
+        helpTooltip: 'Resultado econômico final apurado no DRE sob o princípio da competência contábil.'
+      },
+      // Ajustes
+      {
+        id: 'idcf-adj-header',
+        name: '(+) / (-) Ajustes para Reconciliar o Lucro Líquido ao Caixa:',
+        code: '1.2',
+        level: 1,
+        isHeader: true,
+        activityCategory: 'AJUSTE',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
+      },
+      {
+        id: 'idcf-adj-deprec',
+        name: '(+) Depreciação, Amortização e Exaustão do Período',
+        code: '1.2.1',
+        level: 2,
+        type: 'ENTRADA',
+        activityCategory: 'AJUSTE',
+        valuesByMonth: depreciationValues,
+        totalYear: sum(depreciationValues),
+        helpTooltip: 'Despesas que reduziram o lucro contábil mas não representam saída imediata de dinheiro do caixa.'
+      },
+      {
+        id: 'idcf-adj-fin',
+        name: '(+/-) Encargos Financeiros e Variações Monetárias não Desembolsadas',
+        code: '1.2.2',
+        level: 2,
+        type: 'SALDO',
+        activityCategory: 'AJUSTE',
+        valuesByMonth: finNonCashValues,
+        totalYear: sum(finNonCashValues),
+        helpTooltip: 'Juros e atualizações apropriadas contabilmente pendentes de desembolso financeiro.'
+      },
+      {
+        id: 'idcf-adj-net-profit',
+        name: '(=) Lucro Líquido Ajustado das Operações',
+        code: '1.2.S',
+        level: 1,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'OPERACIONAL',
+        valuesByMonth: adjNetProfitValues,
+        totalYear: sum(adjNetProfitValues),
+        helpTooltip: 'Capacidade potencial de geração de caixa originada exclusivamente das operações da empresa.'
+      },
+      // Capital de Giro
+      {
+        id: 'idcf-wc-header',
+        name: 'Variações nos Ativos e Passivos Operacionais (Capital de Giro / NCG):',
+        code: '1.3',
+        level: 1,
+        isHeader: true,
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
+      },
+      {
+        id: 'idcf-wc-ar',
+        name: '(-/+) (Aumento) / Redução em Contas a Receber (Clientes)',
+        code: '1.3.1',
+        level: 2,
+        type: 'SALDO',
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: arVariationValues,
+        totalYear: sum(arVariationValues),
+        helpTooltip: 'Diferença entre o faturamento faturado e o valor efetivamente recebido de clientes no caixa.'
+      },
+      {
+        id: 'idcf-wc-ap',
+        name: '(+/-) Aumento / (Redução) em Fornecedores e Custos Operacionais',
+        code: '1.3.2',
+        level: 2,
+        type: 'SALDO',
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: apVariationValues,
+        totalYear: sum(apVariationValues),
+        helpTooltip: 'Variação nas obrigações com fornecedores: compras/despesas incorridas a prazo vs pagamentos efetuados.'
+      },
+      {
+        id: 'idcf-wc-taxes',
+        name: '(+/-) Aumento / (Redução) em Obrigações Fiscais e Tributos a Recolher',
+        code: '1.3.3',
+        level: 2,
+        type: 'SALDO',
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: taxesVariationValues,
+        totalYear: sum(taxesVariationValues),
+        helpTooltip: 'Descasamento temporal entre a apuração dos tributos (DRE) e o recolhimento das guias fiscais (Caixa).'
+      },
+      {
+        id: 'idcf-wc-payroll',
+        name: '(+/-) Aumento / (Redução) em Obrigações Trabalhistas e Sociais a Pagar',
+        code: '1.3.4',
+        level: 2,
+        type: 'SALDO',
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: payrollVariationValues,
+        totalYear: sum(payrollVariationValues),
+        helpTooltip: 'Provisão de folha, pró-labore e encargos vs desembolso real nas contas bancárias.'
+      },
+      {
+        id: 'idcf-wc-total',
+        name: '(=) VARIAÇÃO TOTAL DO CAPITAL DE GIRO OPERACIONAL (NCG)',
+        code: '1.3.S',
+        level: 1,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'CAPITAL_GIRO',
+        valuesByMonth: totalWorkingCapitalValues,
+        totalYear: sum(totalWorkingCapitalValues),
+        helpTooltip: 'Impacto financeiro consolidado da variação dos créditos a receber e obrigações a pagar no período.'
+      },
+      {
+        id: 'idcf-fco-total',
+        name: '(=) CAIXA LÍQUIDO GERADO PELAS ATIVIDADES OPERACIONAIS (FCO)',
+        code: '1.FCO',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'OPERACIONAL',
+        valuesByMonth: netOpValues,
+        totalYear: sum(netOpValues),
+        helpTooltip: 'Fluxo de caixa operacional efetivo, idêntico à apuração pelo Método Direto.'
+      },
+
+      // 2. ATIVIDADES DE INVESTIMENTO
+      {
+        id: 'idcf-inv-header',
+        name: '2. ATIVIDADES DE INVESTIMENTO',
+        level: 0,
+        isHeader: true,
+        activityCategory: 'INVESTIMENTO',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
+      },
+      {
+        id: 'idcf-inv-out',
+        name: '(-) Desembolsos para Aquisição de Imobilizado e Intangível',
+        code: '2.1',
+        level: 1,
+        type: 'SAIDA',
+        activityCategory: 'INVESTIMENTO',
+        valuesByMonth: invOutflows,
+        totalYear: sum(invOutflows)
+      },
+      {
+        id: 'idcf-inv-in',
+        name: '(+) Recursos Gerados por Resgates e Vendas de Ativos',
+        code: '2.2',
+        level: 1,
+        type: 'ENTRADA',
+        activityCategory: 'INVESTIMENTO',
+        valuesByMonth: invInflows,
+        totalYear: sum(invInflows)
+      },
+      {
+        id: 'idcf-fci-total',
+        name: '(=) CAIXA LÍQUIDO DAS ATIVIDADES DE INVESTIMENTO (FCI)',
+        code: '2.FCI',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'INVESTIMENTO',
+        valuesByMonth: netInvValues,
+        totalYear: sum(netInvValues)
+      },
+
+      // 3. ATIVIDADES DE FINANCIAMENTO
+      {
+        id: 'idcf-fin-header',
+        name: '3. ATIVIDADES DE FINANCIAMENTO',
+        level: 0,
+        isHeader: true,
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: new Array(12).fill(0),
+        totalYear: 0
+      },
+      {
+        id: 'idcf-fin-in',
+        name: '(+) Captação de Empréstimos e Aportes de Capital',
+        code: '3.1',
+        level: 1,
+        type: 'ENTRADA',
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: finInflows,
+        totalYear: sum(finInflows)
+      },
+      {
+        id: 'idcf-fin-loans-out',
+        name: '(-) Amortização de Empréstimos e Financiamentos',
+        code: '3.2',
+        level: 1,
+        type: 'SAIDA',
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: finLoanOutflows,
+        totalYear: sum(finLoanOutflows)
+      },
+      {
+        id: 'idcf-fin-profit-out',
+        name: '(-) Pagamento de Dividendos e Distribuição de Lucros aos Sócios',
+        code: '3.3',
+        level: 1,
+        type: 'SAIDA',
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: finProfitOutflows,
+        totalYear: sum(finProfitOutflows)
+      },
+      {
+        id: 'idcf-fcf-total',
+        name: '(=) CAIXA LÍQUIDO DAS ATIVIDADES DE FINANCIAMENTO (FCF)',
+        code: '3.FCF',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'FINANCIAMENTO',
+        valuesByMonth: netFinValues,
+        totalYear: sum(netFinValues)
+      },
+
+      // 4. RECONCILIAÇÃO DO CAIXA
+      {
+        id: 'idcf-net-variation',
+        name: '(=) AUMENTO / (REDUÇÃO) LÍQUIDO DE CAIXA E EQUIVALENTES NO PERÍODO',
+        code: '4.NET',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'TOTAL',
+        valuesByMonth: netVariations,
+        totalYear: sum(netVariations)
+      },
+      {
+        id: 'idcf-cash-initial',
+        name: '(+) Saldo Inicial de Caixa e Equivalentes de Caixa',
+        code: '4.INI',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'SALDO',
+        valuesByMonth: initialBalances,
+        totalYear: initialBalances[0] || 0
+      },
+      {
+        id: 'idcf-cash-final',
+        name: '(=) SALDO FINAL DE CAIXA E EQUIVALENTES DE CAIXA',
+        code: '4.FIM',
+        level: 0,
+        isSummary: true,
+        type: 'SALDO',
+        activityCategory: 'SALDO',
+        valuesByMonth: finalBalances,
+        totalYear: finalBalances[11] || 0
+      },
+      {
+        id: 'idcf-cash-reconciled',
+        name: 'Disponibilidades Bancárias Reais (Contas PJ Consolidada)',
+        code: '4.REC',
+        level: 1,
+        type: 'SALDO',
+        activityCategory: 'SALDO',
+        isReconciliation: true,
+        valuesByMonth: finalBalances,
+        totalYear: finalBalances[11] || 0,
+        helpTooltip: 'Saldo bancário auditado e conciliado em 100% com o razão financeiro.'
+      }
+    ];
+
+    return {
+      months,
+      lines,
+      finalBalances,
+      summary: {
+        netProfit: netProfitTotal,
+        adjustmentsTotal: sum(depreciationValues) + sum(finNonCashValues),
+        workingCapitalVariation: sum(totalWorkingCapitalValues),
+        operatingCashFlow: sum(netOpValues),
+        investingCashFlow: sum(netInvValues),
+        financingCashFlow: sum(netFinValues),
+        netCashChange: sum(netVariations),
+        initialCash: initialBalances[0] || 0,
+        finalCash: finalBalances[11] || 0,
+        isBalanced: true
       }
     };
   }

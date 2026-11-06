@@ -21,9 +21,12 @@ import {
   ShieldCheck,
   Check,
   Printer,
-  FileText
+  FileText,
+  Info,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { ReportingEngine, CashFlowLineItem } from '../../services/reportingEngine';
+import { ReportingEngine, CashFlowLineItem, IndirectCashFlowResult } from '../../services/reportingEngine';
 import { formatBRL } from '../../services/financialEngine';
 import { exportToExcel, exportToCSV } from '../../utils/exportUtils';
 import { exportCashFlowToPDF } from '../../utils/pdfExportUtils';
@@ -47,6 +50,10 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
 
   // Modo de visualização: Consolidado (apenas grupos sintéticos e saldos) vs Analítico (detalhado)
   const [viewMode, setViewMode] = useState<'CONSOLIDADO' | 'ANALITICO'>('CONSOLIDADO');
+
+  // Seletor de Método de Demonstração: Direto vs Indireto (DFC - CPC 03 / IAS 7)
+  const [cashFlowMethod, setCashFlowMethod] = useState<'DIRETO' | 'INDIRETO'>('DIRETO');
+  const [hideZeroRowsIndirect, setHideZeroRowsIndirect] = useState<boolean>(false);
 
   // Filtro de Segregação: Todos os Fluxos / Apenas Atividades de Caixa da Empresa / Apenas Distribuição de Lucros
   const [flowFilter, setFlowFilter] = useState<'TODOS' | 'ATIVIDADES_REAIS' | 'DISTRIBUICAO_LUCROS'>('TODOS');
@@ -113,6 +120,82 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
     // Linha de fluxo: somatório dos meses do período
     return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
   };
+
+  // Motor e dados da DFC Método Indireto (CPC 03 / IAS 7)
+  const indirectData = useMemo(() => {
+    return ReportingEngine.generateIndirectCashFlow(effectiveYear, engineMode);
+  }, [effectiveYear, engineMode]);
+
+  // Linhas filtradas da visão Indireta
+  const displayedIndirectLines = useMemo(() => {
+    let lines = indirectData.lines;
+    if (hideZeroRowsIndirect) {
+      lines = lines.filter(l => {
+        if (l.isHeader || l.isSummary || l.level === 0 || l.isReconciliation) return true;
+        return activeMonthIndices.some(idx => Math.abs(l.valuesByMonth[idx] || 0) > 0.001);
+      });
+    }
+    return lines;
+  }, [indirectData.lines, hideZeroRowsIndirect, activeMonthIndices]);
+
+  // Total do período para linhas da DFC Indireta
+  const getIndirectLinePeriodTotal = (line: CashFlowLineItem): number => {
+    const isInitialBalance = line.id === 'idcf-cash-initial';
+    const isFinalBalance = line.id === 'idcf-cash-final' || line.id === 'idcf-cash-reconciled';
+
+    if (isInitialBalance) {
+      const firstMonthIdx = activeMonthIndices[0];
+      return line.valuesByMonth[firstMonthIdx] || 0;
+    }
+    if (isFinalBalance) {
+      const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
+      return line.valuesByMonth[lastMonthIdx] || 0;
+    }
+    return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
+  };
+
+  // KPIs executivos da DFC Indireta para o período filtrado
+  const indirectKPIs = useMemo(() => {
+    const netProfitLine = indirectData.lines.find(l => l.id === 'idcf-net-profit');
+    const adjNetProfitLine = indirectData.lines.find(l => l.id === 'idcf-adj-net-profit');
+    const wcTotalLine = indirectData.lines.find(l => l.id === 'idcf-wc-total');
+    const fcoLine = indirectData.lines.find(l => l.id === 'idcf-fco-total');
+    const fciLine = indirectData.lines.find(l => l.id === 'idcf-fci-total');
+    const fcfLine = indirectData.lines.find(l => l.id === 'idcf-fcf-total');
+    const netVarLine = indirectData.lines.find(l => l.id === 'idcf-net-variation');
+    const initialLine = indirectData.lines.find(l => l.id === 'idcf-cash-initial');
+    const finalLine = indirectData.lines.find(l => l.id === 'idcf-cash-final');
+
+    const firstMonthIdx = activeMonthIndices[0];
+    const lastMonthIdx = activeMonthIndices[activeMonthIndices.length - 1];
+
+    const sumMonths = (line?: CashFlowLineItem) => {
+      if (!line) return 0;
+      return activeMonthIndices.reduce((acc, idx) => acc + (line.valuesByMonth[idx] || 0), 0);
+    };
+
+    const netProfit = sumMonths(netProfitLine);
+    const adjNetProfit = sumMonths(adjNetProfitLine);
+    const wcTotal = sumMonths(wcTotalLine);
+    const fco = sumMonths(fcoLine);
+    const fci = sumMonths(fciLine);
+    const fcf = sumMonths(fcfLine);
+    const netVariation = sumMonths(netVarLine);
+    const initialBalance = initialLine ? (initialLine.valuesByMonth[firstMonthIdx] || 0) : 0;
+    const finalBalance = finalLine ? (finalLine.valuesByMonth[lastMonthIdx] || 0) : 0;
+
+    return {
+      netProfit,
+      adjNetProfit,
+      wcTotal,
+      fco,
+      fci,
+      fcf,
+      netVariation,
+      initialBalance,
+      finalBalance
+    };
+  }, [indirectData, activeMonthIndices]);
 
   // Linhas filtradas de acordo com a visão selecionada pelo gestor
   const displayedLines = useMemo(() => {
@@ -238,25 +321,45 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
   const handleExportExcel = () => {
     const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
     const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
-    const rows = displayedLines.map(l => [
-      l.code || '-',
-      l.name,
-      ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
-      getLinePeriodTotal(l)
-    ]);
-    exportToExcel(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, `Fluxo Caixa ${timeHorizon}`, headers, rows);
+    if (cashFlowMethod === 'INDIRETO') {
+      const rows = displayedIndirectLines.map(l => [
+        l.code || '-',
+        l.name,
+        ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+        getIndirectLinePeriodTotal(l)
+      ]);
+      exportToExcel(`DFC-Indireto-${timeHorizon}-${mode}-${effectiveYear}`, `DFC Indireto ${timeHorizon}`, headers, rows);
+    } else {
+      const rows = displayedLines.map(l => [
+        l.code || '-',
+        l.name,
+        ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+        getLinePeriodTotal(l)
+      ]);
+      exportToExcel(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, `Fluxo Caixa ${timeHorizon}`, headers, rows);
+    }
   };
 
   const handleExportCSV = () => {
     const visibleMonthNames = activeMonthIndices.map(idx => cashData.months[idx]);
     const headers = ['Estrutura', 'Descrição', ...visibleMonthNames, totalColLabel];
-    const rows = displayedLines.map(l => [
-      l.code || '-',
-      l.name,
-      ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
-      getLinePeriodTotal(l)
-    ]);
-    exportToCSV(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
+    if (cashFlowMethod === 'INDIRETO') {
+      const rows = displayedIndirectLines.map(l => [
+        l.code || '-',
+        l.name,
+        ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+        getIndirectLinePeriodTotal(l)
+      ]);
+      exportToCSV(`DFC-Indireto-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
+    } else {
+      const rows = displayedLines.map(l => [
+        l.code || '-',
+        l.name,
+        ...activeMonthIndices.map(idx => l.valuesByMonth[idx] || 0),
+        getLinePeriodTotal(l)
+      ]);
+      exportToCSV(`Fluxo-Caixa-${flowFilter}-${timeHorizon}-${mode}-${effectiveYear}`, headers, rows);
+    }
   };
 
   const handleExportPDF = () => {
@@ -264,23 +367,41 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
       const company = storage.getCompany();
       const companyName = company.companyName || company.tradeName || 'Contaju Gestão Financeira';
 
-      exportCashFlowToPDF(
-        {
-          months: cashData.months,
-          lines: displayedLines,
-          finalBalances: cashData.lines.find(l => l.id === 'cf-final')?.valuesByMonth
-        },
-        effectiveYear,
-        {
-          mode,
-          companyName,
-          timeHorizonLabel: `${horizonLabel}${flowFilter !== 'TODOS' ? ` • ${flowFilter === 'ATIVIDADES_REAIS' ? 'Atividades Reais de Caixa' : 'Distribuição de Lucros'}` : ''}`,
-          activeMonthIndices,
-          totalColLabel
-        }
-      );
-
-      setPdfToast(`PDF Executivo do Fluxo de Caixa (${mode} • ${effectiveYear} • ${horizonLabel}) gerado com sucesso!`);
+      if (cashFlowMethod === 'INDIRETO') {
+        exportCashFlowToPDF(
+          {
+            months: indirectData.months,
+            lines: displayedIndirectLines,
+            finalBalances: indirectData.finalBalances
+          },
+          effectiveYear,
+          {
+            mode,
+            companyName,
+            timeHorizonLabel: `Demonstração dos Fluxos de Caixa - Método Indireto (CPC 03 / IAS 7) • ${horizonLabel}`,
+            activeMonthIndices,
+            totalColLabel
+          }
+        );
+        setPdfToast(`PDF Executivo do DFC Indireto (${mode} • ${effectiveYear} • ${horizonLabel}) gerado com sucesso!`);
+      } else {
+        exportCashFlowToPDF(
+          {
+            months: cashData.months,
+            lines: displayedLines,
+            finalBalances: cashData.lines.find(l => l.id === 'cf-final')?.valuesByMonth
+          },
+          effectiveYear,
+          {
+            mode,
+            companyName,
+            timeHorizonLabel: `${horizonLabel}${flowFilter !== 'TODOS' ? ` • ${flowFilter === 'ATIVIDADES_REAIS' ? 'Atividades Reais de Caixa' : 'Distribuição de Lucros'}` : ''}`,
+            activeMonthIndices,
+            totalColLabel
+          }
+        );
+        setPdfToast(`PDF Executivo do Fluxo de Caixa (${mode} • ${effectiveYear} • ${horizonLabel}) gerado com sucesso!`);
+      }
       setTimeout(() => setPdfToast(null), 4500);
     } catch (err: any) {
       console.error('Erro ao gerar PDF do Fluxo de Caixa:', err);
@@ -338,20 +459,81 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
   return (
     <div className="space-y-6">
 
+      {/* Seletor de Visão: Fluxo Direto vs Fluxo Indireto (DFC - CPC 03) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[var(--surface-card)] p-2.5 rounded-2xl border border-[var(--border-subtle)] shadow-xs">
+        <div className="flex items-center gap-2 p-1 bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setCashFlowMethod('DIRETO')}
+            className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              cashFlowMethod === 'DIRETO'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-extrabold'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
+            }`}
+          >
+            <LineChart className="w-4 h-4 shrink-0" />
+            <span>Fluxo de Caixa Direto</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCashFlowMethod('INDIRETO')}
+            className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              cashFlowMethod === 'INDIRETO'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-extrabold'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
+            }`}
+          >
+            <Scale className="w-4 h-4 shrink-0" />
+            <span>Fluxo de Caixa Indireto (DFC)</span>
+            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-900 dark:text-amber-200 font-black">
+              CPC 03
+            </span>
+          </button>
+        </div>
+
+        {cashFlowMethod === 'INDIRETO' && (
+          <div className="flex items-center gap-2 px-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setHideZeroRowsIndirect(!hideZeroRowsIndirect)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                hideZeroRowsIndirect
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold'
+                  : 'bg-[var(--surface-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+              title="Ocultar rubricas analíticas sem movimentação no período"
+            >
+              {hideZeroRowsIndirect ? <EyeOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{hideZeroRowsIndirect ? 'Linhas Zeradas: Ocultas' : 'Ocultar Linhas Zeradas'}</span>
+            </button>
+            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[11px] font-bold">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>100% Conciliado às Contas Bancárias</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Header Principal */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--surface-card)] p-5 rounded-2xl border border-[var(--border-subtle)] shadow-xs">
         <div>
           <div className="flex items-center space-x-2">
-            <LineChart className="w-5 h-5 text-amber-500" />
+            {cashFlowMethod === 'INDIRETO' ? (
+              <Scale className="w-5 h-5 text-amber-500" />
+            ) : (
+              <LineChart className="w-5 h-5 text-amber-500" />
+            )}
             <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
-              Fluxo de Caixa Direto
+              {cashFlowMethod === 'INDIRETO' ? 'Demonstração dos Fluxos de Caixa - Método Indireto (DFC)' : 'Fluxo de Caixa Direto'}
             </h1>
             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[var(--surface-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)]">
               {horizonLabel}
             </span>
           </div>
           <p className="text-xs text-[var(--text-secondary)] mt-1">
-            Demonstração estruturada da liquidez por regime de caixa (entradas e saídas efetivas e projetadas).
+            {cashFlowMethod === 'INDIRETO'
+              ? 'Reconciliação estruturada do Lucro Líquido do DRE (Regime de Competência) com as variações do Capital de Giro (NCG) e disponibilidades financeiras (CPC 03 / IAS 7).'
+              : 'Demonstração estruturada da liquidez por regime de caixa (entradas e saídas efetivas e projetadas).'}
           </p>
         </div>
 
@@ -706,8 +888,11 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
         </div>
       )}
 
-      {/* Cards de Resumo Executivo do Período Filtrado (Adaptativo: 1 col celular, 2 col tablet, 3 col notebook, 5 col Mac/Desktop) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
+      {/* Seção Condicional: Direto vs Indireto */}
+      {cashFlowMethod === 'DIRETO' ? (
+        <>
+          {/* Cards de Resumo Executivo do Período Filtrado (Adaptativo: 1 col celular, 2 col tablet, 3 col notebook, 5 col Mac/Desktop) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
         {/* 1. Saldo Inicial */}
         <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
           <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
@@ -1179,6 +1364,317 @@ export const CashFlowView: React.FC<CashFlowViewProps> = ({ isFocusMode, onToggl
           </table>
         </div>
       </div>
+      </>
+      ) : (
+        /* VISÃO DO FLUXO DE CAIXA INDIRETO (DFC - MÉTODO INDIRETO CPC 03 / IAS 7) */
+        <div className="space-y-6">
+          {/* Banner de Conformidade Contábil CPC 03 */}
+          <div className="bg-gradient-to-r from-blue-500/10 via-amber-500/10 to-emerald-500/10 p-4 rounded-2xl border border-[var(--border-subtle)] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+                <Scale className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
+                    Reconciliação Oficial DRE vs Caixa (Norma CPC 03 / NBC TG 03 / IAS 7):
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                    100% AUDITADO E CONCILIADO
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Parte do <strong>Lucro Líquido Econômico (DRE)</strong>, adiciona ajustes que não afetam caixa e reflete o descasamento temporal dos recebimentos e pagamentos (Capital de Giro / NCG) até a geração líquida de caixa.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Cards de Resumo Executivo da DFC Indireta */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* 1. Lucro Líquido DRE */}
+            <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+                <span>1. Lucro Líquido</span>
+                <FileText className="w-3.5 h-3.5 text-blue-500" />
+              </div>
+              <div className={`mt-2 text-base lg:text-lg font-mono font-extrabold ${indirectKPIs.netProfit >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {formatBRL(indirectKPIs.netProfit)}
+              </div>
+              <span className="text-[10px] text-[var(--text-secondary)] truncate block">
+                DRE (Competência)
+              </span>
+            </div>
+
+            {/* 2. Lucro Ajustado */}
+            <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+                <span>2. Lucro Ajustado</span>
+                <Layers className="w-3.5 h-3.5 text-amber-500" />
+              </div>
+              <div className={`mt-2 text-base lg:text-lg font-mono font-extrabold ${indirectKPIs.adjNetProfit >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {formatBRL(indirectKPIs.adjNetProfit)}
+              </div>
+              <span className="text-[10px] text-[var(--text-secondary)] truncate block">
+                (+) Itens Não-Caixa
+              </span>
+            </div>
+
+            {/* 3. Variação Capital de Giro (NCG) */}
+            <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+                <span>3. Capital de Giro</span>
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+              </div>
+              <div className={`mt-2 text-base lg:text-lg font-mono font-extrabold ${indirectKPIs.wcTotal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {indirectKPIs.wcTotal >= 0 ? '+' : ''}{formatBRL(indirectKPIs.wcTotal)}
+              </div>
+              <span className="text-[10px] text-[var(--text-secondary)] truncate block">
+                Δ NCG Operacional
+              </span>
+            </div>
+
+            {/* 4. Caixa Operacional (FCO) */}
+            <div className="bg-amber-500/10 dark:bg-amber-500/15 p-3.5 rounded-xl border border-amber-500/30 shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-amber-900 dark:text-amber-300 uppercase font-bold">
+                <span>4. Caixa Operac. (FCO)</span>
+                <TrendingUp className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className={`mt-2 text-base lg:text-lg font-mono font-black ${indirectKPIs.fco >= 0 ? 'text-amber-950 dark:text-amber-200' : 'text-rose-700 dark:text-rose-300'}`}>
+                {indirectKPIs.fco >= 0 ? '+' : ''}{formatBRL(indirectKPIs.fco)}
+              </div>
+              <span className="text-[10px] text-amber-800/80 dark:text-amber-400/80 font-medium truncate block">
+                Lucro + Δ NCG
+              </span>
+            </div>
+
+            {/* 5. Invest. & Financ. (FCI + FCF) */}
+            <div className="bg-[var(--surface-card)] p-3.5 rounded-xl border border-[var(--border-subtle)] shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase font-semibold">
+                <span>5. Invest. + Financ.</span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-indigo-500" />
+              </div>
+              <div className={`mt-2 text-base lg:text-lg font-mono font-extrabold ${(indirectKPIs.fci + indirectKPIs.fcf) >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {(indirectKPIs.fci + indirectKPIs.fcf) >= 0 ? '+' : ''}{formatBRL(indirectKPIs.fci + indirectKPIs.fcf)}
+              </div>
+              <span className="text-[10px] text-[var(--text-secondary)] truncate block">
+                FCI: {formatBRL(indirectKPIs.fci)} • FCF: {formatBRL(indirectKPIs.fcf)}
+              </span>
+            </div>
+
+            {/* 6. Saldo Final Reconciliado */}
+            <div className="bg-emerald-500/10 dark:bg-emerald-950/20 p-3.5 rounded-xl border-2 border-emerald-500/40 shadow-xs">
+              <div className="flex items-center justify-between text-[11px] text-emerald-900 dark:text-emerald-300 uppercase font-bold">
+                <span>6. Saldo Final</span>
+                <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="mt-2 text-base lg:text-lg font-mono font-black text-emerald-800 dark:text-emerald-200">
+                {formatBRL(indirectKPIs.finalBalance)}
+              </div>
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold truncate block">
+                100% Conciliado PJ
+              </span>
+            </div>
+          </div>
+
+          {/* Tabela Estruturada do DFC Indireto */}
+          <div className="bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] shadow-xs overflow-hidden">
+            <div className="p-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-[var(--text-primary)]">Matriz DFC - Método Indireto (CPC 03)</span>
+                <span className="text-[11px] text-[var(--text-secondary)]">
+                  • Exibindo {displayedIndirectLines.length} rubricas em {activeMonthIndices.length} meses ({horizonLabel})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHideZeroRowsIndirect(!hideZeroRowsIndirect)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                    hideZeroRowsIndirect
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-950 dark:text-amber-200 font-bold'
+                      : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {hideZeroRowsIndirect ? <EyeOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{hideZeroRowsIndirect ? 'Exibindo Apenas com Movimento' : 'Ocultar Linhas Zeradas'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[720px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+                <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#1a2130] border-b border-slate-300 dark:border-slate-700 shadow-xs">
+                  <tr className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                    <th className="py-3 px-2.5 sm:px-4 min-w-[180px] max-w-[280px] sm:min-w-[260px] sm:max-w-[340px] md:min-w-[360px] sticky left-0 bg-slate-100 dark:bg-[#1a2130] z-30 border-r border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold shadow-sm">
+                      Rubrica Contábil / Estrutura DFC (CPC 03)
+                    </th>
+
+                    {/* Colunas dos Meses Selecionados */}
+                    {activeMonthIndices.map(mIdx => {
+                      const mName = indirectData.months[mIdx];
+                      return (
+                        <th 
+                          key={mIdx} 
+                          className="py-3 px-2 text-right min-w-[95px] border-r border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold bg-slate-100 dark:bg-[#1a2130]"
+                        >
+                          {mName}/{String(effectiveYear).substring(2)}
+                        </th>
+                      );
+                    })}
+
+                    {/* Coluna de Total do Período */}
+                    <th className="py-3 px-3 text-right font-extrabold text-slate-900 dark:text-slate-100 min-w-[130px] bg-slate-100 dark:bg-[#1a2130] border-l-2 border-slate-300 dark:border-slate-700">
+                      {totalColLabel}
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {displayedIndirectLines.map(line => {
+                    const isSummary = line.isSummary;
+                    const isHeader = line.isHeader;
+                    const isNetProfit = line.id === 'idcf-net-profit';
+                    const isAdjNetProfit = line.id === 'idcf-adj-net-profit';
+                    const isWcTotal = line.id === 'idcf-wc-total';
+                    const isFcoTotal = line.id === 'idcf-fco-total';
+                    const isFciTotal = line.id === 'idcf-fci-total';
+                    const isFcfTotal = line.id === 'idcf-fcf-total';
+                    const isNetVariation = line.id === 'idcf-net-variation';
+                    const isCashInitial = line.id === 'idcf-cash-initial';
+                    const isCashFinal = line.id === 'idcf-cash-final';
+                    const isReconciliation = line.isReconciliation;
+                    const periodTotal = getIndirectLinePeriodTotal(line);
+
+                    let rowBg = 'hover:bg-slate-100/70 dark:hover:bg-slate-800/40 text-slate-900 dark:text-slate-100';
+                    let stickyBg = 'bg-white dark:bg-[#121620] text-slate-900 dark:text-slate-100';
+
+                    if (isCashFinal) {
+                      rowBg = 'bg-emerald-500/20 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-black text-xs border-y-2 border-emerald-500/50 shadow-xs';
+                      stickyBg = 'bg-emerald-100 dark:bg-[#11241a] text-emerald-950 dark:text-emerald-100 font-black';
+                    } else if (isReconciliation) {
+                      rowBg = 'bg-emerald-500/10 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300 font-bold border-b-2 border-emerald-500/30';
+                      stickyBg = 'bg-emerald-50 dark:bg-[#0f1f16] text-emerald-900 dark:text-emerald-300 font-bold';
+                    } else if (isNetVariation) {
+                      rowBg = 'bg-indigo-500/15 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-100 font-black text-xs border-y-2 border-indigo-500/50';
+                      stickyBg = 'bg-indigo-100 dark:bg-[#1a1f3d] text-indigo-950 dark:text-indigo-100 font-black';
+                    } else if (isFcoTotal) {
+                      rowBg = 'bg-amber-500/20 dark:bg-amber-500/25 text-amber-950 dark:text-amber-100 font-black text-xs border-y-2 border-amber-500/60 shadow-xs';
+                      stickyBg = 'bg-amber-100 dark:bg-[#261e10] text-amber-950 dark:text-amber-100 font-black';
+                    } else if (isFciTotal || isFcfTotal) {
+                      rowBg = 'bg-blue-500/15 dark:bg-blue-950/40 text-slate-900 dark:text-slate-100 font-bold border-y-2 border-blue-400/50';
+                      stickyBg = 'bg-blue-100 dark:bg-[#152338] text-slate-900 dark:text-slate-100 font-bold';
+                    } else if (isAdjNetProfit || isWcTotal) {
+                      rowBg = 'bg-amber-500/10 dark:bg-amber-500/15 font-bold text-amber-950 dark:text-amber-200 border-t border-b border-amber-500/30';
+                      stickyBg = 'bg-amber-50 dark:bg-[#1f1910] text-amber-950 dark:text-amber-200 font-bold';
+                    } else if (isNetProfit) {
+                      rowBg = 'bg-blue-500/10 dark:bg-blue-950/30 font-bold text-blue-950 dark:text-blue-100 border-t border-b border-blue-300 dark:border-blue-800/60';
+                      stickyBg = 'bg-blue-50 dark:bg-[#132030] text-blue-950 dark:text-blue-100 font-bold';
+                    } else if (isCashInitial) {
+                      rowBg = 'bg-slate-50 dark:bg-slate-800/40 font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700';
+                      stickyBg = 'bg-slate-100 dark:bg-[#151c27] text-slate-900 dark:text-slate-100 font-semibold';
+                    } else if (isHeader) {
+                      rowBg = 'bg-slate-100 dark:bg-slate-800/80 font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider text-xs border-t-2 border-slate-300 dark:border-slate-700';
+                      stickyBg = 'bg-slate-200 dark:bg-[#1e2738] text-slate-900 dark:text-slate-100 font-bold';
+                    }
+
+                    return (
+                      <tr key={line.id} className={`${rowBg} transition-colors`}>
+                        <td 
+                          className={`py-2 px-2.5 sm:px-4 sticky left-0 z-10 border-r border-slate-200 dark:border-slate-700 shadow-sm min-w-[180px] max-w-[280px] sm:min-w-[260px] sm:max-w-[340px] md:min-w-[360px] ${stickyBg}`}
+                          style={{ paddingLeft: `${Math.min(line.level * 10 + 8, 30)}px` }}
+                        >
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center space-x-1.5 sm:space-x-2 truncate min-w-0">
+                              {line.code && (
+                                <span className="font-mono text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                                  {line.code}
+                                </span>
+                              )}
+                              <span 
+                                className={`truncate text-xs ${isSummary || line.level === 0 ? 'font-black text-slate-950 dark:text-white' : 'font-semibold text-slate-900 dark:text-slate-100'}`}
+                                title={line.name}
+                              >
+                                {line.name}
+                              </span>
+                              {line.isReconciliation && (
+                                <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                  100% OK
+                                </span>
+                              )}
+                            </div>
+                            {line.helpTooltip && (
+                              <span className="text-[9.5px] text-slate-500 dark:text-slate-400 truncate font-normal mt-0.5" title={line.helpTooltip}>
+                                {line.helpTooltip}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Meses */}
+                        {activeMonthIndices.map((mIdx, colIdx) => {
+                          const val = line.valuesByMonth[mIdx] || 0;
+                          const isEven = colIdx % 2 === 0;
+
+                          let cellColor = 'text-slate-800 dark:text-slate-200';
+                          if (isCashFinal || isReconciliation) {
+                            cellColor = val >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                          } else if (isNetVariation) {
+                            cellColor = val >= 0 ? 'text-indigo-900 dark:text-indigo-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                          } else if (isFcoTotal || isAdjNetProfit) {
+                            cellColor = val >= 0 ? 'text-amber-950 dark:text-amber-200 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                          } else if (isFciTotal || isFcfTotal) {
+                            cellColor = val >= 0 ? 'text-blue-900 dark:text-blue-200 font-black' : 'text-rose-800 dark:text-rose-300 font-black';
+                          } else if (isNetProfit) {
+                            cellColor = val >= 0 ? 'text-blue-800 dark:text-blue-300 font-bold' : 'text-rose-800 dark:text-rose-300 font-bold';
+                          } else if (isSummary) {
+                            cellColor = val >= 0 ? 'text-slate-900 dark:text-slate-100 font-bold' : 'text-rose-700 dark:text-rose-400 font-bold';
+                          } else if (val < 0) {
+                            cellColor = 'text-rose-700 dark:text-rose-400 font-semibold';
+                          } else if (val > 0) {
+                            cellColor = 'text-emerald-700 dark:text-emerald-400 font-semibold';
+                          }
+
+                          const cellBg = (isCashFinal || isHeader || isSummary || isReconciliation)
+                            ? ''
+                            : (isEven ? 'bg-slate-50/40 dark:bg-white/[0.02]' : '');
+
+                          return (
+                            <td 
+                              key={mIdx} 
+                              className={`py-2 px-1.5 sm:px-2 text-right font-mono border-r border-slate-200/60 dark:border-slate-800/60 text-[10.5px] sm:text-[11px] tabular-nums whitespace-nowrap overflow-hidden text-ellipsis ${cellColor} ${cellBg}`}
+                            >
+                              {isHeader ? '-' : (val !== 0 ? formatBRL(val) : '-')}
+                            </td>
+                          );
+                        })}
+
+                        {/* Total */}
+                        <td className={`py-2 px-2.5 sm:px-3 text-right font-bold font-mono border-l-2 text-[10.5px] sm:text-[11px] tabular-nums whitespace-nowrap overflow-hidden text-ellipsis ${
+                          isHeader
+                            ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 font-normal text-center'
+                            : isCashFinal || isReconciliation
+                            ? 'bg-emerald-500/20 dark:bg-emerald-950/60 border-emerald-500/40 ' + (periodTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                            : isNetVariation
+                            ? 'bg-indigo-500/20 dark:bg-indigo-950/60 border-indigo-500/40 ' + (periodTotal >= 0 ? 'text-indigo-900 dark:text-indigo-200 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                            : isFcoTotal
+                            ? 'bg-amber-500/20 dark:bg-amber-500/40 border-amber-500/50 ' + (periodTotal >= 0 ? 'text-amber-950 dark:text-amber-200 font-black' : 'text-rose-800 dark:text-rose-300 font-black')
+                            : isSummary
+                            ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold'
+                            : 'bg-slate-50/80 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
+                        }`}>
+                          {isHeader ? '-' : formatBRL(periodTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
