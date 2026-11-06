@@ -194,9 +194,20 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     }
   }, [isOpen]);
 
+  const isReceber = title?.type === 'RECEBER';
+
+  const chartAccountOptions: SelectOption[] = useMemo(() => {
+    if (!isOpen || !title) return [];
+    return formatChartAccountSelectOptions(chartAccounts || [], isReceber ? 'RECEBER' : 'PAGAR');
+  }, [chartAccounts, isReceber, isOpen, title]);
+
+  const selectedAccount = useMemo(() => {
+    if (!isOpen || !title) return undefined;
+    return (chartAccounts || []).find(a => a.id === accountId);
+  }, [chartAccounts, accountId, isOpen, title]);
+
   if (!isOpen || !title) return null;
 
-  const isReceber = title.type === 'RECEBER';
   const hasSettlements = (title.settledPrincipal || 0) > 0;
   const isReconciled = title.reconciliationStatus === 'CONCILIADO' || Boolean(title.reconciledViaBank);
 
@@ -223,14 +234,6 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
         badge: c.status === 'ATIVO' ? typeBadge : 'Inativo'
       };
     });
-
-  const chartAccountOptions: SelectOption[] = useMemo(() => {
-    return formatChartAccountSelectOptions(chartAccounts || [], isReceber ? 'RECEBER' : 'PAGAR');
-  }, [chartAccounts, isReceber]);
-
-  const selectedAccount = useMemo(() => {
-    return (chartAccounts || []).find(a => a.id === accountId);
-  }, [chartAccounts, accountId]);
 
   const bankAccountOptions: SelectOption[] = [
     { value: '', label: 'Indiferente / Não definida' },

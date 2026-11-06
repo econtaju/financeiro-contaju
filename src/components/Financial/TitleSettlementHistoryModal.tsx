@@ -32,25 +32,31 @@ export const TitleSettlementHistoryModal: React.FC<TitleSettlementHistoryModalPr
   title,
   onClose
 }) => {
-  if (!isOpen || !title) return null;
+  const counterparties: Counterparty[] = useMemo(() => {
+    if (!isOpen || !title) return [];
+    return storage.getCounterparties();
+  }, [isOpen, title]);
 
-  const counterparties: Counterparty[] = useMemo(() => storage.getCounterparties(), []);
-  const bankAccounts: BankAccount[] = useMemo(() => storage.getBankAccounts(), []);
-  const counterparty = counterparties.find(c => c.id === title.counterpartyId);
+  const bankAccounts: BankAccount[] = useMemo(() => {
+    if (!isOpen || !title) return [];
+    return storage.getBankAccounts();
+  }, [isOpen, title]);
 
   // Liquidações contábeis realizadas neste título
   const settlements: Settlement[] = useMemo(() => {
+    if (!isOpen || !title) return [];
     return storage.getSettlements()
       .filter(s => s.titleId === title.id && !s.isReversed)
       .sort((a, b) => new Date(a.settlementDate).getTime() - new Date(b.settlementDate).getTime());
-  }, [title.id]);
+  }, [isOpen, title?.id]);
 
   // Lançamentos de extrato bancário vinculados a este título
   const matchedStatements: BankStatementEntry[] = useMemo(() => {
+    if (!isOpen || !title) return [];
     return storage.getStatementEntries()
       .filter(s => s.matchedTitleId === title.id)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [title.id]);
+  }, [isOpen, title?.id]);
 
   const bankAccountMap = useMemo(() => {
     const map = new Map<string, BankAccount>();
@@ -58,16 +64,9 @@ export const TitleSettlementHistoryModal: React.FC<TitleSettlementHistoryModalPr
     return map;
   }, [bankAccounts]);
 
-  const isReceivable = title.type === 'RECEBER';
-  const isFullySettled = title.settlementState === 'LIQUIDADO' || title.balancePrincipal <= 0.005;
-  const isPartial = title.settlementState === 'PARCIAL' || (title.settledPrincipal > 0 && !isFullySettled);
-
-  const percentSettled = title.originalAmount > 0 
-    ? Math.min(100, Math.round(((title.settledPrincipal || 0) / title.originalAmount) * 100))
-    : (isFullySettled ? 100 : 0);
-
   // Une os settlements com os extratos correspondentes
   const historyTimeline = useMemo(() => {
+    if (!isOpen || !title) return [];
     if (settlements.length === 0 && matchedStatements.length === 0) {
       return [];
     }
@@ -135,7 +134,18 @@ export const TitleSettlementHistoryModal: React.FC<TitleSettlementHistoryModalPr
         settlementIndex: idx + 1
       };
     });
-  }, [settlements, matchedStatements, bankAccountMap, title]);
+  }, [isOpen, settlements, matchedStatements, bankAccountMap, title]);
+
+  if (!isOpen || !title) return null;
+
+  const counterparty = counterparties.find(c => c.id === title.counterpartyId);
+  const isReceivable = title.type === 'RECEBER';
+  const isFullySettled = title.settlementState === 'LIQUIDADO' || title.balancePrincipal <= 0.005;
+  const isPartial = title.settlementState === 'PARCIAL' || (title.settledPrincipal > 0 && !isFullySettled);
+
+  const percentSettled = title.originalAmount > 0 
+    ? Math.min(100, Math.round(((title.settledPrincipal || 0) / title.originalAmount) * 100))
+    : (isFullySettled ? 100 : 0);
 
   const handlePrint = () => {
     window.print();

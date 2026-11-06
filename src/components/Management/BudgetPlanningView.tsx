@@ -257,10 +257,10 @@ export const BudgetPlanningView: React.FC = () => {
       }
 
       if (hideEmptyLines) {
-        // Se for linha analítica ou de detalhe, verifica se tem valor planejado ou realizado
-        if (!line.isHeader && !line.id.startsWith('sub-') && !line.id.startsWith('grp-')) {
-          const hasPlanned = Math.abs(line.plannedTotal || 0) > 0.001;
-          const hasRealized = Math.abs(line.realizedTotal || 0) > 0.001;
+        // Preserva cabeçalhos e sumários essenciais (igual ao DRE)
+        if (!line.isHeader && !line.isSummary && !line.id.startsWith('sub-') && !line.id.startsWith('grp-')) {
+          const hasPlanned = Math.abs(line.plannedTotal || 0) > 0.001 || (line.plannedMonthly || []).some(v => Math.abs(v) > 0.001);
+          const hasRealized = Math.abs(line.realizedTotal || 0) > 0.001 || (line.realizedMonthly || []).some(v => Math.abs(v) > 0.001);
           if (!hasPlanned && !hasRealized) return false;
         }
       }
@@ -611,9 +611,9 @@ export const BudgetPlanningView: React.FC = () => {
   const isAccountEmpty = (accId: string) => {
     const planned = getEditingPlannedArray(accId);
     const realized = accountRealizedMap.get(accId) || [];
-    const plannedTotal = planned.reduce((a, b) => a + b, 0);
-    const realizedTotal = realized.reduce((a, b) => a + b, 0);
-    return Math.abs(plannedTotal) < 0.001 && Math.abs(realizedTotal) < 0.001;
+    const hasPlanned = planned.some(v => Math.abs(v) > 0.001);
+    const hasRealized = realized.some(v => Math.abs(v) > 0.001);
+    return !hasPlanned && !hasRealized;
   };
 
   const displayedRevenueAccounts = useMemo(() => {
@@ -642,6 +642,30 @@ export const BudgetPlanningView: React.FC = () => {
       (costAccounts.length - displayedCostAccounts.length) +
       (expenseAccounts.length - displayedExpenseAccounts.length);
   }, [revenueAccounts, displayedRevenueAccounts, deductionAccounts, displayedDeductionAccounts, costAccounts, displayedCostAccounts, expenseAccounts, displayedExpenseAccounts]);
+
+  const hiddenAnnualZeroCount = useMemo(() => {
+    return fullYearData.lines.filter(l => 
+      !l.isHeader && !l.isSummary && !l.id.startsWith('sub-') && !l.id.startsWith('grp-') &&
+      Math.abs(l.plannedTotal || 0) <= 0.001 && Math.abs(l.realizedTotal || 0) <= 0.001 &&
+      !(l.plannedMonthly || []).some(v => Math.abs(v) > 0.001) &&
+      !(l.realizedMonthly || []).some(v => Math.abs(v) > 0.001)
+    ).length;
+  }, [fullYearData.lines]);
+
+  const hiddenComparisonZeroCount = useMemo(() => {
+    return lines.filter(l => 
+      !l.isHeader && !l.isSummary && !l.id.startsWith('sub-') && !l.id.startsWith('grp-') &&
+      Math.abs(l.plannedTotal || 0) <= 0.001 && Math.abs(l.realizedTotal || 0) <= 0.001 &&
+      !(l.plannedMonthly || []).some(v => Math.abs(v) > 0.001) &&
+      !(l.realizedMonthly || []).some(v => Math.abs(v) > 0.001)
+    ).length;
+  }, [lines]);
+
+  const currentHiddenZeroCount = useMemo(() => {
+    if (activeTab === 'ANNUAL_12M') return hiddenAnnualZeroCount;
+    if (activeTab === 'COMPARISON') return hiddenComparisonZeroCount;
+    return totalEmptyAccountsCount;
+  }, [activeTab, totalEmptyAccountsCount, hiddenAnnualZeroCount, hiddenComparisonZeroCount]);
 
   // Cálculos consolidados para a SOMA GERAL (DRE e Caixa) no final da tabela de planejamento
   const initialCashYear = useMemo(() => {
@@ -861,23 +885,19 @@ export const BudgetPlanningView: React.FC = () => {
             Exportar Excel
           </button>
 
-          {/* Botão de Alternância: Ocultar / Exibir Linhas Vazias */}
+          {/* Filtro Rápido: Ocultar Linhas Zeradas (igual ao DRE) */}
           <button
+            type="button"
             onClick={toggleHideEmptyLines}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
               hideEmptyLines
-                ? 'bg-amber-500/15 border-amber-500/50 text-amber-400 font-bold shadow-xs'
-                : 'bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-400/40'
             }`}
-            title={hideEmptyLines ? 'Linhas vazias estão ocultas. Clique para mostrar todas as contas.' : 'Clique para ocultar contas sem valor orçado ou realizado.'}
+            title="Ocultar contas analíticas e subcategorias que não possuem valores no período"
           >
-            {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
-            <span>{hideEmptyLines ? 'Linhas Vazias: Ocultas' : 'Ocultar Linhas Vazias'}</span>
-            {hideEmptyLines && totalEmptyAccountsCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-slate-950 font-bold">
-                -{totalEmptyAccountsCount}
-              </span>
-            )}
+            {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{hideEmptyLines ? `Zeradas Ocultas (${currentHiddenZeroCount})` : 'Ocultar Zeradas'}</span>
           </button>
 
           {/* Botão de Aprovação em Destaque Dourado */}
@@ -1304,23 +1324,19 @@ export const BudgetPlanningView: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Toggle Ocultar Linhas Vazias na Grade */}
+                {/* Filtro Rápido: Ocultar Linhas Zeradas (igual ao DRE) */}
                 <button
+                  type="button"
                   onClick={toggleHideEmptyLines}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                  className={`px-2.5 py-1 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                     hideEmptyLines
-                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-400 font-bold'
-                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                      : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-400/40'
                   }`}
-                  title={hideEmptyLines ? 'Exibindo apenas contas com valores orçados/realizados' : 'Ocultar contas zeradas do plano de contas'}
+                  title="Ocultar contas analíticas e subcategorias que não possuem valores no período"
                 >
-                  {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{hideEmptyLines ? 'Vazias Ocultas' : 'Ocultar Vazias'}</span>
-                  {hideEmptyLines && totalEmptyAccountsCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-bold">
-                      -{totalEmptyAccountsCount}
-                    </span>
-                  )}
+                  {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{hideEmptyLines ? `Zeradas Ocultas (${totalEmptyAccountsCount})` : 'Ocultar Zeradas'}</span>
                 </button>
 
                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-400">
@@ -2114,6 +2130,21 @@ export const BudgetPlanningView: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* Filtro Rápido: Ocultar Linhas Zeradas (igual ao DRE) */}
+              <button
+                type="button"
+                onClick={toggleHideEmptyLines}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  hideEmptyLines
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                    : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-400/40'
+                }`}
+                title="Ocultar contas analíticas que não possuem movimentação no período ativo"
+              >
+                {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{hideEmptyLines ? `Zeradas Ocultas (${hiddenAnnualZeroCount})` : 'Ocultar Zeradas'}</span>
+              </button>
+
               <button
                 onClick={() => setIsFitScreen(!isFitScreen)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors flex items-center ${
@@ -2525,6 +2556,21 @@ export const BudgetPlanningView: React.FC = () => {
                 <option value="RECEITAS">Apenas Receitas</option>
                 <option value="DESPESAS">Custos e Despesas</option>
               </select>
+
+              {/* Filtro Rápido: Ocultar Linhas Zeradas (igual ao DRE) */}
+              <button
+                type="button"
+                onClick={toggleHideEmptyLines}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                  hideEmptyLines
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-xs'
+                    : 'bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-amber-400/40'
+                }`}
+                title="Ocultar contas analíticas que não possuem movimentação no período ativo"
+              >
+                {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{hideEmptyLines ? `Zeradas Ocultas (${hiddenComparisonZeroCount})` : 'Ocultar Zeradas'}</span>
+              </button>
 
               <button
                 onClick={expandAll}
