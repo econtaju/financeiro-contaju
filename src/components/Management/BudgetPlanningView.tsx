@@ -28,6 +28,7 @@ import {
   RotateCcw,
   FileText,
   Eye,
+  EyeOff,
   Award
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
@@ -40,6 +41,7 @@ import { BudgetRowSimulationModal } from './BudgetRowSimulationModal';
 import { BudgetApprovalModal } from './BudgetApprovalModal';
 import { BudgetVersionDetailsModal } from './BudgetVersionDetailsModal';
 import { BudgetDreCashProjectionTab } from './BudgetDreCashProjectionTab';
+import { RealCurrencyCell, parseRealCurrency } from './RealCurrencyCell';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -65,6 +67,26 @@ export const BudgetPlanningView: React.FC = () => {
   const [natureFilter, setNatureFilter] = useState<'ALL' | 'RECEITAS' | 'DESPESAS'>('ALL');
   const [isFitScreen, setIsFitScreen] = useState<boolean>(false);
   const [useCompactNumbers, setUseCompactNumbers] = useState<boolean>(false);
+  
+  // Ocultar linhas vazias / sem movimentação do plano de contas
+  const [hideEmptyLines, setHideEmptyLines] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('contaju_budget_hide_empty') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleHideEmptyLines = () => {
+    setHideEmptyLines(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('contaju_budget_hide_empty', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const [expandedCodes, setExpandedCodes] = useState<Record<string, boolean>>({
     '1': true,
     '2': true,
@@ -234,17 +256,26 @@ export const BudgetPlanningView: React.FC = () => {
         }
       }
 
+      if (hideEmptyLines) {
+        // Se for linha analítica ou de detalhe, verifica se tem valor planejado ou realizado
+        if (!line.isHeader && !line.id.startsWith('sub-') && !line.id.startsWith('grp-')) {
+          const hasPlanned = Math.abs(line.plannedTotal || 0) > 0.001;
+          const hasRealized = Math.abs(line.realizedTotal || 0) > 0.001;
+          if (!hasPlanned && !hasRealized) return false;
+        }
+      }
+
       return true;
     });
   };
 
   const filteredComparisonLines = useMemo(() => {
     return filterHierarchyLines(lines);
-  }, [lines, searchQuery, natureFilter]);
+  }, [lines, searchQuery, natureFilter, hideEmptyLines]);
 
   const filteredAnnualLines = useMemo(() => {
     return filterHierarchyLines(fullYearData.lines);
-  }, [fullYearData.lines, searchQuery, natureFilter]);
+  }, [fullYearData.lines, searchQuery, natureFilter, hideEmptyLines]);
 
   // Mapa de valores realizados por conta contábil para exibir abaixo dos valores orçados
   const accountRealizedMap = useMemo(() => {
@@ -351,8 +382,8 @@ export const BudgetPlanningView: React.FC = () => {
   // -------------------------------------------------------------
   // Edição e Simulação de Valores
   // -------------------------------------------------------------
-  const handlePlannedValueChange = (accountId: string, monthIdx: number, valueStr: string) => {
-    const numVal = parseFloat(valueStr) || 0;
+  const handlePlannedValueChange = (accountId: string, monthIdx: number, valueInput: number | string) => {
+    const numVal = typeof valueInput === 'number' ? valueInput : (parseRealCurrency(valueInput) || 0);
     const items = [...editingPlan.items];
     const itemIndex = items.findIndex(i => i.accountId === accountId);
 
@@ -576,6 +607,42 @@ export const BudgetPlanningView: React.FC = () => {
     ).sort((a, b) => a.code.localeCompare(b.code));
   }, [analyticalAccounts, revenueAccounts, deductionAccounts, costAccounts]);
 
+  // Verificação de contas vazias (sem orçamento planejado nem realizado no ano)
+  const isAccountEmpty = (accId: string) => {
+    const planned = getEditingPlannedArray(accId);
+    const realized = accountRealizedMap.get(accId) || [];
+    const plannedTotal = planned.reduce((a, b) => a + b, 0);
+    const realizedTotal = realized.reduce((a, b) => a + b, 0);
+    return Math.abs(plannedTotal) < 0.001 && Math.abs(realizedTotal) < 0.001;
+  };
+
+  const displayedRevenueAccounts = useMemo(() => {
+    if (!hideEmptyLines) return revenueAccounts;
+    return revenueAccounts.filter(acc => !isAccountEmpty(acc.id));
+  }, [revenueAccounts, hideEmptyLines, editingPlan, accountRealizedMap]);
+
+  const displayedDeductionAccounts = useMemo(() => {
+    if (!hideEmptyLines) return deductionAccounts;
+    return deductionAccounts.filter(acc => !isAccountEmpty(acc.id));
+  }, [deductionAccounts, hideEmptyLines, editingPlan, accountRealizedMap]);
+
+  const displayedCostAccounts = useMemo(() => {
+    if (!hideEmptyLines) return costAccounts;
+    return costAccounts.filter(acc => !isAccountEmpty(acc.id));
+  }, [costAccounts, hideEmptyLines, editingPlan, accountRealizedMap]);
+
+  const displayedExpenseAccounts = useMemo(() => {
+    if (!hideEmptyLines) return expenseAccounts;
+    return expenseAccounts.filter(acc => !isAccountEmpty(acc.id));
+  }, [expenseAccounts, hideEmptyLines, editingPlan, accountRealizedMap]);
+
+  const totalEmptyAccountsCount = useMemo(() => {
+    return (revenueAccounts.length - displayedRevenueAccounts.length) +
+      (deductionAccounts.length - displayedDeductionAccounts.length) +
+      (costAccounts.length - displayedCostAccounts.length) +
+      (expenseAccounts.length - displayedExpenseAccounts.length);
+  }, [revenueAccounts, displayedRevenueAccounts, deductionAccounts, displayedDeductionAccounts, costAccounts, displayedCostAccounts, expenseAccounts, displayedExpenseAccounts]);
+
   // Cálculos consolidados para a SOMA GERAL (DRE e Caixa) no final da tabela de planejamento
   const initialCashYear = useMemo(() => {
     try {
@@ -792,6 +859,25 @@ export const BudgetPlanningView: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
             Exportar Excel
+          </button>
+
+          {/* Botão de Alternância: Ocultar / Exibir Linhas Vazias */}
+          <button
+            onClick={toggleHideEmptyLines}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+              hideEmptyLines
+                ? 'bg-amber-500/15 border-amber-500/50 text-amber-400 font-bold shadow-xs'
+                : 'bg-[var(--surface-elevated)] hover:bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            title={hideEmptyLines ? 'Linhas vazias estão ocultas. Clique para mostrar todas as contas.' : 'Clique para ocultar contas sem valor orçado ou realizado.'}
+          >
+            {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{hideEmptyLines ? 'Linhas Vazias: Ocultas' : 'Ocultar Linhas Vazias'}</span>
+            {hideEmptyLines && totalEmptyAccountsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-slate-950 font-bold">
+                -{totalEmptyAccountsCount}
+              </span>
+            )}
           </button>
 
           {/* Botão de Aprovação em Destaque Dourado */}
@@ -1218,6 +1304,25 @@ export const BudgetPlanningView: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Toggle Ocultar Linhas Vazias na Grade */}
+                <button
+                  onClick={toggleHideEmptyLines}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                    hideEmptyLines
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-400 font-bold'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+                  title={hideEmptyLines ? 'Exibindo apenas contas com valores orçados/realizados' : 'Ocultar contas zeradas do plano de contas'}
+                >
+                  {hideEmptyLines ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{hideEmptyLines ? 'Vazias Ocultas' : 'Ocultar Vazias'}</span>
+                  {hideEmptyLines && totalEmptyAccountsCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-bold">
+                      -{totalEmptyAccountsCount}
+                    </span>
+                  )}
+                </button>
+
                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-400">
                   <span className="w-2.5 h-2.5 rounded-xs bg-amber-500/30 border border-amber-500" />
                   Modificado
@@ -1280,7 +1385,9 @@ export const BudgetPlanningView: React.FC = () => {
                             1. Receitas Operacionais (Faturamento)
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 font-semibold border border-amber-500/30">
-                            {revenueAccounts.length} {revenueAccounts.length === 1 ? 'conta' : 'contas'}
+                            {hideEmptyLines
+                              ? `${displayedRevenueAccounts.length} de ${revenueAccounts.length} contas`
+                              : `${revenueAccounts.length} ${revenueAccounts.length === 1 ? 'conta' : 'contas'}`}
                           </span>
                           <span className="text-[10px] text-slate-400 font-normal">
                             ({isRevenueExpanded ? 'Clique p/ recolher' : 'Clique p/ expandir'})
@@ -1293,8 +1400,23 @@ export const BudgetPlanningView: React.FC = () => {
                     </td>
                   </tr>
 
+                  {/* Aviso de contas vazias ocultadas em Receitas */}
+                  {isRevenueExpanded && hideEmptyLines && displayedRevenueAccounts.length === 0 && (
+                    <tr>
+                      <td colSpan={15} className="py-3 px-4 text-center text-xs text-[var(--text-secondary)] italic bg-[var(--surface-card)]">
+                        Todas as {revenueAccounts.length} contas de receita estão sem valores orçados/realizados e foram ocultadas pelo filtro.
+                        <button 
+                          onClick={() => setHideEmptyLines(false)} 
+                          className="ml-2 text-amber-400 hover:underline font-semibold not-italic cursor-pointer"
+                        >
+                          Exibir contas
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+
                   {/* Linhas de Contas de Receita (Ocultas no modo recolhido) */}
-                  {isRevenueExpanded && revenueAccounts.map(acc => {
+                  {isRevenueExpanded && displayedRevenueAccounts.map(acc => {
                     const monthly = getEditingPlannedArray(acc.id);
                     const savedMonthly = getSavedPlannedArray(acc.id);
                     const annualTotal = monthly.reduce((a, b) => a + b, 0);
@@ -1339,24 +1461,12 @@ export const BudgetPlanningView: React.FC = () => {
                                 isEven ? 'bg-[var(--surface-card)]/40' : 'bg-[var(--surface-elevated)]/60'
                               }`}
                             >
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={val === 0 ? '' : val}
-                                  placeholder="0"
-                                  onChange={e => handlePlannedValueChange(acc.id, mIdx, e.target.value)}
-                                  onWheel={e => (e.target as HTMLElement).blur()}
-                                  title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
-                                  className={`w-full text-right px-2 py-1.5 rounded-lg font-mono text-xs sm:text-[13px] font-medium placeholder:text-[var(--text-secondary)]/40 focus:outline-hidden transition-colors ${
-                                    isCellChanged
-                                      ? 'bg-amber-500/20 border-2 border-amber-500/60 text-amber-300 font-bold focus:border-amber-400'
-                                      : 'bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30'
-                                  }`}
-                                />
-                                {isCellChanged && (
-                                  <span className="absolute top-1 left-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                )}
-                              </div>
+                              <RealCurrencyCell
+                                value={val}
+                                onChange={newVal => handlePlannedValueChange(acc.id, mIdx, newVal)}
+                                isChanged={isCellChanged}
+                                title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
+                              />
                               <div className="text-[9px] text-[var(--text-secondary)] font-mono text-right mt-0.5" title={`Realizado no período: ${formatBRL(rVal)}`}>
                                 Real: {formatBRL(rVal)}
                               </div>
@@ -1420,11 +1530,32 @@ export const BudgetPlanningView: React.FC = () => {
                               <span className="font-bold text-xs text-slate-300 uppercase tracking-wider">
                                 Deduções e Impostos sobre Faturamento
                               </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-semibold border border-slate-700">
+                                {hideEmptyLines
+                                  ? `${displayedDeductionAccounts.length} de ${deductionAccounts.length} contas`
+                                  : `${deductionAccounts.length} ${deductionAccounts.length === 1 ? 'conta' : 'contas'}`}
+                              </span>
                             </button>
                           </div>
                         </td>
                       </tr>
-                      {isDeductionsExpanded && deductionAccounts.map(acc => {
+
+                      {/* Aviso de contas vazias ocultadas em Deduções */}
+                      {isDeductionsExpanded && hideEmptyLines && displayedDeductionAccounts.length === 0 && (
+                        <tr>
+                          <td colSpan={15} className="py-3 px-4 text-center text-xs text-[var(--text-secondary)] italic bg-[var(--surface-card)]">
+                            Todas as {deductionAccounts.length} contas de deduções estão sem valores orçados/realizados e foram ocultadas pelo filtro.
+                            <button 
+                              onClick={() => setHideEmptyLines(false)} 
+                              className="ml-2 text-amber-400 hover:underline font-semibold not-italic cursor-pointer"
+                            >
+                              Exibir contas
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+
+                      {isDeductionsExpanded && displayedDeductionAccounts.map(acc => {
                         const monthly = getEditingPlannedArray(acc.id);
                         const savedMonthly = getSavedPlannedArray(acc.id);
                         const annualTotal = monthly.reduce((a, b) => a + b, 0);
@@ -1444,14 +1575,17 @@ export const BudgetPlanningView: React.FC = () => {
                             </td>
                             {monthly.map((val, mIdx) => {
                               const rVal = rMonthly[mIdx] || 0;
+                              const cellKey = `${acc.id}-${mIdx}`;
+                              const isCellChanged = changedCellsSet.has(cellKey);
+                              const origVal = savedMonthly[mIdx] || 0;
+
                               return (
                                 <td key={mIdx} className="py-1 px-1.5 text-right border-r border-[var(--border-subtle)]/40">
-                                  <input
-                                    type="number"
-                                    value={val === 0 ? '' : val}
-                                    placeholder="0"
-                                    onChange={e => handlePlannedValueChange(acc.id, mIdx, e.target.value)}
-                                    className="w-full text-right px-2 py-1 rounded-lg font-mono text-xs bg-[var(--surface-elevated)] border border-[var(--border-subtle)]"
+                                  <RealCurrencyCell
+                                    value={val}
+                                    onChange={newVal => handlePlannedValueChange(acc.id, mIdx, newVal)}
+                                    isChanged={isCellChanged}
+                                    title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
                                   />
                                   <div className="text-[9px] text-[var(--text-secondary)] font-mono text-right mt-0.5" title={`Realizado no período: ${formatBRL(rVal)}`}>
                                     Real: {formatBRL(rVal)}
@@ -1485,7 +1619,9 @@ export const BudgetPlanningView: React.FC = () => {
                             2. Custos dos Serviços Prestados (Custos Diretos)
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 font-semibold border border-amber-500/30">
-                            {costAccounts.length} {costAccounts.length === 1 ? 'conta' : 'contas'}
+                            {hideEmptyLines
+                              ? `${displayedCostAccounts.length} de ${costAccounts.length} contas`
+                              : `${costAccounts.length} ${costAccounts.length === 1 ? 'conta' : 'contas'}`}
                           </span>
                           <span className="text-[10px] text-slate-400 font-normal">
                             ({isCostsExpanded ? 'Clique p/ recolher' : 'Clique p/ expandir'})
@@ -1498,8 +1634,23 @@ export const BudgetPlanningView: React.FC = () => {
                     </td>
                   </tr>
 
+                  {/* Aviso de contas vazias ocultadas em Custos */}
+                  {isCostsExpanded && hideEmptyLines && displayedCostAccounts.length === 0 && (
+                    <tr>
+                      <td colSpan={15} className="py-3 px-4 text-center text-xs text-[var(--text-secondary)] italic bg-[var(--surface-card)]">
+                        Todas as {costAccounts.length} contas de custos diretos estão sem valores orçados/realizados e foram ocultadas pelo filtro.
+                        <button 
+                          onClick={() => setHideEmptyLines(false)} 
+                          className="ml-2 text-amber-400 hover:underline font-semibold not-italic cursor-pointer"
+                        >
+                          Exibir contas
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+
                   {/* Linhas de Contas de Custo */}
-                  {isCostsExpanded && costAccounts.map(acc => {
+                  {isCostsExpanded && displayedCostAccounts.map(acc => {
                     const monthly = getEditingPlannedArray(acc.id);
                     const savedMonthly = getSavedPlannedArray(acc.id);
                     const annualTotal = monthly.reduce((a, b) => a + b, 0);
@@ -1544,24 +1695,12 @@ export const BudgetPlanningView: React.FC = () => {
                                 isEven ? 'bg-[var(--surface-card)]/40' : 'bg-[var(--surface-elevated)]/60'
                               }`}
                             >
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={val === 0 ? '' : val}
-                                  placeholder="0"
-                                  onChange={e => handlePlannedValueChange(acc.id, mIdx, e.target.value)}
-                                  onWheel={e => (e.target as HTMLElement).blur()}
-                                  title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
-                                  className={`w-full text-right px-2 py-1.5 rounded-lg font-mono text-xs sm:text-[13px] font-medium placeholder:text-[var(--text-secondary)]/40 focus:outline-hidden transition-colors ${
-                                    isCellChanged
-                                      ? 'bg-amber-500/20 border-2 border-amber-500/60 text-amber-300 font-bold focus:border-amber-400'
-                                      : 'bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30'
-                                  }`}
-                                />
-                                {isCellChanged && (
-                                  <span className="absolute top-1 left-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                )}
-                              </div>
+                              <RealCurrencyCell
+                                value={val}
+                                onChange={newVal => handlePlannedValueChange(acc.id, mIdx, newVal)}
+                                isChanged={isCellChanged}
+                                title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
+                              />
                               <div className="text-[9px] text-[var(--text-secondary)] font-mono text-right mt-0.5" title={`Realizado no período: ${formatBRL(rVal)}`}>
                                 Real: {formatBRL(rVal)}
                               </div>
@@ -1626,7 +1765,9 @@ export const BudgetPlanningView: React.FC = () => {
                             3. Despesas Operacionais (Administrativas, Comerciais, Pessoal & Gerais)
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-semibold border border-slate-700">
-                            {expenseAccounts.length} {expenseAccounts.length === 1 ? 'conta' : 'contas'}
+                            {hideEmptyLines
+                              ? `${displayedExpenseAccounts.length} de ${expenseAccounts.length} contas`
+                              : `${expenseAccounts.length} ${expenseAccounts.length === 1 ? 'conta' : 'contas'}`}
                           </span>
                           <span className="text-[10px] text-slate-400 font-normal">
                             ({isExpensesExpanded ? 'Clique p/ recolher' : 'Clique p/ expandir'})
@@ -1639,8 +1780,23 @@ export const BudgetPlanningView: React.FC = () => {
                     </td>
                   </tr>
 
+                  {/* Aviso de contas vazias ocultadas em Despesas */}
+                  {isExpensesExpanded && hideEmptyLines && displayedExpenseAccounts.length === 0 && (
+                    <tr>
+                      <td colSpan={15} className="py-3 px-4 text-center text-xs text-[var(--text-secondary)] italic bg-[var(--surface-card)]">
+                        Todas as {expenseAccounts.length} contas de despesas operacionais estão sem valores orçados/realizados e foram ocultadas pelo filtro.
+                        <button 
+                          onClick={() => setHideEmptyLines(false)} 
+                          className="ml-2 text-amber-400 hover:underline font-semibold not-italic cursor-pointer"
+                        >
+                          Exibir contas
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+
                   {/* Linhas de Contas de Despesa */}
-                  {isExpensesExpanded && expenseAccounts.map(acc => {
+                  {isExpensesExpanded && displayedExpenseAccounts.map(acc => {
                     const monthly = getEditingPlannedArray(acc.id);
                     const savedMonthly = getSavedPlannedArray(acc.id);
                     const annualTotal = monthly.reduce((a, b) => a + b, 0);
@@ -1685,24 +1841,12 @@ export const BudgetPlanningView: React.FC = () => {
                                 isEven ? 'bg-[var(--surface-card)]/40' : 'bg-[var(--surface-elevated)]/60'
                               }`}
                             >
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={val === 0 ? '' : val}
-                                  placeholder="0"
-                                  onChange={e => handlePlannedValueChange(acc.id, mIdx, e.target.value)}
-                                  onWheel={e => (e.target as HTMLElement).blur()}
-                                  title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
-                                  className={`w-full text-right px-2 py-1.5 rounded-lg font-mono text-xs sm:text-[13px] font-medium placeholder:text-[var(--text-secondary)]/40 focus:outline-hidden transition-colors ${
-                                    isCellChanged
-                                      ? 'bg-amber-500/20 border-2 border-amber-500/60 text-amber-300 font-bold focus:border-amber-400'
-                                      : 'bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30'
-                                  }`}
-                                />
-                                {isCellChanged && (
-                                  <span className="absolute top-1 left-1.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                )}
-                              </div>
+                              <RealCurrencyCell
+                                value={val}
+                                onChange={newVal => handlePlannedValueChange(acc.id, mIdx, newVal)}
+                                isChanged={isCellChanged}
+                                title={isCellChanged ? `Anterior: ${formatBRL(origVal)} → Novo: ${formatBRL(val)}` : undefined}
+                              />
                               <div className="text-[9px] text-[var(--text-secondary)] font-mono text-right mt-0.5" title={`Realizado no período: ${formatBRL(rVal)}`}>
                                 Real: {formatBRL(rVal)}
                               </div>
