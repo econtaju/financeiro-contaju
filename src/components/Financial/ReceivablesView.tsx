@@ -3093,6 +3093,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       {/* Settlement Modal */}
       {selectedTitleForSettlement && (
         <SettlementModal
+          key={`settlement-modal-${selectedTitleForSettlement.id}`}
           title={selectedTitleForSettlement}
           isOpen={true}
           onClose={() => setSelectedTitleForSettlement(null)}
@@ -3106,6 +3107,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       {/* Title Settlement History Modal (Linha do Tempo Visual e Extratos Vinculados) */}
       {historyTitle && (
         <TitleSettlementHistoryModal
+          key={`history-modal-${historyTitle.id}`}
           isOpen={Boolean(historyTitle)}
           title={historyTitle}
           onClose={() => setHistoryTitle(null)}
@@ -3115,6 +3117,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
       {/* Edit Title Modal (Double click or pencil action) */}
       {selectedTitleForEdit && (
         <EditTitleModal
+          key={`edit-title-modal-${selectedTitleForEdit.id}`}
           isOpen={!!selectedTitleForEdit}
           title={selectedTitleForEdit}
           onClose={() => setSelectedTitleForEdit(null)}
@@ -3127,6 +3130,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({ onOpenNewTitle
 
       {/* Batch Edit Titles Modal */}
       <BatchEditTitlesModal
+        key="batch-edit-titles-modal"
         isOpen={isBatchEditOpen}
         selectedTitleIds={selectedIds}
         type="RECEBER"

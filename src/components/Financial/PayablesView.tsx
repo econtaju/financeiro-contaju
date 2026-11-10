@@ -2914,6 +2914,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       {/* Title Settlement History Modal (Linha do Tempo Visual e Extratos Vinculados) */}
       {historyTitle && (
         <TitleSettlementHistoryModal
+          key={`history-modal-${historyTitle.id}`}
           isOpen={Boolean(historyTitle)}
           title={historyTitle}
           onClose={() => setHistoryTitle(null)}
@@ -2923,6 +2924,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
       {/* Edit Title Modal (Double click or pencil action) */}
       {selectedTitleForEdit && (
         <EditTitleModal
+          key={`edit-title-modal-${selectedTitleForEdit.id}`}
           isOpen={!!selectedTitleForEdit}
           title={selectedTitleForEdit}
           onClose={() => setSelectedTitleForEdit(null)}
@@ -2935,6 +2937,7 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
 
       {/* Batch Edit Titles Modal */}
       <BatchEditTitlesModal
+        key="batch-edit-titles-modal"
         isOpen={isBatchEditOpen}
         selectedTitleIds={selectedIds}
         type="PAGAR"

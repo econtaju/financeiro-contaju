@@ -35,6 +35,7 @@ import { CreditCardPurchaseModal } from './CreditCardPurchaseModal';
 import { CreditCardInvoicePaymentModal } from './CreditCardInvoicePaymentModal';
 import { CreditCardInvoiceImportModal } from './CreditCardInvoiceImportModal';
 import { CreditCardBatchEditModal } from './CreditCardBatchEditModal';
+import { toast } from '../../hooks/useToast';
 
 interface CreditCardsViewProps {
   onNavigateToPayables?: () => void;
@@ -77,6 +78,25 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
     hasFuture: boolean;
     selectedMode: 'CURRENT_ONLY' | 'CURRENT_AND_ALL_FUTURE';
   } | null>(null);
+
+  // Estados para bloqueio e estorno inteligente de fatura (Sugestão 3)
+  const [deletionErrorModal, setDeletionErrorModal] = useState<{
+    isOpen: boolean;
+    error: string;
+    isPaidInvoice?: boolean;
+    isClosedPeriod?: boolean;
+    closedCompetence?: string;
+  } | null>(null);
+
+  const [reversePaymentModal, setReversePaymentModal] = useState<{
+    isOpen: boolean;
+    paymentId: string;
+    amountPaid: number;
+    paymentDate: string;
+    bankAccountId: string;
+  } | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reverseLoading, setReverseLoading] = useState(false);
 
   const handleOpenNewPurchase = (type: 'DESPESA' | 'ESTORNO' = 'DESPESA') => {
     setEditingPurchase(null);
@@ -201,6 +221,12 @@ export const CreditCardsView: React.FC<CreditCardsViewProps> = ({ onNavigateToPa
       .filter(p => p.cardId === activeCard.id)
       .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   }, [activeCard]);
+
+  // Pagamentos da fatura ativa selecionada
+  const currentInvoicePayments = useMemo(() => {
+    if (!activeCard || !selectedInvoiceMonth) return [];
+    return invoicePayments.filter(p => p.invoiceMonth === selectedInvoiceMonth);
+  }, [invoicePayments, selectedInvoiceMonth, activeCard]);
 
   // Limpar seleção ao trocar de cartão ou mês de fatura
   useEffect(() => {

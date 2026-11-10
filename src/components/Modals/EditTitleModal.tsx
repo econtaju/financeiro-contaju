@@ -1255,6 +1255,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
       {openCompleteModal && quickCreatedId && (
         <CompleteCounterpartyModal
+          key={`complete-cp-${quickCreatedId}`}
           isOpen={true}
           counterpartyId={quickCreatedId}
           onClose={() => {
@@ -1272,6 +1273,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
       {isQuickAccountModalOpen && (
         <QuickCreateAccountModal
+          key="quick-create-account-modal"
           isOpen={true}
           titleType={title.type}
           onClose={() => setIsQuickAccountModalOpen(false)}
@@ -1281,6 +1283,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
 
       {/* Modal Manual de Criação / Edição de Favorecido */}
       <CompleteCounterpartyModal
+        key={`manual-cp-${manualCounterpartyId || 'none'}`}
         isOpen={isManualCounterpartyModalOpen}
         counterpartyId={manualCounterpartyId}
         defaultType={isReceber ? 'CLIENTE' : 'FORNECEDOR'}
@@ -1299,6 +1302,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       {/* Modal de Confirmação para Atualização em Lote de Recorrências e Parcelamentos */}
       {seriesModalState.isOpen && seriesModalState.seriesInfo && (
         <SeriesUpdateConfirmationModal
+          key="series-update-modal"
           isOpen={seriesModalState.isOpen}
           targetTitle={title}
           newAmount={seriesModalState.pendingAmount}
@@ -1315,6 +1319,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       {/* Modal de Notificação Formal de Reajuste ao Cliente (WhatsApp / E-mail) */}
       {notificationModalState.isOpen && notificationModalState.contract && notificationModalState.adjustment && (
         <ContractAdjustmentNotificationModal
+          key="contract-adjustment-notification-modal"
           isOpen={notificationModalState.isOpen}
           contract={notificationModalState.contract}
           adjustment={notificationModalState.adjustment}

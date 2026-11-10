@@ -13,6 +13,8 @@ import {
   BankAccount, 
   FinancialMovement, 
   PeriodClosure, 
+  BankClosureSnapshot,
+  PeriodClosureChecklist,
   AuditLogEntry, 
   ModuleConfig, 
   ImprovementRequest,
@@ -1636,10 +1638,20 @@ class StorageService {
     }
   }
 
-  public deleteSale(id: string, options?: { deleteLinkedTitles?: boolean }): { success: boolean; deletedTitlesCount: number } {
+  public deleteSale(id: string, options?: { deleteLinkedTitles?: boolean }): { success: boolean; deletedTitlesCount: number; blockedByClosedPeriod?: boolean; closedCompetence?: string } {
     const sales = this.getSales();
     const saleToDelete = sales.find(s => s.id === id);
     if (!saleToDelete) return { success: false, deletedTitlesCount: 0 };
+
+    // Trava de integridade contábil: vendas de competências encerradas não podem ser excluídas
+    if (this.isCompetenceClosed(saleToDelete.competence)) {
+      return {
+        success: false,
+        deletedTitlesCount: 0,
+        blockedByClosedPeriod: true,
+        closedCompetence: saleToDelete.competence
+      };
+    }
 
     this.saveSales(sales.filter(s => s.id !== id));
 
@@ -2104,6 +2116,118 @@ class StorageService {
   }
   public savePeriodClosures(closures: PeriodClosure[]) {
     this.set(STORAGE_KEYS.PERIOD_CLOSURES, closures);
+  }
+
+  public isCompetenceClosed(yearMonthOrDate: string): boolean {
+    if (!yearMonthOrDate) return false;
+    const cleanMonth = yearMonthOrDate.length > 7 ? yearMonthOrDate.substring(0, 7) : yearMonthOrDate;
+    const closures = this.getPeriodClosures();
+    return closures.some(c => (c.yearMonth === cleanMonth || c.competence === cleanMonth) && c.isClosed);
+  }
+
+  public getCompetenceClosure(yearMonthOrDate: string): PeriodClosure | undefined {
+    if (!yearMonthOrDate) return undefined;
+    const cleanMonth = yearMonthOrDate.length > 7 ? yearMonthOrDate.substring(0, 7) : yearMonthOrDate;
+    const closures = this.getPeriodClosures();
+    return closures.find(c => (c.yearMonth === cleanMonth || c.competence === cleanMonth) && c.isClosed);
+  }
+
+  public closeCompetence(yearMonth: string, options?: {
+    notes?: string;
+    closedBy?: string;
+    bankSnapshots?: BankClosureSnapshot[];
+    checklistSnapshot?: PeriodClosureChecklist;
+  }): { success: boolean; closure?: PeriodClosure; error?: string } {
+    if (!yearMonth) return { success: false, error: 'Competência inválida.' };
+    const cleanMonth = yearMonth.length > 7 ? yearMonth.substring(0, 7) : yearMonth;
+    const closures = this.getPeriodClosures();
+    
+    // Verifica se já está fechada
+    const existing = closures.find(c => (c.yearMonth === cleanMonth || c.competence === cleanMonth));
+    if (existing && existing.isClosed) {
+      return { success: false, error: `A competência ${cleanMonth} já está fechada contabilmente.` };
+    }
+
+    const currentUser = this.getCurrentUser();
+    const newClosure: PeriodClosure = {
+      id: existing ? existing.id : `pc-${cleanMonth.replace('-', '')}-${Date.now().toString().slice(-4)}`,
+      yearMonth: cleanMonth,
+      competence: cleanMonth,
+      closedAt: new Date().toISOString(),
+      closedBy: options?.closedBy || currentUser.name,
+      notes: options?.notes || 'Competência fechada contabilmente.',
+      isClosed: true,
+      bankSnapshots: options?.bankSnapshots || [],
+      checklistSnapshot: options?.checklistSnapshot
+    };
+
+    const updated = closures.filter(c => c.yearMonth !== cleanMonth && c.competence !== cleanMonth);
+    this.savePeriodClosures([newClosure, ...updated]);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.savePeriodClosureDirectly(newClosure);
+    }).catch(() => {});
+
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'FECHAMENTO_COMPETENCIA',
+      module: 'Fechamento Contábil',
+      recordId: newClosure.id,
+      details: `Fechamento contábil e travamento de integridade da competência ${cleanMonth}.`,
+      previousValue: `ABERTO (${cleanMonth})`,
+      newValue: `FECHADO (${cleanMonth})`
+    });
+
+    return { success: true, closure: newClosure };
+  }
+
+  public reopenCompetence(yearMonth: string, reason: string): { success: boolean; error?: string } {
+    if (!yearMonth) return { success: false, error: 'Competência inválida.' };
+    const cleanMonth = yearMonth.length > 7 ? yearMonth.substring(0, 7) : yearMonth;
+    const closures = this.getPeriodClosures();
+    const target = closures.find(c => (c.yearMonth === cleanMonth || c.competence === cleanMonth) && c.isClosed);
+    
+    if (!target) {
+      return { success: false, error: `A competência ${cleanMonth} não está fechada.` };
+    }
+
+    if (!reason || !reason.trim()) {
+      return { success: false, error: 'Justificativa de reabertura é obrigatória para trilha de auditoria.' };
+    }
+
+    const currentUser = this.getCurrentUser();
+    const reopenedClosure: PeriodClosure = {
+      ...target,
+      isClosed: false,
+      reopenedAt: new Date().toISOString(),
+      reopenedBy: currentUser.name,
+      reopenReason: reason.trim()
+    };
+
+    const updated = closures.map(c => 
+      (c.id === target.id || c.yearMonth === cleanMonth || c.competence === cleanMonth) 
+        ? reopenedClosure 
+        : c
+    );
+    this.savePeriodClosures(updated);
+
+    import('./supabaseSyncService').then(({ supabaseSync }) => {
+      supabaseSync.savePeriodClosureDirectly(reopenedClosure);
+    }).catch(() => {});
+
+    this.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'REABERTURA_COMPETENCIA_AUDITADA',
+      module: 'Fechamento Contábil',
+      recordId: target.id,
+      details: `Reabertura extraordinária da competência ${cleanMonth}. Motivo registrado: "${reason.trim()}".`,
+      previousValue: `FECHADO (${cleanMonth})`,
+      newValue: `ABERTO (${cleanMonth})`
+    });
+
+    return { success: true };
   }
 
   // Audit Logs
@@ -2967,9 +3091,37 @@ class StorageService {
     this.set(STORAGE_KEYS.CARD_PURCHASES, purchases.filter(p => !this.isMockPurchase(p.id) && !this.isMockCard(p.cardId)));
   }
 
-  public deleteCardPurchase(purchaseId: string, options?: { reason?: string; skipVault?: boolean }): { success: boolean; error?: string } {
+  public deleteCardPurchase(purchaseId: string, options?: { reason?: string; skipVault?: boolean; allowPaidInvoice?: boolean }): { success: boolean; error?: string; isPaidInvoice?: boolean; isClosedPeriod?: boolean; closedCompetence?: string } {
     const purchases = this.getCardPurchases();
     const target = purchases.find(p => p.id === purchaseId);
+    if (!target) return { success: false, error: 'Lançamento de cartão não encontrado.' };
+
+    // 0. Trava de Fatura Paga (Sugestão 3)
+    const invoicePayments = this.getCardInvoicePayments();
+    const hasPaidInvoice = target.installments?.some(inst => 
+      invoicePayments.some(p => p.cardId === target.cardId && p.invoiceMonth === inst.invoiceMonth && p.amountPaid > 0)
+    );
+    if (hasPaidInvoice && !options?.allowPaidInvoice) {
+      return {
+        success: false,
+        error: 'Esta fatura possui pagamentos registrados no sistema. Para manter a conciliação bancária consistente, estorne o pagamento da fatura antes de excluir o lançamento.',
+        isPaidInvoice: true
+      };
+    }
+
+    // 0.1 Trava de Competência Fechada
+    const closedInst = target.installments?.find(inst => 
+      this.isCompetenceClosed(inst.competence || inst.invoiceMonth)
+    );
+    if (closedInst) {
+      const closedMonth = closedInst.competence || closedInst.invoiceMonth;
+      return {
+        success: false,
+        error: `Este lançamento pertence à competência contábil ${closedMonth}, que está encerrada/fechada. Reabra a competência específica antes de excluir.`,
+        isClosedPeriod: true,
+        closedCompetence: closedMonth
+      };
+    }
 
     // 1. Arquiva no Cofre de Segurança para auditoria e restauração garantida
     if (target && !options?.skipVault) {
@@ -3023,9 +3175,41 @@ class StorageService {
     items: Array<{ purchaseId: string; installmentNumber: number }>;
     mode: 'CURRENT_ONLY' | 'CURRENT_AND_ALL_FUTURE' | 'ENTIRE_PURCHASE';
     reason?: string;
-  }): { success: boolean; affectedCount: number } {
-    const { items, mode, reason } = options;
+    allowPaidInvoice?: boolean;
+  }): { success: boolean; affectedCount: number; error?: string; isPaidInvoice?: boolean; isClosedPeriod?: boolean; closedCompetence?: string } {
+    const { items, mode, reason, allowPaidInvoice } = options;
     if (!items || items.length === 0) return { success: true, affectedCount: 0 };
+
+    const purchases = this.getCardPurchases();
+    const invoicePayments = this.getCardInvoicePayments();
+
+    // Validação prévia de fatura paga e competência fechada
+    for (const it of items) {
+      const pur = purchases.find(p => p.id === it.purchaseId);
+      if (!pur) continue;
+      const inst = pur.installments?.find(i => i.installmentNumber === it.installmentNumber);
+      const invMonth = inst?.invoiceMonth || pur.invoiceMonth;
+      const compMonth = inst?.competence || pur.purchaseDate?.substring(0, 7);
+
+      if (invMonth && invoicePayments.some(p => p.cardId === pur.cardId && p.invoiceMonth === invMonth && p.amountPaid > 0) && !allowPaidInvoice) {
+        return {
+          success: false,
+          affectedCount: 0,
+          error: `Um ou mais lançamentos selecionados pertencem à fatura ${invMonth}, que já possui pagamento registrado. Estorne o pagamento da fatura primeiro para poder excluir.`,
+          isPaidInvoice: true
+        };
+      }
+
+      if (compMonth && this.isCompetenceClosed(compMonth)) {
+        return {
+          success: false,
+          affectedCount: 0,
+          error: `O lançamento "${pur.description}" pertence à competência ${compMonth}, que está fechada contabilmente. Reabra a competência para excluí-lo.`,
+          isClosedPeriod: true,
+          closedCompetence: compMonth
+        };
+      }
+    }
 
     let affectedCount = 0;
 
@@ -3039,7 +3223,6 @@ class StorageService {
     }
 
     // CURRENT_ONLY ou CURRENT_AND_ALL_FUTURE
-    const purchases = this.getCardPurchases();
     const itemsByPurchase = new Map<string, number[]>();
     for (const it of items) {
       const list = itemsByPurchase.get(it.purchaseId) || [];

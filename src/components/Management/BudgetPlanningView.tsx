@@ -607,13 +607,11 @@ export const BudgetPlanningView: React.FC = () => {
     ).sort((a, b) => a.code.localeCompare(b.code));
   }, [analyticalAccounts, revenueAccounts, deductionAccounts, costAccounts]);
 
-  // Verificação de contas vazias (sem orçamento planejado nem realizado no ano)
+  // Verificação de contas vazias/zeradas no orçamento (igual ao DRE)
   const isAccountEmpty = (accId: string) => {
     const planned = getEditingPlannedArray(accId);
-    const realized = accountRealizedMap.get(accId) || [];
     const hasPlanned = planned.some(v => Math.abs(v) > 0.001);
-    const hasRealized = realized.some(v => Math.abs(v) > 0.001);
-    return !hasPlanned && !hasRealized;
+    return !hasPlanned;
   };
 
   const displayedRevenueAccounts = useMemo(() => {

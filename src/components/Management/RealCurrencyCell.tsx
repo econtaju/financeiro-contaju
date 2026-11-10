@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 export const formatRealCurrency = (value: number, showPrefix: boolean = true): string => {
-  if (value === 0) return showPrefix ? 'R$ 0,00' : '0,00';
   const safeVal = typeof value === 'number' && !isNaN(value) && isFinite(value) ? value : 0;
   const formatted = safeVal.toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
@@ -52,29 +51,21 @@ export const RealCurrencyCell: React.FC<RealCurrencyCellProps> = ({
   title
 }) => {
   const [isFocused, setIsFocused] = useState(false);
-  const [displayValue, setDisplayValue] = useState('');
+  const [displayValue, setDisplayValue] = useState(() => formatRealCurrency(value, true));
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Sincroniza quando o valor numérico externo mudar e o campo não estiver em foco
   useEffect(() => {
     if (!isFocused) {
-      if (value === 0) {
-        setDisplayValue('');
-      } else {
-        setDisplayValue(formatRealCurrency(value, true));
-      }
+      setDisplayValue(formatRealCurrency(value, true));
     }
   }, [value, isFocused]);
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsFocused(true);
-    // Ao focar, exibe o valor formatado sem o prefixo R$ para facilitar edição
-    if (value !== 0) {
-      setDisplayValue(formatRealCurrency(value, false));
-    } else {
-      setDisplayValue('');
-    }
-    // Seleciona todo o conteúdo após breve delay
+    // Ao focar, exibe o valor formatado com ponto e vírgula (ex: 1.500,00 ou 0,00) para facilitar edição
+    setDisplayValue(formatRealCurrency(value, false));
+    // Seleciona todo o conteúdo após breve delay para substituição rápida
     setTimeout(() => {
       e.target.select();
     }, 20);
@@ -87,11 +78,7 @@ export const RealCurrencyCell: React.FC<RealCurrencyCellProps> = ({
   const commitValue = () => {
     const parsed = parseRealCurrency(displayValue);
     onChange(parsed);
-    if (parsed === 0) {
-      setDisplayValue('');
-    } else {
-      setDisplayValue(formatRealCurrency(parsed, true));
-    }
+    setDisplayValue(formatRealCurrency(parsed, true));
   };
 
   const handleBlur = () => {
@@ -104,12 +91,14 @@ export const RealCurrencyCell: React.FC<RealCurrencyCellProps> = ({
       inputRef.current?.blur();
     } else if (e.key === 'Escape') {
       setIsFocused(false);
-      setDisplayValue(value === 0 ? '' : formatRealCurrency(value, true));
+      setDisplayValue(formatRealCurrency(value, true));
     }
   };
 
+  const isZero = Math.abs(value || 0) <= 0.001;
+
   return (
-    <div className="relative w-full">
+    <div className="relative w-full group">
       <input
         ref={inputRef}
         type="text"
@@ -121,16 +110,18 @@ export const RealCurrencyCell: React.FC<RealCurrencyCellProps> = ({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         title={title}
-        className={`w-full text-right px-2 py-1.5 rounded-lg font-mono text-xs sm:text-[12.5px] font-medium placeholder:text-[var(--text-secondary)]/30 focus:outline-hidden transition-colors ${
+        className={`w-full text-right px-2 py-1.5 rounded-lg font-mono text-xs sm:text-[12px] font-medium transition-colors ${
           isChanged
-            ? 'bg-amber-500/20 border-2 border-amber-500/60 text-amber-300 font-bold focus:border-amber-400'
-            : 'bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30'
+            ? 'bg-amber-500/20 border-2 border-amber-500/60 text-amber-300 font-bold focus:border-amber-400 focus:outline-hidden'
+            : isZero
+            ? 'bg-[var(--surface-elevated)]/60 border border-[var(--border-subtle)]/70 text-[var(--text-secondary)]/70 hover:text-[var(--text-primary)] hover:border-amber-400/40 focus:bg-[var(--surface-elevated)] focus:border-amber-400 focus:text-[var(--text-primary)] focus:outline-hidden focus:ring-1 focus:ring-amber-400/30'
+            : 'bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-semibold hover:border-amber-400/40 focus:border-amber-400 focus:outline-hidden focus:ring-1 focus:ring-amber-400/30'
         } ${className}`}
       />
       {isChanged && (
         <span 
-          className="absolute top-1 left-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 pointer-events-none" 
-          title="Valor modificado"
+          className="absolute top-1 left-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 pointer-events-none shadow-xs" 
+          title="Valor modificado na simulação"
         />
       )}
     </div>

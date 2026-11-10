@@ -170,9 +170,11 @@ export class FinancialEngine {
   /**
    * Check if date is in closed period
    */
-  public static isPeriodClosed(yearMonth: string): boolean {
+  public static isPeriodClosed(yearMonthOrDate: string): boolean {
+    if (!yearMonthOrDate) return false;
+    const cleanMonth = yearMonthOrDate.length > 7 ? yearMonthOrDate.substring(0, 7) : yearMonthOrDate;
     const closures = storage.getPeriodClosures();
-    return closures.some(c => c.yearMonth === yearMonth && c.isClosed);
+    return closures.some(c => (c.yearMonth === cleanMonth || c.competence === cleanMonth) && c.isClosed);
   }
 
   /**
@@ -2823,6 +2825,113 @@ export class FinancialEngine {
       module: 'Bancos e Contas',
       recordId: params.cardId,
       details: `Pagamento da fatura ${params.invoiceMonth} do cartão ${card.name} no valor de ${formatBRL(params.amountPaid)} com débito na conta ${bank.name}.`
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Estorna pagamento de fatura de cartão de crédito:
+   * Reverte o débito bancário, reabre as parcelas dos títulos no Contas a Pagar e remove o pagamento.
+   */
+  public static reverseCardInvoicePayment(paymentId: string, reason?: string): { success: boolean; error?: string } {
+    const payments = storage.getCardInvoicePayments();
+    const targetPayment = payments.find(p => p.id === paymentId);
+    if (!targetPayment) {
+      return { success: false, error: 'Registro de pagamento da fatura não encontrado.' };
+    }
+
+    const paymentMonth = targetPayment.paymentDate.substring(0, 7);
+    if (this.isPeriodClosed(paymentMonth) || this.isPeriodClosed(targetPayment.invoiceMonth)) {
+      return {
+        success: false,
+        error: `Não é possível estornar o pagamento pois a competência (${paymentMonth} ou ${targetPayment.invoiceMonth}) está fechada contabilmente. Reabra a competência primeiro.`
+      };
+    }
+
+    const currentUser = storage.getCurrentUser();
+
+    // 1. Reverter saldo bancário
+    const bankAccounts = storage.getBankAccounts();
+    const updatedBanks = bankAccounts.map(ba => {
+      if (ba.id === targetPayment.bankAccountId) {
+        return {
+          ...ba,
+          currentBalance: Math.round((ba.currentBalance + targetPayment.amountPaid) * 100) / 100,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return ba;
+    });
+    storage.saveBankAccounts(updatedBanks);
+
+    // 2. Marcar movimentação bancária como estornada
+    const movements = storage.getMovements();
+    const updatedMovements = movements.map(m => {
+      const isCardPaymentMov = m.originType === 'FATURA_CARTAO' && 
+        (m.originReferenceId === targetPayment.id || m.originReferenceId === `cc-${targetPayment.cardId}-${targetPayment.invoiceMonth}` || (targetPayment.movementId && m.id === targetPayment.movementId));
+      if (isCardPaymentMov && !m.isReversed) {
+        return {
+          ...m,
+          isReversed: true,
+          description: `${m.description ? m.description + ' • ' : ''}Estornado em ${new Date().toLocaleDateString('pt-BR')}: ${reason || 'Estorno de pagamento de fatura'}`
+        };
+      }
+      return m;
+    });
+    storage.saveMovements(updatedMovements);
+
+    // 3. Reabrir os títulos no Contas a Pagar
+    const titles = storage.getTitles();
+    const matchingTitleIds = new Set<string>();
+    const updatedTitles = titles.map(t => {
+      if (t.creditCardId === targetPayment.cardId && t.creditCardInvoiceMonth === targetPayment.invoiceMonth && t.type === 'PAGAR') {
+        matchingTitleIds.add(t.id);
+        return {
+          ...t,
+          settledPrincipal: 0,
+          balancePrincipal: t.originalAmount,
+          settlementState: 'ABERTO' as const,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return t;
+    });
+    storage.saveTitles(updatedTitles);
+
+    // 4. Remover settlements gerados por este pagamento de fatura
+    const settlements = storage.getSettlements();
+    const remainingSettlements = settlements.filter(s => !matchingTitleIds.has(s.titleId) || !s.id.startsWith('sett-cc-'));
+    storage.saveSettlements(remainingSettlements);
+
+    // 5. Atualizar parcelas na lista de compras do cartão (settled = false)
+    const purchases = storage.getCardPurchases();
+    const updatedPurchases = purchases.map(pur => {
+      if (pur.cardId !== targetPayment.cardId) return pur;
+      let hasChange = false;
+      const updatedInstallments = pur.installments.map(inst => {
+        if (inst.invoiceMonth === targetPayment.invoiceMonth && inst.settled) {
+          hasChange = true;
+          return { ...inst, settled: false };
+        }
+        return inst;
+      });
+      return hasChange ? { ...pur, installments: updatedInstallments, updatedAt: new Date().toISOString() } : pur;
+    });
+    storage.saveCardPurchases(updatedPurchases);
+
+    // 6. Remover registro de pagamento da fatura
+    const remainingPayments = payments.filter(p => p.id !== paymentId);
+    storage.saveCardInvoicePayments(remainingPayments);
+
+    // 7. Log de Auditoria
+    storage.addAuditLog({
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'ESTORNO_PAGAMENTO_FATURA_CARTAO',
+      module: 'Cartões de Crédito',
+      recordId: targetPayment.cardId,
+      details: `Estorno do pagamento da fatura ${targetPayment.invoiceMonth} no valor de ${formatBRL(targetPayment.amountPaid)}. Motivo: ${reason || 'Estorno manual para ajustes na fatura'}.`
     });
 
     return { success: true };

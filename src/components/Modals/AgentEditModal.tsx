@@ -68,17 +68,29 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
   availableModels,
   onSave
 }) => {
-  if (!isOpen || !agent) return null;
+  // Estados dos campos do agente (declarados incondicionalmente no topo)
+  const [name, setName] = useState(agent?.name || '');
+  const [description, setDescription] = useState(agent?.description || '');
+  const [defaultModel, setDefaultModel] = useState(agent?.defaultModel || 'gemini-2.5-flash');
+  const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt || '');
+  const [allowedTools, setAllowedTools] = useState<string[]>(agent?.allowedTools || []);
+  const [isActive, setIsActive] = useState(agent?.isActive ?? true);
+  const [requiresApproval, setRequiresApproval] = useState(agent?.requiresApproval ?? true);
+  const [isAutonomous, setIsAutonomous] = useState(agent?.isAutonomous ?? false);
 
-  // Estados dos campos do agente
-  const [name, setName] = useState(agent.name);
-  const [description, setDescription] = useState(agent.description);
-  const [defaultModel, setDefaultModel] = useState(agent.defaultModel);
-  const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt);
-  const [allowedTools, setAllowedTools] = useState<string[]>(agent.allowedTools || []);
-  const [isActive, setIsActive] = useState(agent.isActive);
-  const [requiresApproval, setRequiresApproval] = useState(agent.requiresApproval);
-  const [isAutonomous, setIsAutonomous] = useState(agent.isAutonomous);
+  // Sincronizar estados quando o agente ativo mudar ou o modal abrir
+  useEffect(() => {
+    if (agent && isOpen) {
+      setName(agent.name || '');
+      setDescription(agent.description || '');
+      setDefaultModel(agent.defaultModel || 'gemini-2.5-flash');
+      setSystemPrompt(agent.systemPrompt || '');
+      setAllowedTools(agent.allowedTools || []);
+      setIsActive(agent.isActive ?? true);
+      setRequiresApproval(agent.requiresApproval ?? true);
+      setIsAutonomous(agent.isAutonomous ?? false);
+    }
+  }, [agent, isOpen]);
 
   // Estados de navegação interna do modal
   const [activeModalTab, setActiveModalTab] = useState<'PROMPT' | 'MODELO' | 'CAPACIDADES' | 'TESTAR' | 'GERAL'>('PROMPT');
@@ -249,6 +261,8 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
 
   // Modelo atualmente selecionado
   const selectedModelMeta = allModelsList.find(m => m.id === defaultModel);
+
+  if (!isOpen || !agent) return null;
 
   // Restaura o prompt padrão de fábrica
   const handleRestoreDefaultPrompt = () => {
