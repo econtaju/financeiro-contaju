@@ -32,7 +32,6 @@ import {
   Zap, 
   BookmarkPlus, 
   Scale, 
-  Bot,
   RotateCcw,
   Undo2,
   Landmark,
@@ -42,7 +41,7 @@ import {
   HandCoins,
   History
 } from 'lucide-react';
-import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, AiReconciliationSuggestion, BankAccount } from '../../types';
+import { BankStatementEntry, FinancialTitle, Counterparty, ReconciliationMatchResult, BankAccount } from '../../types';
 import { storage } from '../../services/storageService';
 import { FinancialEngine, formatBRL, formatDateBR, getFilteredChartAccounts, formatChartAccountSelectOptions } from '../../services/financialEngine';
 import { parseOFX, parseOFXFull } from '../../utils/ofxParser';
@@ -53,7 +52,6 @@ import { ReconciliationRulesModal } from './ReconciliationRulesModal';
 import { ReconciliationDiagnosticsModal } from './ReconciliationDiagnosticsModal';
 import { BankBalanceClosingModal } from './BankBalanceClosingModal';
 import { ReconciliationFloatingModal } from './ReconciliationFloatingModal';
-import { AiReconciliationModal } from './AiReconciliationModal';
 import { QuickNewBankAccountModal } from './QuickNewBankAccountModal';
 import { TitleSettlementHistoryModal } from './TitleSettlementHistoryModal';
 import { applyReconciliationRules, learnAndCreateRuleFromTransaction } from '../../services/reconciliationRulesService';
@@ -67,7 +65,6 @@ export const ReconciliationView: React.FC = () => {
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [isFloatingReconcileOpen, setIsFloatingReconcileOpen] = useState(false);
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isNewAccountModalOpen, setIsNewAccountModalOpen] = useState(false);
   const [rulesPresetPattern, setRulesPresetPattern] = useState<string>('');
   const [selectedHistoryTitle, setSelectedHistoryTitle] = useState<FinancialTitle | null>(null);
@@ -1936,93 +1933,6 @@ export const ReconciliationView: React.FC = () => {
     setRefreshKey(k => k + 1);
   };
 
-  // Criação e quitação inteligente a partir da sugestão da IA
-  const handleCreateTitleFromAiSuggestion = (stmt: BankStatementEntry, sug: AiReconciliationSuggestion) => {
-    const isDebit = stmt.amount < 0;
-    const targetType = isDebit ? 'PAGAR' : 'RECEBER';
-    const absAmount = Math.abs(stmt.amount);
-    const today = new Date().toISOString().split('T')[0];
-    const safeDate = stmt.date > today ? today : stmt.date;
-
-    const matchedCat = chartAccounts.find(
-      c => c.name.toLowerCase() === (sug.suggestedCategory || '').toLowerCase() || c.code === sug.suggestedCategory
-    );
-    const accountId = matchedCat?.id || (targetType === 'PAGAR' ? 'acc-4.1.01' : 'acc-3.1.01');
-    const defaultCounterpartyId = persons[0]?.id || (targetType === 'PAGAR' ? 'cli-1' : 'cli-2');
-
-    const titleNumber = `TIT-${targetType === 'PAGAR' ? 'PAG' : 'REC'}-${Date.now().toString().slice(-6)}`;
-    const newTitle: FinancialTitle = {
-      id: `title-ai-${Date.now()}`,
-      companyId: 'comp-1',
-      titleNumber,
-      type: targetType,
-      counterpartyId: defaultCounterpartyId,
-      expectedBankAccountId: stmt.bankAccountId || selectedAccountId,
-      accountId,
-      description: `[IA] ${stmt.description}`,
-      launchDate: safeDate,
-      competence: safeDate.substring(0, 7),
-      issueDate: safeDate,
-      dueDate: safeDate,
-      expectedCashDate: safeDate,
-      originalAmount: absAmount,
-      settledPrincipal: 0,
-      balancePrincipal: absAmount,
-      accruedInterest: 0,
-      accruedFine: 0,
-      documentState: 'CONFIRMADO',
-      settlementState: 'ABERTO',
-      originType: 'MANUAL',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const currentTitles = storage.getTitles();
-    storage.saveTitles([newTitle, ...currentTitles]);
-
-    FinancialEngine.postSettlement({
-      titleId: newTitle.id,
-      settlementDate: safeDate,
-      bankAccountId: stmt.bankAccountId || selectedAccountId,
-      principalSettled: absAmount,
-      discount: 0,
-      interest: 0,
-      fine: 0,
-      bankFee: 0,
-      notes: `Título gerado e quitado via Assistente IA OpenCode (${stmt.description})`,
-      voucherRef: stmt.fitId
-    });
-
-    const allUpdatedTitles = storage.getTitles().map(t => t.id === newTitle.id ? {
-      ...t,
-      reconciliationStatus: 'CONCILIADO' as const,
-      updatedAt: new Date().toISOString()
-    } : t);
-    storage.saveTitles(allUpdatedTitles);
-
-    const allStmts = storage.getStatementEntries().map(s => s.id === stmt.id ? {
-      ...s,
-      reconciliationStatus: 'CONCILIADO' as const,
-      matchedTitleId: newTitle.id
-    } : s);
-    storage.saveStatementEntries(allStmts);
-
-    const currentUser = storage.getCurrentUser();
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'CONCILIACAO_IA_CRIACAO',
-      module: 'Conciliação Bancária',
-      recordId: newTitle.id,
-      details: `Lançamento criado e conciliado via IA OpenCode com base no extrato "${stmt.description}" (${formatBRL(stmt.amount)}).`
-    });
-
-    setSuccessMsg(`Sucesso! Título ${titleNumber} criado e conciliado com base na recomendação da IA.`);
-    setSelectedStmtIds([]);
-    setSelectedTitleIds([]);
-    setRefreshKey(k => k + 1);
-  };
-
   // Upload and parse real OFX file com leitura segura de ArrayBuffer, TextDecoder e deduplicação
   const processFile = (file: File) => {
     if (!file) return;
@@ -2741,17 +2651,6 @@ export const ReconciliationView: React.FC = () => {
               <option value={100} className="bg-white dark:bg-[#131720]">100% (Exato)</option>
             </select>
           </div>
-
-          {/* Botão Assistente IA OpenCode (Multi-Model Failover) */}
-          <button
-            type="button"
-            onClick={() => setIsAiModalOpen(true)}
-            className="px-3.5 py-2 bg-gradient-to-r from-purple-600/15 via-indigo-600/15 to-purple-500/10 border border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-500/25 rounded-xl text-xs font-bold transition-all flex items-center shadow-2xs cursor-pointer gap-1.5"
-            title="Abrir Assistente de Conciliação com IA OpenCode (Redundância Multi-Modelo)"
-          >
-            <Bot className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <span>Assistente IA</span>
-          </button>
 
           <button
             onClick={handleRunAutoMatch}
@@ -4534,29 +4433,6 @@ export const ReconciliationView: React.FC = () => {
         onClose={() => setIsClosingModalOpen(false)}
         defaultAccountId={selectedAccountId}
         onSuccess={() => setRefreshKey(k => k + 1)}
-      />
-
-      {/* Modal do Assistente de Conciliação com IA OpenCode (Multi-Model Failover) */}
-      <AiReconciliationModal
-        isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
-        selectedStatement={selectedStmt}
-        allStatements={filteredStatements}
-        candidateTitles={titles}
-        chartAccounts={chartAccounts}
-        onApplyMatch={(stmt, title) => {
-          const stmtAbs = Math.round(Math.abs(Number(stmt.amount) || 0) * 100) / 100;
-          const titleBal = Math.round((title.balancePrincipal > 0 ? title.balancePrincipal : title.originalAmount) * 100) / 100;
-          if (Math.abs(stmtAbs - titleBal) >= 0.005) {
-            handleOpenReconcileModal(stmt, title);
-            setErrorMsg(`Valores divergentes: o extrato (${formatBRL(stmtAbs)}) difere do saldo do título (${formatBRL(titleBal)}). Faça a conferência e defina se a diferença é Tarifa Bancária ou Desconto no modal.`);
-          } else {
-            handleDirectExpressReconcile(stmt, title);
-          }
-        }}
-        onCreateTitleFromAi={(stmt, sug) => {
-          handleCreateTitleFromAiSuggestion(stmt, sug);
-        }}
       />
 
       {/* Modal de Confirmação para Desconciliação / Estorno Seguro (Opção 2) */}

@@ -33,7 +33,6 @@ import {
   Database,
   LogOut,
   X,
-  Bot,
   Sparkles
 } from 'lucide-react';
 import { storage } from '../services/storageService';
@@ -275,19 +274,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'PLANEJAMENTO_ORCAMENTARIO', label: 'Planejamento Orçamentário', shortLabel: 'Orçamento', icon: Target },
         { id: 'COMPARE_DRE_CAIXA', label: 'Comparar DRE x Caixa', shortLabel: 'DRE x Caixa', icon: Scale },
         { id: 'RELATORIOS', label: 'Relatórios Gerenciais', shortLabel: 'Relatórios', icon: FileSpreadsheet }
-      ]
-    },
-    {
-      title: 'Inteligência Artificial',
-      items: [
-        { 
-          id: 'IA', 
-          label: 'Central de IA & Modelos', 
-          shortLabel: 'IA & Modelos', 
-          icon: Bot,
-          badge: 'OpenCode Go',
-          badgeColor: 'bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold'
-        }
       ]
     },
     {

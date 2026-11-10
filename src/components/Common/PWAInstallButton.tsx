@@ -81,7 +81,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           className={`h-9 inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-xs font-bold rounded-lg text-amber-950 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 transition-all cursor-pointer shadow-xs shrink-0 ${className}`}
           title="Instalar o Contaju como aplicativo nativo no Computador (Windows / Mac / Linux)"
         >
-          <MonitorDown className="w-4 h-4 text-amber-500 animate-bounce" />
+          <MonitorDown className="w-4 h-4 text-amber-500" />
           <span className="hidden sm:inline">Instalar no Computador</span>
           <span className="sm:hidden">Instalar</span>
         </button>

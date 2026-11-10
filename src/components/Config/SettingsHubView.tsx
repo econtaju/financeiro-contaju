@@ -12,8 +12,7 @@ import {
   History,
   Database,
   SlidersHorizontal,
-  ChevronRight,
-  Bot
+  ChevronRight
 } from 'lucide-react';
 import { storage } from '../../services/storageService';
 import { NavigationScreen } from '../Sidebar';
@@ -30,7 +29,6 @@ import { ImprovementsView } from './ImprovementsView';
 import { AuditView } from './AuditView';
 import { BackupView } from './BackupView';
 import { SupabaseConfigView } from './SupabaseConfigView';
-import { AgentCenterView } from './AgentCenterView';
 
 export type ConfigSubTab =
   | 'EMPRESA'
@@ -41,7 +39,6 @@ export type ConfigSubTab =
   | 'FECHAMENTO_PERIODO'
   | 'MODULOS_INTEGRACOES'
   | 'SUPABASE'
-  | 'IA'
   | 'NOTIFICACOES'
   | 'MELHORIAS'
   | 'AUDITORIA'
@@ -67,12 +64,13 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
   onNavigateToScreen,
   onOpenBillingModal
 }) => {
-  const [activeTab, setActiveTab] = useState<ConfigSubTab>(initialTab);
+  const safeInitialTab = (initialTab as any) === 'IA' ? 'EMPRESA' : initialTab;
+  const [activeTab, setActiveTab] = useState<ConfigSubTab>(safeInitialTab);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      setActiveTab((initialTab as any) === 'IA' ? 'EMPRESA' : initialTab);
     }
   }, [initialTab]);
 
@@ -153,14 +151,6 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
       shortLabel: 'Supabase DB',
       description: 'Conexão PostgreSQL na nuvem, migrações SQL e sincronização',
       icon: Database
-    },
-    {
-      id: 'IA',
-      label: 'Inteligência Artificial (OpenCode Go)',
-      shortLabel: 'IA & Modelos',
-      description: 'Configurar chave OpenCode Go, sincronizar 37 modelos, conciliação e pareceres',
-      icon: Bot,
-      badge: storage.getAgentApprovals().filter(a => a.status === 'PENDENTE').length || undefined
     },
     {
       id: 'NOTIFICACOES',
@@ -284,7 +274,6 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
         )}
         {activeTab === 'MODULOS_INTEGRACOES' && <IntegrationsView />}
         {activeTab === 'SUPABASE' && <SupabaseConfigView />}
-        {activeTab === 'IA' && <AgentCenterView />}
         {activeTab === 'NOTIFICACOES' && (
           <NotificationsConfigView onNavigate={handleInternalNavigate} />
         )}

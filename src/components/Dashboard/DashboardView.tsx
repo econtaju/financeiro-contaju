@@ -458,77 +458,78 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Tab Navigation: Visão Geral vs Configuração de KPIs */}
         <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-3 flex-wrap gap-2">
-          <div className="flex space-x-2">
+          <div className="inline-flex p-1 bg-[var(--surface-elevated)] border border-[var(--border-subtle)] rounded-xl overflow-x-auto max-w-full gap-1">
             <button
               onClick={() => setActiveTab('DASHBOARD')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'DASHBOARD'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
-              Visão do Dashboard
+              <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+              Visão Geral
             </button>
             <button
               onClick={() => setActiveTab('ANNUAL_KPIS')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'ANNUAL_KPIS'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
-              Evolução Anual dos KPIs (12M)
+              <TrendingUp className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+              Evolução 12M
             </button>
             <button
               onClick={() => setActiveTab('COHORT')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'COHORT'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <Layers className="w-3.5 h-3.5 mr-1.5" />
-              Retenção por Coortes
+              <Layers className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
+              Retenção Coortes
             </button>
             <button
               onClick={() => setActiveTab('CHURN_RISK')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'CHURN_RISK'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
-              Risco de Churn & Health Score
+              <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-rose-400" />
+              Risco & Churn
             </button>
             <button
               onClick={() => setActiveTab('STRESS_TEST')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'STRESS_TEST'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-500" />
-              Simulador de Estresse (180 Dias)
+              <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+              Simulador Estresse
             </button>
             <button
               onClick={() => setActiveTab('KPIS_CONFIG')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center shrink-0 cursor-pointer ${
                 activeTab === 'KPIS_CONFIG'
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]'
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/40 shadow-2xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-card)]'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5 mr-1.5 text-slate-950" />
-              Personalizar ({safeVisibleKpis.length} KPIs)
+              <Sliders className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+              Personalizar ({safeVisibleKpis.length})
             </button>
           </div>
 
-          <div className="text-[11px] text-[var(--text-secondary)] hidden sm:block">
-            {safeVisibleKpis.length} KPIs e {safeVisibleWidgets.length} Widgets ativos no painel
+          <div className="text-[11px] text-[var(--text-secondary)] hidden sm:flex items-center gap-1.5 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            {safeVisibleKpis.length} KPIs • {safeVisibleWidgets.length} Módulos
           </div>
         </div>
       </div>
@@ -558,21 +559,104 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             />
           )}
 
-          {/* NOVO WIDGET SOLICITADO: PROJEÇÃO DE CAIXA LÍQUIDO & SIMULAÇÃO DE INADIMPLÊNCIA ESPERADA */}
-          <CashLiquiditySimulationWidget
-            currentCompetenceStr={currentCompetenceStr}
-            nominalCashBalance={consolidatedCash}
-            allReceivables={receivables}
-            allPayables={payables}
-            contracts={contracts}
-            counterparties={counterparties}
-            onSelectTitle={handleOpenEditTitle}
-            onOpenStressTesting={() => setActiveTab('STRESS_TEST')}
-          />
+          {/* GRID DE KPIS DINÂMICOS CONFORME CONFIGURAÇÃO DO USUÁRIO */}
+          {safeVisibleKpis.length > 0 && (
+            <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[var(--border-subtle)] pb-3 gap-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
+                    Indicadores Financeiros Chave (KPIs Selecionados)
+                  </h3>
+                </div>
 
-          {/* WIDGET: DETECÇÃO PREDITIVA DE RISCO DE CHURN (HEALTH SCORE) */}
-          {safeVisibleWidgets.includes('widget_risco_churn') && (
-            <ChurnRiskWidget onNavigateScreen={onNavigate} isCompactMode={true} />
+                <div className="flex items-center space-x-2 flex-wrap">
+                  {/* Seletor de Modo: Cards do Mês vs Linha a Linha Anual */}
+                  <div className="inline-flex p-0.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-subtle)] shadow-2xs gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setKpiDisplayMode('MONTH_CARDS')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
+                        kpiDisplayMode === 'MONTH_CARDS'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold shadow-2xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="Ver cards executivos do mês selecionado"
+                    >
+                      <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                      Mês Atual ({dreData.months[effectiveMonthIdx]}/{effectiveYear})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKpiDisplayMode('ANNUAL_TABLE')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
+                        kpiDisplayMode === 'ANNUAL_TABLE'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold shadow-2xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="Ver tabela comparativa com todos os 12 meses linha a linha"
+                    >
+                      <Table className="w-3.5 h-3.5 mr-1.5" />
+                      Detalhado por Ano (Linha a Linha)
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setActiveTab('KPIS_CONFIG')}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center px-2 py-1 rounded-md hover:bg-[var(--surface-elevated)] cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5 mr-1" />
+                    Personalizar
+                  </button>
+                </div>
+              </div>
+
+              {kpiDisplayMode === 'MONTH_CARDS' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
+                  {KPI_CATALOG
+                    .filter(kpi => safeVisibleKpis.includes(kpi.id))
+                    .map(kpi => {
+                      const IconComponent = kpi.icon;
+                      const navTarget: NavigationScreen | null = 
+                        kpi.id === 'contas_pagar_aberto' ? 'CONTAS_PAGAR' :
+                        kpi.id === 'contas_receber_aberto' ? 'CONTAS_RECEBER' :
+                        (kpi.id === 'saldo_liquido_caixa' || kpi.id === 'entradas_caixa' || kpi.id === 'saidas_caixa') ? 'FLUXO_CAIXA' :
+                        (kpi.id === 'receita_liquida' || kpi.id === 'lucro_liquido' || kpi.id === 'ebitda' || kpi.id === 'margem_liquida') ? 'DRE' :
+                        kpi.id === 'ticket_medio' ? 'CLIENTES' : null;
+
+                      return (
+                        <div 
+                          key={kpi.id}
+                          onClick={() => navTarget && onNavigate(navTarget)}
+                          className={`p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-amber-500/40 transition-all space-y-1.5 ${
+                            navTarget ? 'cursor-pointer hover:shadow-2xs active:scale-[0.99]' : ''
+                          }`}
+                          title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
+                        >
+                          <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
+                            <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
+                            <IconComponent className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
+                          </div>
+                          <div className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
+                            {kpi.value}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-muted)] truncate flex items-center justify-between" title={kpi.subtext}>
+                            <span>{kpi.subtext}</span>
+                            {navTarget && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-60 ml-1 shrink-0" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <AnnualKpiComparisonView
+                  currentYear={effectiveYear}
+                  selectedMonthIdx={effectiveMonthIdx}
+                  onNavigateScreen={onNavigate}
+                  isCompactMode={true}
+                />
+              )}
+            </div>
           )}
 
           {/* WIDGETS CONFIGURÁVEIS SOLICITADOS: FATURAMENTO & SALDOS BANCÁRIOS CONSOLIDADOS */}
@@ -888,106 +972,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           </div>
 
-          {/* GRID DE KPIS DINÂMICOS CONFORME CONFIGURAÇÃO DO USUÁRIO */}
-          {safeVisibleKpis.length > 0 && (
-            <div className="bg-[var(--surface-card)] p-4 sm:p-5 rounded-2xl border border-[var(--border-subtle)] shadow-2xs space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[var(--border-subtle)] pb-3 gap-3">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
-                    Indicadores Financeiros Chave (KPIs Selecionados)
-                  </h3>
-                </div>
-
-                <div className="flex items-center space-x-2 flex-wrap">
-                  {/* Seletor de Modo: Cards do Mês vs Linha a Linha Anual */}
-                  <div className="inline-flex p-0.5 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border-subtle)] shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => setKpiDisplayMode('MONTH_CARDS')}
-                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
-                        kpiDisplayMode === 'MONTH_CARDS'
-                          ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
-                      title="Ver cards executivos do mês selecionado"
-                    >
-                      <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                      Mês Atual ({dreData.months[effectiveMonthIdx]}/{effectiveYear})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setKpiDisplayMode('ANNUAL_TABLE')}
-                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center cursor-pointer ${
-                        kpiDisplayMode === 'ANNUAL_TABLE'
-                          ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
-                      title="Ver tabela comparativa com todos os 12 meses linha a linha"
-                    >
-                      <Table className="w-3.5 h-3.5 mr-1.5" />
-                      Detalhado por Ano (Linha a Linha)
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => setActiveTab('KPIS_CONFIG')}
-                    className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center px-2 py-1 rounded-md hover:bg-[var(--surface-elevated)] cursor-pointer"
-                  >
-                    <Sliders className="w-3.5 h-3.5 mr-1" />
-                    Personalizar
-                  </button>
-                </div>
-              </div>
-
-              {kpiDisplayMode === 'MONTH_CARDS' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
-                  {KPI_CATALOG
-                    .filter(kpi => safeVisibleKpis.includes(kpi.id))
-                    .map(kpi => {
-                      const IconComponent = kpi.icon;
-                      const navTarget: NavigationScreen | null = 
-                        kpi.id === 'contas_pagar_aberto' ? 'CONTAS_PAGAR' :
-                        kpi.id === 'contas_receber_aberto' ? 'CONTAS_RECEBER' :
-                        (kpi.id === 'saldo_liquido_caixa' || kpi.id === 'entradas_caixa' || kpi.id === 'saidas_caixa') ? 'FLUXO_CAIXA' :
-                        (kpi.id === 'receita_liquida' || kpi.id === 'lucro_liquido' || kpi.id === 'ebitda' || kpi.id === 'margem_liquida') ? 'DRE' :
-                        kpi.id === 'ticket_medio' ? 'CLIENTES' : null;
-
-                      return (
-                        <div 
-                          key={kpi.id}
-                          onClick={() => navTarget && onNavigate(navTarget)}
-                          className={`p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-amber-500/40 transition-all space-y-1.5 ${
-                            navTarget ? 'cursor-pointer hover:shadow-2xs active:scale-[0.99]' : ''
-                          }`}
-                          title={navTarget ? `Clique para abrir o módulo correspondente` : undefined}
-                        >
-                          <div className="flex justify-between items-center text-xs text-[var(--text-secondary)]">
-                            <span className="font-medium truncate max-w-[170px]" title={kpi.name}>{kpi.name}</span>
-                            <IconComponent className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
-                          </div>
-                          <div className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight font-mono">
-                            {kpi.value}
-                          </div>
-                          <div className="text-[11px] text-[var(--text-muted)] truncate flex items-center justify-between" title={kpi.subtext}>
-                            <span>{kpi.subtext}</span>
-                            {navTarget && <ArrowRight className="w-3 h-3 text-[var(--text-muted)] opacity-60 ml-1 shrink-0" />}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <AnnualKpiComparisonView
-                  currentYear={effectiveYear}
-                  selectedMonthIdx={effectiveMonthIdx}
-                  onNavigateScreen={onNavigate}
-                  isCompactMode={true}
-                />
-              )}
-            </div>
-          )}
-
           {/* BLOCO 1: RESULTADO POR COMPETÊNCIA (DRE ECONÔMICO) */}
           {safeVisibleWidgets.includes('widget_dre_economico') && (
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
@@ -1143,6 +1127,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* PROJEÇÃO DE CAIXA LÍQUIDO & SIMULAÇÃO DE INADIMPLÊNCIA ESPERADA */}
+          <CashLiquiditySimulationWidget
+            currentCompetenceStr={currentCompetenceStr}
+            nominalCashBalance={consolidatedCash}
+            allReceivables={receivables}
+            allPayables={payables}
+            contracts={contracts}
+            counterparties={counterparties}
+            onSelectTitle={handleOpenEditTitle}
+            onOpenStressTesting={() => setActiveTab('STRESS_TEST')}
+          />
+
+          {/* WIDGET: DETECÇÃO PREDITIVA DE RISCO DE CHURN (HEALTH SCORE) */}
+          {safeVisibleWidgets.includes('widget_risco_churn') && (
+            <ChurnRiskWidget onNavigateScreen={onNavigate} isCompactMode={true} />
           )}
 
           {/* WIDGET 6: PRÓXIMOS VENCIMENTOS */}

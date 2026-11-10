@@ -31,7 +31,6 @@ import { GlobalSearchModal } from './Common/GlobalSearchModal';
 import { GoldenLionLogo } from './Common/GoldenLionLogo';
 import { PWAInstallButton } from './Common/PWAInstallButton';
 import { OfflineSyncIndicator } from './Common/OfflineSyncIndicator';
-import { AiHealthStatusPill } from './Common/AiHealthStatusPill';
 
 interface HeaderProps {
   currentUser: User;
@@ -367,9 +366,6 @@ export const Header: React.FC<HeaderProps> = ({
                 Transferir
               </button>
             </div>
-
-            {/* Indicador de Saúde da IA e Modelo Ativo (OpenCode Go) */}
-            <AiHealthStatusPill onNavigate={onNavigate} />
 
             {/* Indicador de Conexão e Sincronização em Segundo Plano */}
             <OfflineSyncIndicator />

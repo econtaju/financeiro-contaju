@@ -300,16 +300,8 @@ function AppContent() {
       case 'RELATORIOS':
         return <ReportsView />;
 
-      // Consolidated Configuration Hub & AI Center
+      // Consolidated Configuration Hub
       case 'IA':
-        return (
-          <SettingsHubView
-            initialTab="IA"
-            onNavigateToScreen={handleNavigate}
-            onOpenBillingModal={() => setIsBillingModalOpen(true)}
-          />
-        );
-
       case 'CONFIGURACOES':
       case 'EMPRESA':
       case 'FORNECEDORES':
