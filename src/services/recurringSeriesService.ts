@@ -18,6 +18,14 @@ export interface SeriesFieldChanges {
   oldAmount: number;
   newAmount: number;
   
+  descriptionChanged?: boolean;
+  oldDescription?: string;
+  newDescription?: string;
+
+  counterpartyChanged?: boolean;
+  oldCounterpartyId?: string;
+  newCounterpartyId?: string;
+
   dueDateChanged: boolean;
   oldDueDate: string;
   newDueDate: string;
@@ -37,6 +45,26 @@ export interface SeriesFieldChanges {
 }
 
 export class RecurringSeriesService {
+  /**
+   * Normaliza descrições de títulos removendo sufixos de parcelamento, recorrência e meses
+   * para permitir comparação semântica confiável entre competências diferentes.
+   */
+  public static normalizeDescription(str: string): string {
+    return (str || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s*\[recorrente[^\]]*\]/gi, '')
+      .replace(/\s*-?\s*\d{4}-\d{2}\b/g, '')
+      .replace(/\s*-?\s*\d{1,2}\/\d{4}\b/g, '')
+      .replace(/\s*\(\d{1,2}\/\d{1,2}\)/g, '')
+      .replace(/\s*-?\s*\d{1,2}\/\d{1,2}(?!\d)/g, '')
+      .replace(/\s*parcela\s*\d+/gi, '')
+      .replace(/\s*m[eê]s\s*\d+/gi, '')
+      .replace(/\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b(\s*\/?\s*\d{2,4})?/gi, '')
+      .replace(/[^\w\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
   /**
    * Extrai o identificador base de uma série de títulos.
    * Ex: "PAG-2026-1001 - 1/5" -> "PAG-2026-1001"
@@ -62,6 +90,8 @@ export class RecurringSeriesService {
     targetTitle: FinancialTitle,
     newValues: {
       originalAmount: number;
+      description?: string;
+      counterpartyId?: string;
       dueDate?: string;
       accountId?: string;
       expectedBankAccountId?: string;
@@ -70,6 +100,14 @@ export class RecurringSeriesService {
     const oldAmount = Number(targetTitle.originalAmount) || 0;
     const newAmount = Number(newValues.originalAmount) || 0;
     const amountChanged = Math.abs(newAmount - oldAmount) > 0.001;
+
+    const oldDescription = targetTitle.description || '';
+    const newDescription = newValues.description !== undefined ? newValues.description : oldDescription;
+    const descriptionChanged = Boolean(newDescription && newDescription.trim() !== oldDescription.trim());
+
+    const oldCounterpartyId = targetTitle.counterpartyId || '';
+    const newCounterpartyId = newValues.counterpartyId !== undefined ? newValues.counterpartyId : oldCounterpartyId;
+    const counterpartyChanged = Boolean(newCounterpartyId && newCounterpartyId !== oldCounterpartyId);
 
     const oldDueDate = targetTitle.dueDate || '';
     const newDueDate = newValues.dueDate || '';
@@ -87,12 +125,18 @@ export class RecurringSeriesService {
     const newBankAccountId = newValues.expectedBankAccountId || '';
     const bankAccountChanged = Boolean(newBankAccountId !== oldBankAccountId);
 
-    const hasAnyChange = amountChanged || dueDayChanged || accountChanged || bankAccountChanged;
+    const hasAnyChange = amountChanged || descriptionChanged || counterpartyChanged || dueDayChanged || accountChanged || bankAccountChanged;
 
     return {
       amountChanged,
       oldAmount,
       newAmount,
+      descriptionChanged,
+      oldDescription,
+      newDescription,
+      counterpartyChanged,
+      oldCounterpartyId,
+      newCounterpartyId,
       dueDateChanged,
       oldDueDate,
       newDueDate,
@@ -194,6 +238,53 @@ export class RecurringSeriesService {
       }
     }
 
+    // 6. Heurística Inteligente por Similaridade (Mesmo Nome, Mesma Descrição e Valores em Meses Futuros)
+    if (relatedTitles.length <= 1) {
+      const targetDescNorm = this.normalizeDescription(targetTitle.description);
+      const targetAmount = Number(targetTitle.originalAmount) || 0;
+      const targetComp = targetTitle.competence || (targetTitle.dueDate ? targetTitle.dueDate.substring(0, 7) : '');
+
+      const candidates = sameTypeTitles.filter(t => {
+        if (t.id === targetTitle.id) return true;
+
+        const tComp = t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : '');
+
+        const sameCounterparty = Boolean(
+          targetTitle.counterpartyId && t.counterpartyId && targetTitle.counterpartyId === t.counterpartyId
+        );
+
+        const tDescNorm = this.normalizeDescription(t.description);
+        const descMatch = (targetDescNorm.length >= 3 && tDescNorm.length >= 3) && (
+          tDescNorm === targetDescNorm ||
+          tDescNorm.includes(targetDescNorm) ||
+          targetDescNorm.includes(tDescNorm)
+        );
+
+        const tAmount = Number(t.originalAmount) || 0;
+        const amountMatch = Math.abs(tAmount - targetAmount) <= 0.10;
+
+        // Caso 1: Mesma contraparte + mesma descrição normalizada
+        if (sameCounterparty && descMatch) return true;
+
+        // Caso 2: Mesma descrição normalizada + mesmo valor
+        if (descMatch && amountMatch) return true;
+
+        // Caso 3: Mesma contraparte + mesmo valor + mesma categoria
+        if (sameCounterparty && amountMatch && t.accountId === targetTitle.accountId && targetDescNorm.length >= 2) return true;
+
+        // Caso 4: Mesma contraparte + mesmo valor em competência diferente (ex.: lançamentos manuais contínuos)
+        if (sameCounterparty && amountMatch && targetAmount > 0 && tComp && targetComp && tComp !== targetComp) return true;
+
+        return false;
+      });
+
+      if (candidates.length > 1) {
+        relatedTitles = candidates;
+        seriesType = 'RECORRENCIA';
+        seriesTypeLabel = 'Recorrência Mensal Similar';
+      }
+    }
+
     if (relatedTitles.length <= 1) {
       return emptyResult;
     }
@@ -284,10 +375,13 @@ export class RecurringSeriesService {
     updates: Partial<FinancialTitle>;
     applyToSubsequent: boolean;
     subsequentTitleIds: string[];
+    individualOverrides?: Record<string, { amount?: number; dueDate?: string; description?: string }>;
     contractId?: string;
     propagateDueDay?: boolean;
     propagateAccount?: boolean;
     propagateBankAccount?: boolean;
+    propagateDescription?: boolean;
+    propagateCounterparty?: boolean;
     currentUser: { name: string; role: any };
   }): {
     success: boolean;
@@ -302,10 +396,13 @@ export class RecurringSeriesService {
       updates, 
       applyToSubsequent, 
       subsequentTitleIds, 
+      individualOverrides,
       contractId, 
       propagateDueDay = true,
       propagateAccount = true,
       propagateBankAccount = true,
+      propagateDescription = true,
+      propagateCounterparty = true,
       currentUser 
     } = params;
 
@@ -355,9 +452,11 @@ export class RecurringSeriesService {
 
           subsequentCount++;
 
-          // Calcular nova data de vencimento preservando o mês da parcela futura
-          let calculatedDueDate = t.dueDate;
-          if (propagateDueDay && newDueDay && t.dueDate) {
+          const override = individualOverrides?.[t.id];
+
+          // Calcular nova data de vencimento preservando o mês da parcela futura (ou usando override manual)
+          let calculatedDueDate = override?.dueDate || t.dueDate;
+          if (!override?.dueDate && propagateDueDay && newDueDay && t.dueDate) {
             const [tYear, tMonth] = t.dueDate.split('-').map(Number);
             if (tYear && tMonth) {
               const daysInMonth = new Date(tYear, tMonth, 0).getDate();
@@ -366,10 +465,28 @@ export class RecurringSeriesService {
             }
           }
 
+          // Calcular nova descrição preservando sufixos se houver (ou usando override manual)
+          let calculatedDescription = t.description;
+          if (override?.description !== undefined && override.description.trim()) {
+            calculatedDescription = override.description.trim();
+          } else if (propagateDescription && updates.description) {
+            const suffixMatch = t.description.match(/\s*(\(\d+\/\d+\)|\[Recorrente[^\]]*\]|-\s*\d+\/\d+)$/i);
+            if (suffixMatch) {
+              const baseNewDesc = updates.description.replace(/\s*(\(\d+\/\d+\)|\[Recorrente[^\]]*\]|-\s*\d+\/\d+)$/i, '').trim();
+              calculatedDescription = `${baseNewDesc} ${suffixMatch[1]}`;
+            } else {
+              calculatedDescription = updates.description;
+            }
+          }
+
+          const finalSubAmount = override?.amount !== undefined ? Number(override.amount) : Number(newAmount);
+
           return {
             ...t,
-            originalAmount: Number(newAmount),
-            balancePrincipal: Number(newAmount),
+            description: calculatedDescription,
+            counterpartyId: propagateCounterparty && updates.counterpartyId ? updates.counterpartyId : t.counterpartyId,
+            originalAmount: finalSubAmount,
+            balancePrincipal: finalSubAmount,
             dueDate: calculatedDueDate,
             expectedCashDate: calculatedDueDate,
             accountId: propagateAccount && updates.accountId ? updates.accountId : t.accountId,
@@ -444,5 +561,125 @@ export class RecurringSeriesService {
       contract: updatedContractResult,
       adjustment: createdAdjustmentResult
     };
+  }
+
+  /**
+   * Localiza títulos similares em meses futuros com mesma descrição, contraparte ou valor,
+   * útil para checagem prévia na criação, edição ou exclusão.
+   */
+  public static findSimilarFutureTitles(params: {
+    type: 'RECEBER' | 'PAGAR';
+    counterpartyId?: string;
+    description: string;
+    amount: number;
+    referenceDateOrCompetence?: string;
+    excludeTitleId?: string;
+    includeSameCompetence?: boolean;
+  }): FinancialTitle[] {
+    const {
+      type,
+      counterpartyId,
+      description,
+      amount,
+      referenceDateOrCompetence,
+      excludeTitleId,
+      includeSameCompetence = false
+    } = params;
+    const allTitles = storage.getTitles();
+    const refComp = referenceDateOrCompetence ? referenceDateOrCompetence.substring(0, 7) : '';
+
+    const targetDescNorm = this.normalizeDescription(description);
+
+    return allTitles.filter(t => {
+      if (!t || t.type !== type || t.documentState === 'CANCELADO') return false;
+      if (excludeTitleId && t.id === excludeTitleId) return false;
+      
+      const tComp = t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : '');
+      if (refComp && tComp) {
+        if (includeSameCompetence ? tComp < refComp : tComp <= refComp) return false;
+      }
+
+      const isSettled = t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL' || (t.settledPrincipal || 0) > 0;
+      if (isSettled) return false;
+
+      if (tComp && FinancialEngine.isPeriodClosed(tComp)) return false;
+
+      const tDescNorm = this.normalizeDescription(t.description);
+      const sameCounterparty = Boolean(counterpartyId && t.counterpartyId && counterpartyId === t.counterpartyId);
+      const descMatch = (targetDescNorm.length >= 3 && tDescNorm.length >= 3) && (
+        tDescNorm === targetDescNorm ||
+        tDescNorm.includes(targetDescNorm) ||
+        targetDescNorm.includes(tDescNorm)
+      );
+      const amountMatch = Math.abs((Number(t.originalAmount) || 0) - amount) <= 0.10;
+
+      if (sameCounterparty && descMatch) return true;
+      if (descMatch && amountMatch) return true;
+      if (sameCounterparty && amountMatch && amount > 0 && tComp && (!refComp || tComp !== refComp)) return true;
+
+      return false;
+    }).sort((a, b) => (a.competence || a.dueDate || '').localeCompare(b.competence || b.dueDate || ''));
+  }
+
+  /**
+   * Atualiza títulos existentes selecionados (ex: após vínculo de continuidade na criação).
+   */
+  public static updateExistingTitlesBatch(params: {
+    updatesByTitleId: Record<string, {
+      description?: string;
+      originalAmount?: number;
+      dueDate?: string;
+      accountId?: string;
+      expectedBankAccountId?: string;
+      counterpartyId?: string;
+    }>;
+    currentUser: { name: string; role: any };
+  }): number {
+    const { updatesByTitleId, currentUser } = params;
+    const ids = Object.keys(updatesByTitleId);
+    if (ids.length === 0) return 0;
+
+    const allTitles = storage.getTitles();
+    let updatedCount = 0;
+
+    const updated = allTitles.map(t => {
+      const patch = updatesByTitleId[t.id];
+      if (!patch) return t;
+      if (t.settlementState === 'LIQUIDADO' || t.settlementState === 'PARCIAL' || (t.settledPrincipal || 0) > 0) return t;
+      if (t.documentState === 'CANCELADO') return t;
+      const tComp = t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : '');
+      if (tComp && FinancialEngine.isPeriodClosed(tComp)) return t;
+
+      updatedCount++;
+      const nextAmount = patch.originalAmount !== undefined ? Number(patch.originalAmount) : t.originalAmount;
+      const nextDueDate = patch.dueDate || t.dueDate;
+
+      return {
+        ...t,
+        description: patch.description !== undefined ? patch.description : t.description,
+        counterpartyId: patch.counterpartyId || t.counterpartyId,
+        accountId: patch.accountId || t.accountId,
+        expectedBankAccountId: patch.expectedBankAccountId !== undefined ? patch.expectedBankAccountId : t.expectedBankAccountId,
+        originalAmount: nextAmount,
+        balancePrincipal: Math.max(0, nextAmount - (t.settledPrincipal || 0)),
+        dueDate: nextDueDate,
+        expectedCashDate: nextDueDate,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    if (updatedCount > 0) {
+      storage.saveTitles(updated);
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'VINCULO_EDICAO_CONTINUIDADE',
+        module: 'Continuidade Financeira',
+        recordId: ids[0],
+        details: `${updatedCount} lançamento(s) posterior(es) similar(es) atualizado(s) por vínculo de continuidade.`
+      });
+    }
+
+    return updatedCount;
   }
 }

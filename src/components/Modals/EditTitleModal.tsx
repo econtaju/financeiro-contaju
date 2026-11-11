@@ -289,7 +289,12 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     updatesToApply: Partial<FinancialTitle>,
     amountToSave: number,
     applyToSubsequent: boolean,
-    seriesInfo?: SeriesDetectionResult | null
+    seriesInfo?: SeriesDetectionResult | null,
+    selectedSubsequentIds?: string[],
+    options?: {
+      actionMode?: 'UPDATE' | 'DELETE';
+      individualOverrides?: Record<string, { amount?: number; dueDate?: string; description?: string }>;
+    }
   ) => {
     if (!title) return;
 
@@ -298,17 +303,42 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     let createdContract: Contract | undefined = undefined;
     let createdAdjustment: ContractAdjustment | undefined = undefined;
 
-    if (applyToSubsequent && seriesInfo && seriesInfo.subsequentOpenTitles.length > 0) {
+    const effectiveSubsequentIds = selectedSubsequentIds && selectedSubsequentIds.length > 0
+      ? selectedSubsequentIds
+      : (seriesInfo?.subsequentOpenTitles.map(t => t.id) || []);
+
+    if (applyToSubsequent && seriesInfo && effectiveSubsequentIds.length > 0 && options?.actionMode === 'DELETE') {
+      storage.updateTitle(title.id, {
+        ...updatesToApply,
+        originalAmount: Number(amountToSave),
+        balancePrincipal: newBalance
+      });
+      const delRes = storage.batchDeleteTitles(effectiveSubsequentIds);
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'EDICAO_EXCLUSAO_CADEIA',
+        module: isReceber ? 'Contas a Receber' : 'Contas a Pagar',
+        recordId: title.id,
+        details: `Edição do título ${title.titleNumber} seguida da exclusão de ${delRes.deletedCount} lançamento(s) posterior(es) da cadeia.`
+      });
+      toast.success(
+        `Lançamento atual salvo e ${delRes.deletedCount} lançamento(s) posterior(es) excluído(s) com sucesso!`
+      );
+    } else if (applyToSubsequent && seriesInfo && effectiveSubsequentIds.length > 0) {
       const result = RecurringSeriesService.executeSeriesUpdate({
         targetTitleId: title.id,
         newAmount: amountToSave,
         updates: updatesToApply,
         applyToSubsequent: true,
-        subsequentTitleIds: seriesInfo.subsequentOpenTitles.map(t => t.id),
+        subsequentTitleIds: effectiveSubsequentIds,
+        individualOverrides: options?.individualOverrides,
         contractId: title.contractId,
         propagateDueDay: true,
         propagateAccount: true,
         propagateBankAccount: true,
+        propagateDescription: true,
+        propagateCounterparty: true,
         currentUser
       });
 
@@ -359,14 +389,16 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
         const actualDay = Math.min(baseDueDay, maxDays);
         const targetDueDate = `${targetComp}-${String(actualDay).padStart(2, '0')}`;
 
-        // Verifica se já existe um lançamento com os mesmos dados fundamentais no mesmo mês para evitar duplicidade
-        const alreadyExists = existingTitles.some(
-          et => et.counterpartyId === counterpartyId && 
-                et.competence === targetComp && 
-                et.type === title.type &&
-                et.description === description.trim() &&
-                et.documentState !== 'CANCELADO'
-        );
+        // Verifica se já existe um lançamento equivalente no mesmo mês para evitar duplicidade na recorrência
+        const normNewDesc = RecurringSeriesService.normalizeDescription(description.trim());
+        const alreadyExists = existingTitles.some(et => {
+          if (et.documentState === 'CANCELADO' || et.type !== title.type) return false;
+          if ((et.competence || et.dueDate?.substring(0, 7)) !== targetComp) return false;
+          if (effectiveSubsequentIds.includes(et.id)) return true;
+          if (et.counterpartyId !== counterpartyId) return false;
+          const normExistingDesc = RecurringSeriesService.normalizeDescription(et.description);
+          return et.description === description.trim() || (normNewDesc.length >= 3 && normExistingDesc === normNewDesc);
+        });
         if (alreadyExists) continue;
 
         const newId = `title-rec-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 6)}`;
@@ -451,7 +483,14 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
     }
   };
 
-  const handleConfirmSeriesChoice = (applyToSubsequent: boolean) => {
+  const handleConfirmSeriesChoice = (
+    applyToSubsequent: boolean,
+    selectedSubsequentIds?: string[],
+    options?: {
+      actionMode?: 'UPDATE' | 'DELETE';
+      individualOverrides?: Record<string, { amount?: number; dueDate?: string; description?: string }>;
+    }
+  ) => {
     if (!seriesModalState.pendingUpdates) return;
     const updates = seriesModalState.pendingUpdates;
     const amt = seriesModalState.pendingAmount;
@@ -464,7 +503,7 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       pendingUpdates: null
     });
 
-    executeFinalSave(updates, amt, applyToSubsequent, info);
+    executeFinalSave(updates, amt, applyToSubsequent, info, selectedSubsequentIds, options);
   };
 
   const handleCancelSeriesChoice = () => {
@@ -566,30 +605,55 @@ export const EditTitleModal: React.FC<EditTitleModalProps> = ({
       originType: isRecurringEnabled && title.type === 'PAGAR' ? 'RECORRENCIA_PAGAR' : title.originType
     };
 
-    // Verificar se houve alteração no valor, vencimento, categoria ou conta bancária
+    // Verificar se houve alteração no valor, descrição, favorecido, vencimento, categoria ou conta bancária
     const fieldChanges = RecurringSeriesService.detectFieldChanges(title, {
       originalAmount: Number(originalAmount),
+      description,
+      counterpartyId,
       dueDate,
       accountId,
       expectedBankAccountId: settlementBankAccountId || expectedBankAccountId
     });
 
-    if (fieldChanges.hasAnyChange) {
-      const seriesInfo = RecurringSeriesService.detectSeries(title);
-      // Se pertence a uma série e há meses/parcelas seguintes em aberto
-      if (seriesInfo.isSeries && seriesInfo.subsequentOpenTitles.length > 0) {
-        setSeriesModalState({
-          isOpen: true,
-          pendingAmount: Number(originalAmount),
-          pendingDueDate: dueDate,
-          pendingAccountId: accountId,
-          pendingBankAccountId: settlementBankAccountId || expectedBankAccountId,
-          fieldChanges,
-          seriesInfo,
-          pendingUpdates: updatesPayload
-        });
-        return;
+    let seriesInfo = RecurringSeriesService.detectSeries(title);
+    // Fallback por similaridade usando os novos dados informados (especialmente ao ativar recorrência ou alinhar nomes)
+    if (!seriesInfo.isSeries || seriesInfo.subsequentOpenTitles.length === 0) {
+      const similarByNewData = RecurringSeriesService.findSimilarFutureTitles({
+        type: title.type,
+        counterpartyId,
+        description: description.trim(),
+        amount: Number(originalAmount),
+        referenceDateOrCompetence: isRecurringEnabled ? (recurringStartMonth || competence) : competence,
+        excludeTitleId: title.id,
+        includeSameCompetence: isRecurringEnabled
+      });
+
+      if (similarByNewData.length > 0) {
+        seriesInfo = {
+          isSeries: true,
+          seriesType: 'RECORRENCIA',
+          seriesTypeLabel: 'Recorrência Mensal Similar',
+          allSeriesTitles: [title, ...similarByNewData],
+          subsequentOpenTitles: similarByNewData,
+          paidTitlesCount: 0,
+          totalSeriesCount: 1 + similarByNewData.length
+        };
       }
+    }
+
+    // Se houve alteração ou está gerando/ativando recorrência em cadeia que já possui lançamentos similares futuros
+    if ((fieldChanges.hasAnyChange || isRecurringEnabled) && seriesInfo.isSeries && seriesInfo.subsequentOpenTitles.length > 0) {
+      setSeriesModalState({
+        isOpen: true,
+        pendingAmount: Number(originalAmount),
+        pendingDueDate: dueDate,
+        pendingAccountId: accountId,
+        pendingBankAccountId: settlementBankAccountId || expectedBankAccountId,
+        fieldChanges,
+        seriesInfo,
+        pendingUpdates: updatesPayload
+      });
+      return;
     }
 
     // Sem alteração de série ou sem parcelas seguintes em aberto: salvar diretamente

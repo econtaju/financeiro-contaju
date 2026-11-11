@@ -99,8 +99,8 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
   });
 
   const handleToggleStrictPolicy = () => {
-    if (currentUser.role !== 'ADMIN') {
-      setMsg({ type: 'warning', text: 'Apenas Administradores podem alterar a Política de Fechamento Contábil.' });
+    if (!['SUPER_ADMIN', 'ADMIN', 'GESTOR_FINANCEIRO'].includes(currentUser.role)) {
+      setMsg({ type: 'warning', text: 'Apenas Administradores e Gestores Financeiros podem alterar a Política de Fechamento Contábil.' });
       return;
     }
     const nextVal = !isStrictClosurePolicy;
@@ -452,7 +452,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
       (isClassificationOk ? 1 : 0) + 
       (isTaxesOk ? 1 : 0);
 
-    const isAlreadyClosed = closures.some(c => c.competence === newCompetence && c.isClosed);
+    const isAlreadyClosed = closures.some(c => (c.competence || c.yearMonth) === newCompetence && c.isClosed);
     const isReadyToClose = passedCount === 5 && !isAlreadyClosed;
 
     return {
@@ -495,9 +495,18 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
   const isClosureBlockedByPolicy = isStrictClosurePolicy && !areAllBanksMatched;
   const isClosureDisabled = checklist?.isAlreadyClosed || isClosureBlockedByPolicy;
 
+  const closedRecordForSelectedCompetence = useMemo(() => {
+    return closures.find(c => (c.competence || c.yearMonth) === newCompetence && c.isClosed) || null;
+  }, [closures, newCompetence]);
+
   const handleClosePeriod = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompetence) return;
+
+    if (currentUser.role === 'CONSULTA') {
+      setMsg({ type: 'error', text: 'Usuários com perfil de consulta não possuem permissão para fechar períodos contábeis.' });
+      return;
+    }
 
     if (checklist?.isAlreadyClosed) {
       setMsg({ type: 'warning', text: `A competência ${newCompetence} já possui registro de fechamento ativo.` });
@@ -584,15 +593,12 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
     e.preventDefault();
     if (!reopenTarget) return;
 
-    if (currentUser.role !== 'ADMIN') {
-      setMsg({ type: 'error', text: 'Apenas administradores podem reabrir períodos contábeis encerrados.' });
+    if (currentUser.role === 'CONSULTA') {
+      setMsg({ type: 'error', text: 'Usuários com perfil de consulta não possuem permissão para destravar períodos contábeis.' });
       return;
     }
 
-    if (!reopenReason.trim()) {
-      setMsg({ type: 'warning', text: 'Informe a justificativa obrigatória para auditoria.' });
-      return;
-    }
+    const effectiveReason = reopenReason.trim() || 'Reabertura para ajustes e correções de lançamentos solicitada pelo usuário';
 
     setIsReopening(true);
 
@@ -606,15 +612,15 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
       action: 'REABERTURA_PERIODO_AUDITADA',
       module: 'Fechamento Contábil',
       recordId: reopenTarget.id,
-      details: `Reabertura extraordinária da competência ${reopenTarget.competence}. Motivo registrado: "${reopenReason.trim()}".`,
-      previousValue: `FECHADO (${reopenTarget.competence})`,
-      newValue: `ABERTO (${reopenTarget.competence})`
+      details: `Reabertura extraordinária da competência ${reopenTarget.competence || reopenTarget.yearMonth}. Motivo: "${effectiveReason}".`,
+      previousValue: `FECHADO (${reopenTarget.competence || reopenTarget.yearMonth})`,
+      newValue: `ABERTO (${reopenTarget.competence || reopenTarget.yearMonth})`
     });
 
     setIsReopening(false);
     setReopenTarget(null);
     setReopenReason('');
-    setMsg({ type: 'success', text: `Competência ${reopenTarget.competence} reaberta. Ação registrada na Trilha de Auditoria.` });
+    setMsg({ type: 'success', text: `Competência ${reopenTarget.competence || reopenTarget.yearMonth} destravada com sucesso! Lançamentos e edições estão liberados.` });
   };
 
   // Métricas de cabeçalho
@@ -709,7 +715,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
             </span>
           </div>
           <span className="text-[11px] text-[var(--text-secondary)] mt-1 block">
-            Papel: <strong>{currentUser.role}</strong> ({currentUser.role === 'ADMIN' ? 'Fechamento & Reabertura' : 'Apenas Consulta'})
+            Papel: <strong>{currentUser.role}</strong> ({currentUser.role !== 'CONSULTA' ? 'Fechamento & Destravamento' : 'Apenas Consulta'})
           </span>
         </div>
       </div>
@@ -738,12 +744,28 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {checklist?.isAlreadyClosed ? (
-            <div className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5">
-              <Lock className="w-4 h-4" />
-              <span>Competência {newCompetence} já encerrada e travada</span>
-            </div>
+            <>
+              <div className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5">
+                <Lock className="w-4 h-4" />
+                <span>Competência {newCompetence} já encerrada e travada</span>
+              </div>
+              {closedRecordForSelectedCompetence && currentUser.role !== 'CONSULTA' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReopenTarget(closedRecordForSelectedCompetence);
+                    setReopenReason('Reabertura para ajustes manuais solicitados pelo usuário');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-sm flex items-center gap-1.5 cursor-pointer transition-all"
+                  title={`Destravar competência ${newCompetence} para liberar edições e lançamentos`}
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>Destravar {newCompetence}</span>
+                </button>
+              )}
+            </>
           ) : (
             <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
               checklist?.passedCount === 5 
@@ -1308,7 +1330,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
           </div>
 
           <div className="shrink-0 flex items-center gap-3">
-            {currentUser.role === 'ADMIN' ? (
+            {['SUPER_ADMIN', 'ADMIN', 'GESTOR_FINANCEIRO'].includes(currentUser.role) ? (
               <button
                 type="button"
                 onClick={handleToggleStrictPolicy}
@@ -1420,21 +1442,37 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={isClosureDisabled}
-              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-extrabold shadow-md flex items-center gap-2 cursor-pointer transition-all"
-            >
-              <Lock className="w-4 h-4" />
-              <span>
-                {checklist?.isAlreadyClosed 
-                  ? 'Competência Já Travada' 
-                  : isClosureBlockedByPolicy 
-                  ? 'Bloqueado por Divergência de Saldo' 
-                  : 'Executar Fechamento & Travar Período'
-                }
-              </span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              {checklist?.isAlreadyClosed && closedRecordForSelectedCompetence && currentUser.role !== 'CONSULTA' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReopenTarget(closedRecordForSelectedCompetence);
+                    setReopenReason('Reabertura para ajustes manuais solicitados pelo usuário');
+                  }}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow-md flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <Unlock className="w-4 h-4" />
+                  <span>Destravar {newCompetence} para Edições</span>
+                </button>
+              )}
+
+              <button
+                type="submit"
+                disabled={isClosureDisabled || currentUser.role === 'CONSULTA'}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-extrabold shadow-md flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Lock className="w-4 h-4" />
+                <span>
+                  {checklist?.isAlreadyClosed 
+                    ? 'Competência Já Travada' 
+                    : isClosureBlockedByPolicy 
+                    ? 'Bloqueado por Divergência de Saldo' 
+                    : 'Executar Fechamento & Travar Período'
+                  }
+                </span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -1547,16 +1585,21 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                           </button>
                         )}
 
-                        {currentUser.role === 'ADMIN' ? (
+                        {currentUser.role !== 'CONSULTA' ? (
                           <button
-                            onClick={() => setReopenTarget(c)}
-                            className="px-2.5 py-1 text-xs font-semibold text-amber-900 dark:text-amber-300 hover:bg-amber-500/20 bg-amber-500/10 border border-amber-500/30 rounded-xl transition-all inline-flex items-center gap-1 cursor-pointer"
+                            type="button"
+                            onClick={() => {
+                              setReopenTarget(c);
+                              setReopenReason('Reabertura para ajustes manuais solicitados pelo usuário');
+                            }}
+                            className="px-3 py-1 text-xs font-bold text-amber-950 dark:text-amber-300 hover:bg-amber-500/25 bg-amber-500/15 border border-amber-500/40 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:border-amber-500"
+                            title="Destravar e reabrir esta competência para permitir alterações, inclusões e exclusões"
                           >
-                            <Unlock className="w-3.5 h-3.5" />
-                            <span>Reabrir</span>
+                            <Unlock className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Destravar Período</span>
                           </button>
                         ) : (
-                          <span className="text-[10px] text-slate-400 italic">Somente Admin</span>
+                          <span className="text-[10px] text-slate-400 italic">Somente Leitura</span>
                         )}
                       </td>
                     </tr>
@@ -1856,15 +1899,35 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
 
               <div>
                 <label className="block font-semibold text-[var(--text-secondary)] mb-1">
-                  Justificativa Formal Obrigatória *
+                  Justificativa para Auditoria
                 </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'Ajustes manuais de lançamentos',
+                    'Cancelamento/Correção de NF',
+                    'Conciliação complementar',
+                    'Revisão contábil do mês'
+                  ].map(quickReason => (
+                    <button
+                      key={quickReason}
+                      type="button"
+                      onClick={() => setReopenReason(quickReason)}
+                      className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                        reopenReason === quickReason
+                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 font-bold'
+                          : 'bg-[var(--surface-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {quickReason}
+                    </button>
+                  ))}
+                </div>
                 <textarea
-                  required
-                  rows={3}
-                  placeholder="Informe detalhadamente por que esta competência precisa ser reaberta (ex: cancelamento de NF-e, estorno solicitado por auditoria externa...)"
+                  rows={2}
+                  placeholder="Justificativa da reabertura..."
                   value={reopenReason}
                   onChange={e => setReopenReason(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full p-2.5 rounded-xl bg-[var(--surface-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
 
@@ -1872,14 +1935,14 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                 <button
                   type="button"
                   onClick={() => { setReopenTarget(null); setReopenReason(''); }}
-                  className="px-3.5 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)]"
+                  className="px-3.5 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] rounded-xl border border-[var(--border-subtle)] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={isReopening || !reopenReason.trim()}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  disabled={isReopening}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-105 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Unlock className="w-3.5 h-3.5" />
                   <span>Confirmar e Destravar Período</span>

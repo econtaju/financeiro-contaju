@@ -5,7 +5,6 @@ import {
   Network,
   Clock,
   ShieldCheck,
-  LockKeyhole,
   Sliders,
   Bell,
   Lightbulb,
@@ -22,7 +21,6 @@ import { SuppliersView } from './SuppliersView';
 import { ChartOfAccountsView } from './ChartOfAccountsView';
 import { RecurrencesView } from './RecurrencesView';
 import { UsersPermissionsView } from './UsersPermissionsView';
-import { PeriodClosureView } from './PeriodClosureView';
 import { IntegrationsView } from './IntegrationsView';
 import { NotificationsConfigView } from './NotificationsConfigView';
 import { ImprovementsView } from './ImprovementsView';
@@ -36,7 +34,6 @@ export type ConfigSubTab =
   | 'PLANO_CONTAS'
   | 'RECORRENCIAS'
   | 'USUARIOS_PERMISSOES'
-  | 'FECHAMENTO_PERIODO'
   | 'MODULOS_INTEGRACOES'
   | 'SUPABASE'
   | 'NOTIFICACOES'
@@ -130,13 +127,6 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
       shortLabel: 'Usuários',
       description: 'Perfis de acesso, segurança RBAC e usuários ativos',
       icon: ShieldCheck
-    },
-    {
-      id: 'FECHAMENTO_PERIODO',
-      label: 'Fechamento de Período',
-      shortLabel: 'Fechamento',
-      description: 'Trava contábil mensal e checklist de 5 travas',
-      icon: LockKeyhole
     },
     {
       id: 'MODULOS_INTEGRACOES',
@@ -269,9 +259,6 @@ export const SettingsHubView: React.FC<SettingsHubViewProps> = ({
           <RecurrencesView onOpenBillingModal={onOpenBillingModal || (() => {})} />
         )}
         {activeTab === 'USUARIOS_PERMISSOES' && <UsersPermissionsView />}
-        {activeTab === 'FECHAMENTO_PERIODO' && (
-          <PeriodClosureView onNavigate={handleInternalNavigate} />
-        )}
         {activeTab === 'MODULOS_INTEGRACOES' && <IntegrationsView />}
         {activeTab === 'SUPABASE' && <SupabaseConfigView />}
         {activeTab === 'NOTIFICACOES' && (

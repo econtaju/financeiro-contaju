@@ -1,7 +1,8 @@
-import React from 'react';
-import { Trash2, Ban, AlertTriangle, X, ShieldAlert, CheckCircle2, Lock } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Trash2, Ban, AlertTriangle, X, ShieldAlert, CheckCircle2, Lock, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
 import { FinancialTitle } from '../../types';
 import { FinancialEngine, formatBRL, formatDateBR } from '../../services/financialEngine';
+import { RecurringSeriesService } from '../../services/recurringSeriesService';
 
 interface ConfirmBatchActionModalProps {
   isOpen: boolean;
@@ -9,7 +10,7 @@ interface ConfirmBatchActionModalProps {
   type: 'RECEBER' | 'PAGAR';
   titles: FinancialTitle[];
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (extraSubsequentIds?: string[]) => void;
 }
 
 export const ConfirmBatchActionModal: React.FC<ConfirmBatchActionModalProps> = ({
@@ -20,6 +21,23 @@ export const ConfirmBatchActionModal: React.FC<ConfirmBatchActionModalProps> = (
   onClose,
   onConfirm
 }) => {
+  const [subsequentScope, setSubsequentScope] = useState<'THIS_ONLY' | 'ALL_FUTURE' | 'MANUAL'>('THIS_ONLY');
+  const [selectedSubsequentIds, setSelectedSubsequentIds] = useState<string[]>([]);
+  const [showSubsequentList, setShowSubsequentList] = useState(false);
+
+  const singleTitleId = titles.length === 1 ? titles[0]?.id : '';
+
+  const seriesInfo = useMemo(() => {
+    if (!isOpen || titles.length !== 1 || !titles[0]) return null;
+    return RecurringSeriesService.detectSeries(titles[0]);
+  }, [isOpen, titles]);
+
+  useEffect(() => {
+    setSubsequentScope('THIS_ONLY');
+    setShowSubsequentList(false);
+    setSelectedSubsequentIds(seriesInfo?.subsequentOpenTitles.map(t => t.id) || []);
+  }, [isOpen, singleTitleId, seriesInfo]);
+
   if (!isOpen || titles.length === 0) return null;
 
   const isDelete = mode === 'DELETE';
@@ -153,6 +171,135 @@ export const ConfirmBatchActionModal: React.FC<ConfirmBatchActionModalProps> = (
             </div>
           )}
 
+          {/* Alerta de Cadeia Recorrente / Similares Futuros */}
+          {seriesInfo && seriesInfo.isSeries && seriesInfo.subsequentOpenTitles.length > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/35 rounded-xl p-4 space-y-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <Repeat className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-amber-300 block">
+                    Sequência Futura Detectada ({seriesInfo.seriesTypeLabel})
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                    Identificamos <strong>{seriesInfo.subsequentOpenTitles.length} lançamento(s) posterior(es)</strong> similar(es) em meses seguintes em aberto. Eles também são continuidade? Escolha se deseja {isDelete ? 'excluir' : 'cancelar'} os posteriores ou apenas este mês:
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubsequentScope('THIS_ONLY')}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    subsequentScope === 'THIS_ONLY'
+                      ? 'bg-white dark:bg-slate-800 border-amber-500 ring-1 ring-amber-500/50 text-slate-900 dark:text-white font-semibold'
+                      : 'bg-white/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500/40'
+                  }`}
+                >
+                  <div className="text-[11px] font-bold">Somente este mês</div>
+                  <div className="text-[10px] opacity-75">Apenas 1 item</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubsequentScope('MANUAL');
+                    setShowSubsequentList(true);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    subsequentScope === 'MANUAL'
+                      ? 'bg-amber-500/15 border-amber-500 ring-1 ring-amber-500/50 text-amber-950 dark:text-amber-200 font-semibold'
+                      : 'bg-white/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-500/40'
+                  }`}
+                >
+                  <div className="text-[11px] font-bold">Selecionar manualmente</div>
+                  <div className="text-[10px] opacity-75">{selectedSubsequentIds.length} futuro(s) marcado(s)</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubsequentScope('ALL_FUTURE')}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    subsequentScope === 'ALL_FUTURE'
+                      ? 'bg-rose-500/15 border-rose-500 ring-1 ring-rose-500/50 text-rose-950 dark:text-rose-200 font-semibold'
+                      : 'bg-white/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-rose-500/40'
+                  }`}
+                >
+                  <div className="text-[11px] font-bold">Este e os {seriesInfo.subsequentOpenTitles.length} futuros</div>
+                  <div className="text-[10px] opacity-75">Total de {1 + seriesInfo.subsequentOpenTitles.length} itens</div>
+                </button>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSubsequentList(!showSubsequentList)}
+                    className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Visualizar os {seriesInfo.subsequentOpenTitles.length} lançamentos futuros encontrados</span>
+                    {showSubsequentList ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                  {subsequentScope === 'MANUAL' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubsequentIds(
+                        selectedSubsequentIds.length === seriesInfo.subsequentOpenTitles.length
+                          ? []
+                          : seriesInfo.subsequentOpenTitles.map(t => t.id)
+                      )}
+                      className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                    >
+                      {selectedSubsequentIds.length === seriesInfo.subsequentOpenTitles.length ? 'Desmarcar Todos' : 'Marcar Todos'}
+                    </button>
+                  )}
+                </div>
+
+                {(showSubsequentList || subsequentScope === 'MANUAL') && (
+                  <div className="mt-2 max-h-36 overflow-y-auto space-y-1 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                    {seriesInfo.subsequentOpenTitles.map(sub => {
+                      const isChecked = selectedSubsequentIds.includes(sub.id);
+                      const toggleItem = () => {
+                        setSelectedSubsequentIds(prev =>
+                          prev.includes(sub.id) ? prev.filter(id => id !== sub.id) : [...prev, sub.id]
+                        );
+                      };
+                      return (
+                        <div
+                          key={sub.id}
+                          onClick={() => subsequentScope === 'MANUAL' && toggleItem()}
+                          className={`flex items-center justify-between text-[11px] p-1.5 rounded border transition-colors ${
+                            subsequentScope === 'MANUAL' ? 'cursor-pointer' : ''
+                          } ${
+                            subsequentScope === 'MANUAL' && isChecked
+                              ? 'bg-rose-500/10 border-rose-500/30'
+                              : 'border-slate-100 dark:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate max-w-[260px]">
+                            {subsequentScope === 'MANUAL' && (
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                className="w-3.5 h-3.5 accent-rose-600 rounded cursor-pointer shrink-0"
+                              />
+                            )}
+                            <span className="font-mono text-[10px] text-slate-500 shrink-0">{sub.competence || sub.dueDate?.substring(0, 7)}</span>
+                            <span className="text-slate-700 dark:text-slate-300 truncate">{sub.description}</span>
+                          </div>
+                          <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 shrink-0">
+                            {formatBRL(sub.originalAmount)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* List Preview (First 5 items) */}
           <div className="space-y-1.5">
             <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
@@ -191,7 +338,15 @@ export const ConfirmBatchActionModal: React.FC<ConfirmBatchActionModalProps> = (
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => {
+              const extraIds =
+                subsequentScope === 'ALL_FUTURE' && seriesInfo
+                  ? seriesInfo.subsequentOpenTitles.map(t => t.id)
+                  : subsequentScope === 'MANUAL'
+                  ? selectedSubsequentIds
+                  : undefined;
+              onConfirm(extraIds && extraIds.length > 0 ? extraIds : undefined);
+            }}
             disabled={isAllClosed}
             className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-sm transition-colors flex items-center ${
               isAllClosed
@@ -206,17 +361,26 @@ export const ConfirmBatchActionModal: React.FC<ConfirmBatchActionModalProps> = (
                 <Lock className="w-4 h-4 mr-1.5" />
                 Bloqueado: Competência Fechada
               </>
-            ) : isDelete ? (
-              <>
-                <Trash2 className="w-4 h-4 mr-1.5" />
-                Confirmar Exclusão {titles.length > 1 ? `(${titles.length})` : ''}
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                Confirmar Cancelamento {titles.length > 1 ? `(${titles.length})` : ''}
-              </>
-            )}
+            ) : (() => {
+              const extraCount =
+                subsequentScope === 'ALL_FUTURE' && seriesInfo
+                  ? seriesInfo.subsequentOpenTitles.length
+                  : subsequentScope === 'MANUAL'
+                  ? selectedSubsequentIds.length
+                  : 0;
+              const totalCount = titles.length + extraCount;
+              return isDelete ? (
+                <>
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Confirmar Exclusão {totalCount > 1 ? `(${totalCount})` : ''}
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                  Confirmar Cancelamento {totalCount > 1 ? `(${totalCount})` : ''}
+                </>
+              );
+            })()}
           </button>
         </div>
       </div>

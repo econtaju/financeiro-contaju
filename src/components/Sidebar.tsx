@@ -176,12 +176,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return diffDays >= 0 && diffDays <= 30;
       }).length;
       const payToday = titles.filter(t => t.type === 'PAGAR' && t.balancePrincipal > 0 && t.dueDate === today).length;
+      const closedPeriods = (storage.getPeriodClosures() || []).filter(c => c.isClosed).length;
       return {
         overdueReceivables: overdueRec,
         overduePayables: overduePay,
         pendingReconciliation: pendingReconcile,
         expiringContractsCount: expiring,
         payablesTodayCount: payToday,
+        closedPeriodsCount: closedPeriods,
         totalNotificationAlerts: expiring + payToday + pendingReconcile
       };
     } catch {
@@ -191,6 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         pendingReconciliation: 0,
         expiringContractsCount: 0,
         payablesTodayCount: 0,
+        closedPeriodsCount: 0,
         totalNotificationAlerts: 0
       };
     }
@@ -210,6 +213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     pendingReconciliation, 
     expiringContractsCount, 
     payablesTodayCount, 
+    closedPeriodsCount,
     totalNotificationAlerts 
   } = alertBadges;
 
@@ -273,7 +277,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'FLUXO_CAIXA', label: 'Fluxo de Caixa', shortLabel: 'Fluxo', icon: LineChart },
         { id: 'PLANEJAMENTO_ORCAMENTARIO', label: 'Planejamento Orçamentário', shortLabel: 'Orçamento', icon: Target },
         { id: 'COMPARE_DRE_CAIXA', label: 'Comparar DRE x Caixa', shortLabel: 'DRE x Caixa', icon: Scale },
-        { id: 'RELATORIOS', label: 'Relatórios Gerenciais', shortLabel: 'Relatórios', icon: FileSpreadsheet }
+        { id: 'RELATORIOS', label: 'Relatórios Gerenciais', shortLabel: 'Relatórios', icon: FileSpreadsheet },
+        { 
+          id: 'FECHAMENTO_PERIODO', 
+          label: 'Fechamento de Competência', 
+          shortLabel: 'Fechamento', 
+          icon: LockKeyhole,
+          badge: closedPeriodsCount > 0 ? `${closedPeriodsCount} Travado(s)` : undefined,
+          badgeColor: 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+        }
       ]
     },
     {
@@ -396,7 +408,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   const Icon = item.icon;
                   const isConfigScreen = [
                     'CONFIGURACOES', 'EMPRESA', 'FORNECEDORES', 'PLANO_CONTAS', 'RECORRENCIAS',
-                    'USUARIOS_PERMISSOES', 'FECHAMENTO_PERIODO', 'MODULOS_INTEGRACOES',
+                    'USUARIOS_PERMISSOES', 'MODULOS_INTEGRACOES',
                     'NOTIFICACOES', 'MELHORIAS', 'AUDITORIA', 'BACKUP'
                   ].includes(currentScreen);
                   const isActive = item.id === 'CONFIGURACOES' ? isConfigScreen : currentScreen === item.id;

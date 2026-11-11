@@ -20,11 +20,14 @@ import {
   CheckSquare,
   Sliders,
   Edit2,
-  Plus
+  Plus,
+  Trash2,
+  ArrowRight
 } from 'lucide-react';
 import { TitleType, FinancialTitle, Counterparty, ChartAccount } from '../../types';
 import { storage } from '../../services/storageService';
-import { FinancialEngine, formatBRL, getFilteredChartAccounts, isRevenueAccount, isCostOrExpenseAccount, formatChartAccountSelectOptions } from '../../services/financialEngine';
+import { FinancialEngine, formatBRL, formatDateBR, getFilteredChartAccounts, isRevenueAccount, isCostOrExpenseAccount, formatChartAccountSelectOptions } from '../../services/financialEngine';
+import { RecurringSeriesService } from '../../services/recurringSeriesService';
 import { SearchableSelect, SelectOption } from '../Common/SearchableSelect';
 import { CompleteCounterpartyModal } from './CompleteCounterpartyModal';
 import { QuickCreateAccountModal } from './QuickCreateAccountModal';
@@ -113,6 +116,23 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
   const [openCompleteModal, setOpenCompleteModal] = useState(false);
   const [openCompleteAfterSave, setOpenCompleteAfterSave] = useState(true);
 
+  // Modal de Verificação Prévia de Continuidade em Meses Posteriores
+  const [continuityModalState, setContinuityModalState] = useState<{
+    isOpen: boolean;
+    similarTitles: FinancialTitle[];
+    isManualMode: boolean;
+    selectedIds: string[];
+    manualEdits: Record<string, { amount: number; dueDate: string }>;
+    avoidDuplicateMonths: boolean;
+  }>({
+    isOpen: false,
+    similarTitles: [],
+    isManualMode: false,
+    selectedIds: [],
+    manualEdits: {},
+    avoidDuplicateMonths: true
+  });
+
   // Sincronizar com defaultType toda vez que o modal abrir ou a prop defaultType mudar
   useEffect(() => {
     if (isOpen) {
@@ -146,6 +166,14 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
       setSettlementVoucherRef('');
       setSettlementNotes('');
       setSettlementScope('FIRST');
+      setContinuityModalState({
+        isOpen: false,
+        similarTitles: [],
+        isManualMode: false,
+        selectedIds: [],
+        manualEdits: {},
+        avoidDuplicateMonths: true
+      });
     }
   }, [isOpen, defaultType]);
 
@@ -355,6 +383,177 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
 
   if (!isOpen) return null;
 
+  const executeFinalCreation = (
+    continuityAction: 'ONLY_CURRENT' | 'UPDATE_SELECTED' | 'DELETE_SELECTED' = 'ONLY_CURRENT',
+    selectedExistingIds: string[] = [],
+    manualEditsMap?: Record<string, { amount: number; dueDate: string }>,
+    avoidDuplicateMonths = true
+  ) => {
+    const currentUser = storage.getCurrentUser();
+    const now = new Date().toISOString();
+
+    const selectedExistingTitles = continuityModalState.similarTitles.filter(t =>
+      selectedExistingIds.includes(t.id)
+    );
+    const occupiedCompetences = new Set(
+      continuityAction === 'UPDATE_SELECTED' && avoidDuplicateMonths && launchMode !== 'UNICO'
+        ? selectedExistingTitles.map(t => t.competence || (t.dueDate ? t.dueDate.substring(0, 7) : ''))
+        : []
+    );
+
+    const itemsToCreate = calculatedItems.filter(item => !occupiedCompetences.has(item.competence));
+
+    const newTitles: FinancialTitle[] = itemsToCreate.map((item) => ({
+      id: `tit-${Date.now()}-${item.index}-${Math.floor(Math.random() * 1000)}`,
+      companyId: 'comp-1',
+      type,
+      titleNumber: item.titleNumber,
+      counterpartyId,
+      description: launchMode === 'PARCELADO' 
+        ? `${description.trim()} (${item.index}/${calculatedItems.length})`
+        : (launchMode === 'RECORRENTE' ? `${description.trim()} [Recorrente ${item.competence}]` : description.trim()),
+      accountId,
+      launchDate,
+      competence: item.competence,
+      issueDate: launchDate, // Data de emissão sincronizada com a data de lançamento
+      dueDate: item.dueDate,
+      expectedCashDate: item.expectedCashDate,
+      originalAmount: Number(item.amount),
+      settledPrincipal: 0,
+      balancePrincipal: Number(item.amount),
+      accruedInterest: 0,
+      accruedFine: 0,
+      documentState: 'CONFIRMADO',
+      settlementState: 'ABERTO',
+      originType: launchMode === 'RECORRENTE' ? 'RECORRENCIA_PAGAR' : (launchMode === 'PARCELADO' ? 'DESPESA_DIRETA' : 'MANUAL'),
+      installmentIndex: launchMode === 'PARCELADO' ? item.index : undefined,
+      totalInstallments: launchMode === 'PARCELADO' ? calculatedItems.length : undefined,
+      expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
+      notes: notes ? `${notes} ${launchMode !== 'UNICO' ? `(${launchMode})` : ''}` : (launchMode !== 'UNICO' ? `Gerado via lançamento ${launchMode.toLowerCase()}` : undefined),
+      createdAt: now,
+      updatedAt: now
+    }));
+
+    if (continuityAction === 'DELETE_SELECTED' && selectedExistingIds.length > 0) {
+      storage.batchDeleteTitles(selectedExistingIds);
+    }
+
+    if (newTitles.length > 0) {
+      const existingTitles = storage.getTitles();
+      storage.saveTitles([...newTitles, ...existingTitles]);
+
+      storage.addAuditLog({
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: launchMode === 'PARCELADO' ? 'NOVO_TITULO_PARCELADO' : (launchMode === 'RECORRENTE' ? 'NOVO_TITULO_RECORRENTE' : 'NOVO_TITULO_MANUAL'),
+        module: type === 'RECEBER' ? 'Contas a Receber' : 'Contas a Pagar',
+        recordId: newTitles[0].id,
+        details: `Criação de ${newTitles.length} título(s) (${description}) no valor total de R$ ${newTitles.reduce((acc, t) => acc + t.originalAmount, 0).toFixed(2)}. Modo: ${launchMode}.`
+      });
+    }
+
+    let updatedExistingCount = 0;
+    if (continuityAction === 'UPDATE_SELECTED' && selectedExistingTitles.length > 0) {
+      const unitAmt = calculatedItems[0]?.amount || Number(originalAmount);
+      const updatesById: Record<string, {
+        description?: string;
+        originalAmount?: number;
+        dueDate?: string;
+        accountId?: string;
+        expectedBankAccountId?: string;
+        counterpartyId?: string;
+      }> = {};
+
+      selectedExistingTitles.forEach(existing => {
+        const override = manualEditsMap?.[existing.id];
+        const suffixMatch = existing.description.match(/\s*(\(\d+\/\d+\)|\[Recorrente[^\]]*\]|-\s*\d+\/\d+)$/i);
+        const nextDesc = suffixMatch
+          ? `${description.trim()} ${suffixMatch[1]}`
+          : description.trim();
+
+        let nextDue = override?.dueDate || existing.dueDate;
+        if (!override?.dueDate && launchMode === 'RECORRENTE' && existing.dueDate && existing.dueDate.includes('-')) {
+          const [y, m] = existing.dueDate.split('-').map(Number);
+          if (y && m) {
+            const maxDays = getDaysInMonth(y, m);
+            nextDue = `${y}-${String(m).padStart(2, '0')}-${String(Math.min(recurringDay || 10, maxDays)).padStart(2, '0')}`;
+          }
+        }
+
+        updatesById[existing.id] = {
+          description: nextDesc,
+          counterpartyId,
+          accountId,
+          expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
+          originalAmount: override?.amount !== undefined ? Number(override.amount) : Number(unitAmt),
+          dueDate: nextDue
+        };
+      });
+
+      updatedExistingCount = RecurringSeriesService.updateExistingTitlesBatch({
+        updatesByTitleId: updatesById,
+        currentUser
+      });
+    }
+
+    // Se marcou como já pago/recebido, efetivar a liquidação nas tabelas financeiras
+    if (isAlreadySettled && newTitles.length > 0) {
+      const titlesToSettle = (launchMode === 'UNICO' || settlementScope === 'ALL')
+        ? newTitles
+        : [newTitles[0]];
+
+      for (let i = 0; i < titlesToSettle.length; i++) {
+        const titleToSettle = titlesToSettle[i];
+        // Descontos e juros são atribuídos ao primeiro título ou rateados
+        const disc = i === 0 ? settlementDiscount : 0;
+        const intr = i === 0 ? settlementInterest : 0;
+        const fee = (type === 'RECEBER' && i === 0) ? settlementBankFee : 0;
+
+        FinancialEngine.postSettlement({
+          titleId: titleToSettle.id,
+          settlementDate,
+          bankAccountId: settlementBankAccountId,
+          principalSettled: titleToSettle.originalAmount,
+          discount: disc,
+          interest: intr,
+          fine: 0,
+          bankFee: fee,
+          voucherRef: settlementVoucherRef.trim() || undefined,
+          notes: settlementNotes.trim()
+            ? `${settlementNotes.trim()} [${settlementPaymentMethod}]`
+            : `Liquidação imediata no cadastro [${settlementPaymentMethod}]`
+        });
+      }
+    }
+
+    if (updatedExistingCount > 0) {
+      toast.success(
+        `${newTitles.length} novo(s) salvo(s) e ${updatedExistingCount} lançamento(s) posterior(es) atualizado(s) por continuidade!`
+      );
+    } else if (continuityAction === 'DELETE_SELECTED' && selectedExistingIds.length > 0) {
+      toast.success(
+        `${newTitles.length} novo(s) salvo(s) e ${selectedExistingIds.length} lançamento(s) posterior(es) antigo(s) removido(s)!`
+      );
+    }
+
+    setContinuityModalState(prev => ({ ...prev, isOpen: false }));
+
+    if (quickCreatedId && openCompleteAfterSave) {
+      setOpenCompleteModal(true);
+    } else {
+      if (onSaved) {
+        onSaved({
+          count: newTitles.length + updatedExistingCount,
+          type,
+          description: description.trim(),
+          totalAmount: newTitles.reduce((acc, t) => acc + t.originalAmount, 0)
+        });
+      }
+      if (onCreated) onCreated();
+      onClose();
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -411,95 +610,37 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
       return;
     }
 
-    // Criar títulos a partir da lista calculada
-    const now = new Date().toISOString();
-    const newTitles: FinancialTitle[] = calculatedItems.map((item) => ({
-      id: `tit-${Date.now()}-${item.index}-${Math.floor(Math.random() * 1000)}`,
-      companyId: 'comp-1',
+    // Checagem prévia de continuidade em meses futuros (ou competências coincidentes na recorrência)
+    const unitAmount = calculatedItems[0]?.amount || Number(originalAmount);
+    const similarMatches = RecurringSeriesService.findSimilarFutureTitles({
       type,
-      titleNumber: item.titleNumber,
       counterpartyId,
-      description: launchMode === 'PARCELADO' 
-        ? `${description.trim()} (${item.index}/${calculatedItems.length})`
-        : (launchMode === 'RECORRENTE' ? `${description.trim()} [Recorrente ${item.competence}]` : description.trim()),
-      accountId,
-      launchDate,
-      competence: item.competence,
-      issueDate: launchDate, // Data de emissão sincronizada com a data de lançamento
-      dueDate: item.dueDate,
-      expectedCashDate: item.expectedCashDate,
-      originalAmount: Number(item.amount),
-      settledPrincipal: 0,
-      balancePrincipal: Number(item.amount),
-      accruedInterest: 0,
-      accruedFine: 0,
-      documentState: 'CONFIRMADO',
-      settlementState: 'ABERTO',
-      originType: launchMode === 'RECORRENTE' ? 'RECORRENCIA_PAGAR' : (launchMode === 'PARCELADO' ? 'DESPESA_DIRETA' : 'MANUAL'),
-      installmentIndex: launchMode === 'PARCELADO' ? item.index : undefined,
-      totalInstallments: launchMode === 'PARCELADO' ? calculatedItems.length : undefined,
-      expectedBankAccountId: settlementBankAccountId || expectedBankAccountId || undefined,
-      notes: notes ? `${notes} ${launchMode !== 'UNICO' ? `(${launchMode})` : ''}` : (launchMode !== 'UNICO' ? `Gerado via lançamento ${launchMode.toLowerCase()}` : undefined),
-      createdAt: now,
-      updatedAt: now
-    }));
-
-    const existingTitles = storage.getTitles();
-    storage.saveTitles([...newTitles, ...existingTitles]);
-
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: launchMode === 'PARCELADO' ? 'NOVO_TITULO_PARCELADO' : (launchMode === 'RECORRENTE' ? 'NOVO_TITULO_RECORRENTE' : 'NOVO_TITULO_MANUAL'),
-      module: type === 'RECEBER' ? 'Contas a Receber' : 'Contas a Pagar',
-      recordId: newTitles[0].id,
-      details: `Criação de ${newTitles.length} título(s) (${description}) no valor total de R$ ${totalCalculatedAmount.toFixed(2)}. Modo: ${launchMode}.`
+      description: description.trim(),
+      amount: unitAmount,
+      referenceDateOrCompetence: competence,
+      includeSameCompetence: launchMode !== 'UNICO'
     });
 
-    // Se marcou como já pago/recebido, efetivar a liquidação nas tabelas financeiras
-    if (isAlreadySettled) {
-      const titlesToSettle = (launchMode === 'UNICO' || settlementScope === 'ALL')
-        ? newTitles
-        : [newTitles[0]];
-
-      for (let i = 0; i < titlesToSettle.length; i++) {
-        const titleToSettle = titlesToSettle[i];
-        // Descontos e juros são atribuídos ao primeiro título ou rateados
-        const disc = i === 0 ? settlementDiscount : 0;
-        const intr = i === 0 ? settlementInterest : 0;
-        const fee = (type === 'RECEBER' && i === 0) ? settlementBankFee : 0;
-
-        FinancialEngine.postSettlement({
-          titleId: titleToSettle.id,
-          settlementDate,
-          bankAccountId: settlementBankAccountId,
-          principalSettled: titleToSettle.originalAmount,
-          discount: disc,
-          interest: intr,
-          fine: 0,
-          bankFee: fee,
-          voucherRef: settlementVoucherRef.trim() || undefined,
-          notes: settlementNotes.trim()
-            ? `${settlementNotes.trim()} [${settlementPaymentMethod}]`
-            : `Liquidação imediata no cadastro [${settlementPaymentMethod}]`
-        });
-      }
+    if (similarMatches.length > 0) {
+      const initialEdits: Record<string, { amount: number; dueDate: string }> = {};
+      similarMatches.forEach(m => {
+        initialEdits[m.id] = {
+          amount: Number(m.originalAmount) || unitAmount,
+          dueDate: m.dueDate || ''
+        };
+      });
+      setContinuityModalState({
+        isOpen: true,
+        similarTitles: similarMatches,
+        isManualMode: false,
+        selectedIds: similarMatches.map(m => m.id),
+        manualEdits: initialEdits,
+        avoidDuplicateMonths: true
+      });
+      return;
     }
 
-    if (quickCreatedId && openCompleteAfterSave) {
-      setOpenCompleteModal(true);
-    } else {
-      if (onSaved) {
-        onSaved({
-          count: newTitles.length,
-          type,
-          description: description.trim(),
-          totalAmount: totalCalculatedAmount
-        });
-      }
-      if (onCreated) onCreated();
-      onClose();
-    }
+    executeFinalCreation('ONLY_CURRENT');
   };
 
   return (
@@ -1548,6 +1689,278 @@ export const NewTitleModal: React.FC<NewTitleModalProps> = ({
           toast.success(`Cadastro de "${savedParty.name}" salvo com sucesso!`, 'Cadastro Atualizado');
         }}
       />
+
+      {/* Modal de Verificação Prévia de Continuidade (Lançamentos Similares em Competências Futuras) */}
+      {continuityModalState.isOpen && continuityModalState.similarTitles.length > 0 && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150"
+          onClick={() => setContinuityModalState(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div
+            className="bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#273040] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden text-slate-900 dark:text-slate-100 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-[#273040] bg-amber-50/70 dark:bg-[#161C28] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Repeat className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold">
+                    Lançamentos Similares Encontrados em Competências Posteriores
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Detectamos <strong>{continuityModalState.similarTitles.length} lançamento(s)</strong> em aberto com mesmo nome, descrição ou valor parecido.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContinuityModalState(prev => ({ ...prev, isOpen: false }))}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-slate-800 dark:text-amber-200 leading-relaxed">
+                <strong className="block text-sm mb-1">
+                  Estes lançamentos também são continuidade?
+                </strong>
+                <span className="text-[11px]">
+                  Antes de concluir o cadastro, você pode confirmar se deseja atualizar estes lançamentos juntos (sincronizando descrição, valor, categoria e conta), salvar apenas o(s) lançamento(s) atual(is), ou editar manualmente cada um deles.
+                </span>
+              </div>
+
+              {launchMode !== 'UNICO' && (
+                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#161C28] border border-slate-200 dark:border-slate-800 cursor-pointer text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={continuityModalState.avoidDuplicateMonths}
+                    onChange={(e) => setContinuityModalState(prev => ({ ...prev, avoidDuplicateMonths: e.target.checked }))}
+                    className="w-4 h-4 rounded accent-amber-500 cursor-pointer shrink-0"
+                  />
+                  <span>
+                    <strong>Evitar duplicidade:</strong> ao atualizar existentes por continuidade, não gerar outro lançamento repetido nos meses que já possuem esses títulos.
+                  </span>
+                </label>
+              )}
+
+              <div className="rounded-xl border border-slate-200 dark:border-[#273040] overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 dark:bg-[#161C28] flex items-center justify-between border-b border-slate-200 dark:border-[#273040] text-[11px] font-semibold">
+                  <span>
+                    {continuityModalState.isManualMode
+                      ? `Selecione e edite manualmente (${continuityModalState.selectedIds.length} marcado(s)):`
+                      : `Lançamentos existentes encontrados (${continuityModalState.similarTitles.length}):`}
+                  </span>
+                  {continuityModalState.isManualMode && (
+                    <button
+                      type="button"
+                      onClick={() => setContinuityModalState(prev => ({
+                        ...prev,
+                        selectedIds: prev.selectedIds.length === prev.similarTitles.length
+                          ? []
+                          : prev.similarTitles.map(t => t.id)
+                      }))}
+                      className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                    >
+                      {continuityModalState.selectedIds.length === continuityModalState.similarTitles.length ? 'Desmarcar Todos' : 'Marcar Todos'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-2.5 max-h-60 overflow-y-auto space-y-2 bg-white dark:bg-[#121620]">
+                  {continuityModalState.similarTitles.map(item => {
+                    const isChecked = continuityModalState.selectedIds.includes(item.id);
+                    const editData = continuityModalState.manualEdits[item.id] || {
+                      amount: Number(item.originalAmount) || 0,
+                      dueDate: item.dueDate || ''
+                    };
+                    const unitNewAmount = calculatedItems[0]?.amount || Number(originalAmount);
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-2.5 rounded-xl border text-[11px] transition-all space-y-2 ${
+                          continuityModalState.isManualMode && isChecked
+                            ? 'bg-amber-500/10 border-amber-500/40'
+                            : 'bg-slate-50 dark:bg-[#161C28] border-slate-200/70 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <label className={`flex items-center gap-2 min-w-0 ${continuityModalState.isManualMode ? 'cursor-pointer' : ''}`}>
+                            {continuityModalState.isManualMode && (
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => setContinuityModalState(prev => ({
+                                  ...prev,
+                                  selectedIds: prev.selectedIds.includes(item.id)
+                                    ? prev.selectedIds.filter(id => id !== item.id)
+                                    : [...prev.selectedIds, item.id]
+                                }))}
+                                className="w-3.5 h-3.5 rounded accent-amber-500 cursor-pointer shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-mono text-[10px] text-slate-500 flex items-center gap-1.5">
+                                <span className="font-bold text-amber-700 dark:text-amber-400">
+                                  {item.competence || item.dueDate?.substring(0, 7)}
+                                </span>
+                                <span>• {item.titleNumber}</span>
+                              </div>
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {item.description}
+                              </div>
+                            </div>
+                          </label>
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] text-slate-500 block">
+                              Venc: {formatDateBR(item.dueDate)}
+                            </span>
+                            <span className="font-mono font-bold text-slate-900 dark:text-white inline-flex items-center gap-1">
+                              <span>{formatBRL(item.originalAmount)}</span>
+                              {!continuityModalState.isManualMode && Math.abs((item.originalAmount || 0) - unitNewAmount) > 0.01 && (
+                                <>
+                                  <ArrowRight className="w-3 h-3 text-amber-500" />
+                                  <span className="text-emerald-600 dark:text-emerald-400">{formatBRL(unitNewAmount)}</span>
+                                </>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        {continuityModalState.isManualMode && isChecked && (
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/60">
+                            <div>
+                              <span className="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Novo Valor deste Mês (R$)</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={editData.amount}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setContinuityModalState(prev => ({
+                                    ...prev,
+                                    manualEdits: {
+                                      ...prev.manualEdits,
+                                      [item.id]: { ...editData, amount: val }
+                                    }
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#121620] px-2 py-1 text-[11px] font-mono font-bold text-slate-900 dark:text-amber-300"
+                              />
+                            </div>
+                            <div>
+                              <span className="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Vencimento</span>
+                              <input
+                                type="date"
+                                value={editData.dueDate}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setContinuityModalState(prev => ({
+                                    ...prev,
+                                    manualEdits: {
+                                      ...prev.manualEdits,
+                                      [item.id]: { ...editData, dueDate: val }
+                                    }
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#121620] px-2 py-1 text-[11px] font-mono text-slate-900 dark:text-slate-200"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-[#273040] bg-slate-50 dark:bg-[#161C28] flex flex-col gap-2">
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-between items-stretch sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => executeFinalCreation('ONLY_CURRENT')}
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-[#273040] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold transition-colors text-xs cursor-pointer"
+                >
+                  Somente o Atual (Não Vincular)
+                </button>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {!continuityModalState.isManualMode ? (
+                    <button
+                      type="button"
+                      onClick={() => setContinuityModalState(prev => ({ ...prev, isManualMode: true }))}
+                      className="px-3.5 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold transition-colors text-xs cursor-pointer"
+                    >
+                      Editar Manualmente Cada um Deles
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => executeFinalCreation(
+                        continuityModalState.selectedIds.length > 0 ? 'UPDATE_SELECTED' : 'ONLY_CURRENT',
+                        continuityModalState.selectedIds,
+                        continuityModalState.manualEdits,
+                        continuityModalState.avoidDuplicateMonths
+                      )}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Salvar + Aplicar em {continuityModalState.selectedIds.length} Selecionado(s)</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => executeFinalCreation(
+                      'UPDATE_SELECTED',
+                      continuityModalState.similarTitles.map(t => t.id),
+                      undefined,
+                      continuityModalState.avoidDuplicateMonths
+                    )}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-md transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Editar Todos os {continuityModalState.similarTitles.length} Posteriores Também</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-1 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Prefere substituir os futuros existentes pelos novos?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetIds = continuityModalState.isManualMode
+                      ? continuityModalState.selectedIds
+                      : continuityModalState.similarTitles.map(t => t.id);
+                    executeFinalCreation(
+                      targetIds.length > 0 ? 'DELETE_SELECTED' : 'ONLY_CURRENT',
+                      targetIds
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold transition-colors inline-flex items-center gap-1.5 text-[11px] cursor-pointer shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>
+                    Excluir {continuityModalState.isManualMode ? `${continuityModalState.selectedIds.length} Marcado(s)` : `${continuityModalState.similarTitles.length} Existentes`} e Criar Novos
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

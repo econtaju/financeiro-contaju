@@ -804,9 +804,10 @@ export const PayablesView: React.FC<PayablesViewProps> = ({ onOpenNewTitleModal,
   };
 
   // Execução após confirmação no modal
-  const handleExecuteConfirmedAction = () => {
+  const handleExecuteConfirmedAction = (extraSubsequentIds?: string[]) => {
     const { mode, titles: targetTitles } = confirmModalState;
-    const ids = targetTitles.length > 0 ? targetTitles.map(t => t.id) : selectedIds;
+    const baseIds = targetTitles.length > 0 ? targetTitles.map(t => t.id) : selectedIds;
+    const ids = Array.from(new Set([...baseIds, ...(extraSubsequentIds || [])]));
     if (ids.length === 0) {
       setConfirmModalState({ isOpen: false, mode: 'DELETE', titles: [] });
       return;

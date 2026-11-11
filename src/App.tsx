@@ -46,6 +46,7 @@ const CashFlowView = lazyWithRetry(() => import('./components/Management/CashFlo
 const BudgetPlanningView = lazyWithRetry(() => import('./components/Management/BudgetPlanningView').then(m => ({ default: m.BudgetPlanningView })));
 const CompareDRECashView = lazyWithRetry(() => import('./components/Management/CompareDRECashView').then(m => ({ default: m.CompareDRECashView })));
 const ReportsView = lazyWithRetry(() => import('./components/Management/ReportsView').then(m => ({ default: m.ReportsView })));
+const PeriodClosureView = lazyWithRetry(() => import('./components/Config/PeriodClosureView').then(m => ({ default: m.PeriodClosureView })));
 const SettingsHubView = lazyWithRetry(() => import('./components/Config/SettingsHubView').then(m => ({ default: m.SettingsHubView })));
 import type { ConfigSubTab } from './components/Config/SettingsHubView';
 
@@ -299,6 +300,8 @@ function AppContent() {
         return <CompareDRECashView />;
       case 'RELATORIOS':
         return <ReportsView />;
+      case 'FECHAMENTO_PERIODO':
+        return <PeriodClosureView onNavigate={handleNavigate} />;
 
       // Consolidated Configuration Hub
       case 'IA':
@@ -308,7 +311,6 @@ function AppContent() {
       case 'PLANO_CONTAS':
       case 'RECORRENCIAS':
       case 'USUARIOS_PERMISSOES':
-      case 'FECHAMENTO_PERIODO':
       case 'MODULOS_INTEGRACOES':
       case 'NOTIFICACOES':
       case 'MELHORIAS':
