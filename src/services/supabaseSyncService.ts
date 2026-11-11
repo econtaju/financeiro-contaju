@@ -723,6 +723,7 @@ function mapPeriodClosureFromDb(row: any): PeriodClosure {
   return {
     id: row.id,
     yearMonth: row.year_month,
+    competence: row.year_month,
     closedAt: row.closed_at,
     closedBy: row.closed_by,
     notes: row.notes || undefined,

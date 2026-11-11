@@ -554,33 +554,20 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
       totalBankDifference
     };
 
-    const now = new Date().toISOString();
-    const newClosure: PeriodClosure = {
-      id: `closure-${Date.now()}`,
-      yearMonth: newCompetence,
-      competence: newCompetence,
-      closedAt: now,
+    const closureNotes = notes || `Fechamento contábil e trava formal da competência ${newCompetence} com auditoria prévia de saldos.`;
+    const closeResult = storage.closeCompetence(newCompetence, {
+      notes: closureNotes,
       closedBy: `${currentUser.name} (${currentUser.role})`,
-      isClosed: true,
-      notes: notes || `Fechamento contábil e trava formal da competência ${newCompetence} com auditoria prévia de saldos.`,
       bankSnapshots,
       checklistSnapshot
-    };
-
-    const updated = [newClosure, ...closures.filter(c => c.competence !== newCompetence)];
-    storage.savePeriodClosures(updated);
-    setClosures(updated);
-
-    // Auditoria
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'TRAVA_FECHAMENTO_PERIODO',
-      module: 'Fechamento Contábil',
-      recordId: newClosure.id,
-      details: `Trava de segurança contábil da competência ${newCompetence} ativada. Saldos conferidos: Sistema ${formatBRL(totalSystemBankBalance)} vs Real ${formatBRL(totalDeclaredBankBalance)} (Divergência: ${formatBRL(totalBankDifference)}). Política rígida: ${isStrictClosurePolicy ? 'SIM' : 'NÃO'}. Parecer: ${newClosure.notes}.`,
-      newValue: `FECHADO (${newCompetence})`
     });
+
+    if (!closeResult.success) {
+      setMsg({ type: 'error', text: closeResult.error || `Erro ao fechar a competência ${newCompetence}.` });
+      return;
+    }
+
+    setClosures(storage.getPeriodClosures());
 
     setMsg({ type: 'success', text: `Competência ${newCompetence} encerrada e travada com sucesso! Saldos bancários e relatórios auditados e congelados.` });
     setNotes('');
@@ -599,33 +586,30 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
     }
 
     const effectiveReason = reopenReason.trim() || 'Reabertura para ajustes e correções de lançamentos solicitada pelo usuário';
+    const targetComp = reopenTarget.competence || reopenTarget.yearMonth;
 
     setIsReopening(true);
 
-    const updated = closures.filter(c => c.id !== reopenTarget.id);
-    storage.savePeriodClosures(updated);
-    setClosures(updated);
+    const res = storage.reopenCompetence(targetComp, effectiveReason);
+    if (!res.success) {
+      setIsReopening(false);
+      setMsg({ type: 'error', text: res.error || `Não foi possível destravar a competência ${targetComp}.` });
+      return;
+    }
 
-    storage.addAuditLog({
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'REABERTURA_PERIODO_AUDITADA',
-      module: 'Fechamento Contábil',
-      recordId: reopenTarget.id,
-      details: `Reabertura extraordinária da competência ${reopenTarget.competence || reopenTarget.yearMonth}. Motivo: "${effectiveReason}".`,
-      previousValue: `FECHADO (${reopenTarget.competence || reopenTarget.yearMonth})`,
-      newValue: `ABERTO (${reopenTarget.competence || reopenTarget.yearMonth})`
-    });
-
+    setClosures(storage.getPeriodClosures());
     setIsReopening(false);
     setReopenTarget(null);
     setReopenReason('');
-    setMsg({ type: 'success', text: `Competência ${reopenTarget.competence || reopenTarget.yearMonth} destravada com sucesso! Lançamentos e edições estão liberados.` });
+    setMsg({ type: 'success', text: `Competência ${targetComp} destravada com sucesso! Lançamentos e edições estão liberados.` });
   };
 
   // Métricas de cabeçalho
   const totalClosed = closures.filter(c => c.isClosed).length;
-  const latestClosure = closures.slice().sort((a, b) => (b.competence || b.yearMonth).localeCompare(a.competence || a.yearMonth))[0];
+  const latestClosure = closures
+    .filter(c => c.isClosed)
+    .slice()
+    .sort((a, b) => (b.competence || b.yearMonth).localeCompare(a.competence || a.yearMonth))[0];
 
   return (
     <div className="space-y-6">
@@ -1484,7 +1468,7 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
         <div className="p-4 sm:p-5 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] flex justify-between items-center">
           <h2 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-2">
             <History className="w-4 h-4 text-amber-500" />
-            <span>Histórico de Competências Fechadas ({closures.length})</span>
+            <span>Histórico de Fechamentos & Reaberturas ({closures.length} • {totalClosed} Travada(s))</span>
           </h2>
           <span className="text-[11px] text-[var(--text-secondary)]">
             Auditoria completa de saldos e travas contábeis
@@ -1550,10 +1534,20 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                         {c.notes || '-'}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/30 inline-flex items-center gap-1">
-                          <Lock className="w-3 h-3" />
-                          TRAVADO
-                        </span>
+                        {c.isClosed ? (
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/30 inline-flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            TRAVADO
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1"
+                            title={c.reopenReason ? `Destravado por ${c.reopenedBy || 'Usuário'}: ${c.reopenReason}` : 'Período aberto para edições'}
+                          >
+                            <Unlock className="w-3 h-3" />
+                            DESTRAVADO
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
                         <button
@@ -1585,21 +1579,38 @@ export const PeriodClosureView: React.FC<PeriodClosureViewProps> = ({ onNavigate
                           </button>
                         )}
 
-                        {currentUser.role !== 'CONSULTA' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReopenTarget(c);
-                              setReopenReason('Reabertura para ajustes manuais solicitados pelo usuário');
-                            }}
-                            className="px-3 py-1 text-xs font-bold text-amber-950 dark:text-amber-300 hover:bg-amber-500/25 bg-amber-500/15 border border-amber-500/40 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:border-amber-500"
-                            title="Destravar e reabrir esta competência para permitir alterações, inclusões e exclusões"
-                          >
-                            <Unlock className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Destravar Período</span>
-                          </button>
+                        {c.isClosed ? (
+                          currentUser.role !== 'CONSULTA' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReopenTarget(c);
+                                setReopenReason('Reabertura para ajustes manuais solicitados pelo usuário');
+                              }}
+                              className="px-3 py-1 text-xs font-bold text-amber-950 dark:text-amber-300 hover:bg-amber-500/25 bg-amber-500/15 border border-amber-500/40 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:border-amber-500"
+                              title="Destravar e reabrir esta competência para permitir alterações, inclusões e exclusões"
+                            >
+                              <Unlock className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Destravar Período</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">Somente Leitura</span>
+                          )
                         ) : (
-                          <span className="text-[10px] text-slate-400 italic">Somente Leitura</span>
+                          currentUser.role !== 'CONSULTA' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewCompetence(comp);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15 bg-emerald-500/10 border border-emerald-500/30 rounded-xl transition-all inline-flex items-center gap-1 cursor-pointer"
+                              title="Selecionar esta competência para conferir e travar novamente"
+                            >
+                              <Lock className="w-3 h-3" />
+                              <span>Travar Novamente</span>
+                            </button>
+                          )
                         )}
                       </td>
                     </tr>
